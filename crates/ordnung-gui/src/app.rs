@@ -3027,6 +3027,7 @@ impl App {
         // Spotify-style now-playing bar: artwork, title/artist, play-pause and a
         // draggable scrubber. Sits just above the status bar; only shown while a
         // track is loaded in (or decoding for) the player.
+        self.draw_record_bar(ctx);
         self.draw_player(ctx);
 
         // The inspector is the single surface for per-track detail and tag
@@ -3917,10 +3918,20 @@ impl App {
         }
         if self.view != prev_view {
             // A record sheet belongs to the Vinyl section. Leaving that section
-            // closes it rather than leaving it stranded over the Library — and,
-            // as everywhere else the sheet closes, takes its video with it so
-            // nothing keeps playing with no sheet on screen to explain it.
-            if prev_view == LibraryView::Vinyl
+            // closes it rather than leaving it stranded over the Library. A
+            // sheet whose video is rolling hides instead, and the record
+            // follows the listener as the bar at the window's bottom (see
+            // `draw_record_bar`), so the sound on air always has a face.
+            let rolling = self
+                .vinyl_sheet
+                .as_ref()
+                .is_some_and(|s| s.playing_video.is_some())
+                && webview::is_open();
+            if rolling && !matches!(self.view, LibraryView::Vinyl | LibraryView::CrateSet(_)) {
+                if let Some(s) = self.vinyl_sheet.as_mut() {
+                    s.hidden = true;
+                }
+            } else if prev_view == LibraryView::Vinyl
                 && !matches!(self.view, LibraryView::CrateSet(_))
                 && self.vinyl_sheet.is_some()
             {

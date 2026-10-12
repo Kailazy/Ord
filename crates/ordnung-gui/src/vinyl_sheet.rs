@@ -180,6 +180,12 @@ pub(crate) struct VinylSheet {
     /// without the pointer: ↑ ↓ or W S move it, ⏎ plays it. `None` until
     /// the first step, which starts from the playing or marked row.
     pub cursor: Option<usize>,
+    /// The sheet is off screen while its record plays on: the user left for
+    /// another view with a video rolling, and the record follows them as a
+    /// bar at the window's bottom (see [`App::draw_record_bar`]) instead of
+    /// a window stranded over the library. A click on the bar brings the
+    /// sheet back; the bar goes when the video stops.
+    pub hidden: bool,
 }
 
 impl VinylSheet {
@@ -520,11 +526,9 @@ impl App {
     /// if they aren't cached yet. Re-opening the record that's already open is a
     /// no-op, so a second click doesn't restart a fetch.
     pub(crate) fn open_vinyl_sheet(&mut self, key: VinylCoverKey, ctx: &egui::Context) {
-        if self
-            .vinyl_sheet
-            .as_ref()
-            .is_some_and(|s| s.key == Some(key))
-        {
+        if let Some(s) = self.vinyl_sheet.as_mut().filter(|s| s.key == Some(key)) {
+            // Already open, or playing on from the bar: bring it back.
+            s.hidden = false;
             return;
         }
         let Some(record) = self.vinyl_record(key) else {
@@ -574,11 +578,8 @@ impl App {
         cover_url: Option<String>,
         ctx: &egui::Context,
     ) {
-        if self
-            .vinyl_sheet
-            .as_ref()
-            .is_some_and(|s| s.release_id == release_id)
-        {
+        if let Some(s) = self.vinyl_sheet.as_mut().filter(|s| s.release_id == release_id) {
+            s.hidden = false;
             return;
         }
         self.stop_sheet_video();
@@ -612,6 +613,7 @@ impl App {
             stocked: self.sheet_stocked(release_id),
             mark: None,
             cursor: None,
+            hidden: false,
         });
         self.spawn_sheet_fetch(release_id, ctx.clone());
         self.spawn_sheet_price(release_id, ctx.clone());
@@ -1289,7 +1291,7 @@ impl App {
     /// Draw the open record sheet. Returns nothing — every action is applied
     /// before it returns, so the caller just calls it once per frame.
     pub(crate) fn draw_vinyl_sheet(&mut self, ctx: &egui::Context, frame: &eframe::Frame) {
-        if self.vinyl_sheet.is_none() {
+        if self.vinyl_sheet.as_ref().is_none_or(|s| s.hidden) {
             return;
         }
         // A sheet is where videos get played from, so have the player built
@@ -2351,11 +2353,8 @@ impl App {
         // record's own play button: it starts the record from its first
         // playable track.
         match video_act {
-            Some(VideoAct::TogglePause) if video_open => webview::toggle_pause(),
-            Some(VideoAct::Seek(secs)) if video_open => {
-                webview::seek(secs);
-                // Their scrub, their place: the mid-song jump stops watching.
-                self.video_mid_start_settle();
+            Some(ref a @ (VideoAct::TogglePause | VideoAct::Seek(_))) if video_open => {
+                self.apply_video_act(a)
             }
             Some(VideoAct::TogglePause) => {
                 self.claim_sound(Sound::Player);
@@ -2581,6 +2580,190 @@ impl App {
             // Closing the record takes its video with it: the panel is that
             // record's player, so leaving it playing over a closed sheet is
             // sound with nothing on screen to explain it.
+            self.stop_sheet_video();
+            self.vinyl_sheet = None;
+        }
+    }
+}
+
+impl App {
+    /// Send a transport request to the mini-player: the sheet's bar and the
+    /// record bar drive the same video.
+    fn apply_video_act(&mut self, act: &VideoAct) {
+        match act {
+            VideoAct::TogglePause => webview::toggle_pause(),
+            VideoAct::Seek(secs) => {
+                webview::seek(*secs);
+                // Their scrub, their place: the mid-song jump stops watching.
+                self.video_mid_start_settle();
+            }
+            VideoAct::Start => {}
+        }
+    }
+
+    /// The record bar: a strip at the window's bottom standing in for a sheet
+    /// hidden by a view switch while its video rolls (see `VinylSheet::hidden`).
+    /// Cover, record and song, the same transport the sheet draws, and a
+    /// close. A click on the record brings the sheet back. Drawn before the
+    /// central panel like the player bar, since it is a bottom panel too.
+    pub(crate) fn draw_record_bar(&mut self, ctx: &egui::Context) {
+        use crate::ui::tokens::{font, space};
+        let Some(sheet) = self.vinyl_sheet.as_ref().filter(|s| s.hidden) else {
+            return;
+        };
+        // The bar is the record playing; once the record stops (the video
+        // ended, or the panel was closed from its own title bar) there is
+        // nothing to stand in for and the hidden sheet goes with it.
+        if sheet.playing_video.is_none() || !webview::is_open() {
+            self.vinyl_sheet = None;
+            return;
+        }
+        let key = sheet.key;
+        let cover_url = sheet.cover_url.clone();
+        let title = sheet.title.clone();
+        let artist = sheet.artist.clone();
+        let playing_video = sheet.playing_video;
+        // The song on air: the tracklist row the playing video belongs to.
+        let song = sheet
+            .rows
+            .iter()
+            .find(|r| matches!(r.source, SheetSource::Video(v) if Some(v) == playing_video)
+                || r.also_video == playing_video)
+            .map(|r| r.title.clone());
+        let mut scrub = sheet.video_scrub;
+        let cover = key
+            .and_then(|k| match self.vinyl_covers.get(&k) {
+                Some(ThumbState::Ready(Some(t))) => Some(t.clone()),
+                _ => None,
+            })
+            .or_else(|| cover_url.as_deref().and_then(|u| self.dig_cover(u)).cloned());
+        let held = self.video_held_start();
+
+        const BAR_H: f32 = 64.0;
+        const COVER: f32 = 44.0;
+        const WORDS_W: f32 = 220.0;
+        let mut act = None;
+        let mut reopen = false;
+        let mut close = false;
+        let glass_id = egui::Id::new("record_bar_glass");
+        let avail = ctx.available_rect();
+        let bar_rect = egui::Rect::from_min_max(
+            egui::pos2(avail.left(), avail.bottom() - BAR_H),
+            avail.right_bottom(),
+        );
+        egui::TopBottomPanel::bottom("record_bar")
+            .exact_height(BAR_H)
+            .frame(
+                egui::Frame::none()
+                    .inner_margin(egui::Margin::symmetric(space::S3, 0.0))
+                    .fill(egui::Color32::TRANSPARENT),
+            )
+            .show_separator_line(false)
+            .show(ctx, |ui| {
+                let slot = crate::ui::glass::begin(ui);
+                ui.allocate_ui_with_layout(
+                    egui::vec2(ui.available_width(), BAR_H),
+                    egui::Layout::left_to_right(egui::Align::Center),
+                    |ui| {
+                        // Cover and words: one click target, the way back to the sheet.
+                        let (rect, cover_resp) =
+                            ui.allocate_exact_size(egui::vec2(COVER, COVER), egui::Sense::click());
+                        match &cover {
+                            Some(h) => {
+                                egui::Image::new(h)
+                                    .fit_to_exact_size(egui::vec2(COVER, COVER))
+                                    .rounding(egui::Rounding::same(4.0))
+                                    .paint_at(ui, rect);
+                            }
+                            None => {
+                                ui.painter().rect_filled(
+                                    rect,
+                                    egui::Rounding::same(4.0),
+                                    ui.visuals().faint_bg_color,
+                                );
+                            }
+                        }
+                        ui.add_space(space::S3);
+                        let words = ui
+                            .allocate_ui_with_layout(
+                                egui::vec2(WORDS_W, COVER),
+                                egui::Layout::top_down(egui::Align::Min)
+                                    .with_main_align(egui::Align::Center),
+                                |ui| {
+                                    ui.set_width(WORDS_W);
+                                    ui.add(
+                                        egui::Label::new(
+                                            egui::RichText::new(&title).font(font::body()).strong(),
+                                        )
+                                        .truncate(),
+                                    );
+                                    let line = match &song {
+                                        Some(s) => format!("{artist} · {s}"),
+                                        None => artist.clone(),
+                                    };
+                                    ui.add(
+                                        egui::Label::new(
+                                            egui::RichText::new(line).font(font::caption()).weak(),
+                                        )
+                                        .truncate(),
+                                    );
+                                },
+                            )
+                            .response
+                            .interact(egui::Sense::click());
+                        let back = cover_resp.union(words).on_hover_note("Back to the record");
+                        if back.hovered() {
+                            ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+                        }
+                        if back.clicked() {
+                            reopen = true;
+                        }
+                        ui.add_space(space::S4);
+
+                        // The transport takes what is left short of the close.
+                        let w = ui.available_width() - crate::ui::window::CLOSE_W - space::S3;
+                        ui.allocate_ui_with_layout(
+                            egui::vec2(w, COVER),
+                            egui::Layout::top_down(egui::Align::Min)
+                                .with_main_align(egui::Align::Center),
+                            |ui| {
+                                ui.set_width(w);
+                                act = video_transport_ui(
+                                    ui,
+                                    &mut scrub,
+                                    true,
+                                    webview::transport(),
+                                    held,
+                                );
+                            },
+                        );
+                        ui.add_space(space::S3);
+                        if crate::ui::icon::close_button(ui, "Stop the record") {
+                            close = true;
+                        }
+                    },
+                );
+                crate::ui::glass::end_from(
+                    ctx,
+                    slot,
+                    glass_id,
+                    bar_rect.translate(egui::vec2(0.0, -BAR_H)),
+                    bar_rect,
+                    egui::Rounding::ZERO,
+                    crate::ui::window::edge(),
+                );
+            });
+
+        if let Some(s) = self.vinyl_sheet.as_mut() {
+            s.video_scrub = scrub;
+            if reopen {
+                s.hidden = false;
+            }
+        }
+        if let Some(a) = act {
+            self.apply_video_act(&a);
+        }
+        if close {
             self.stop_sheet_video();
             self.vinyl_sheet = None;
         }
