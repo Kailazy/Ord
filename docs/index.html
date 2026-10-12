@@ -73,6 +73,9 @@
   .cut p { margin: 0; color: var(--muted); font-size: 1rem; max-width: 520px; }
   .cut .text { padding: 0 4px; }
   .cut:not(.wide) .shot { aspect-ratio: 4 / 3; object-fit: cover; object-position: top left; }
+  .cut.feature { grid-column: 1 / -1; display: grid; grid-template-columns: 1fr 1fr; gap: 40px; align-items: center; padding: 12px 0; }
+  .cut.feature .text { padding: 0 8px; }
+  .cut.feature p { max-width: none; }
 
   footer { padding: 40px 0 70px; text-align: center; color: #6a6a6a; font-size: 0.85rem; }
   footer a { color: var(--muted); text-decoration: none; }
@@ -82,6 +85,7 @@
     .hero { padding-top: 64px; }
     .hero h1 { font-size: 2.4rem; }
     .grid { grid-template-columns: 1fr; gap: 40px; }
+    .cut.feature { grid-template-columns: 1fr; gap: 18px; }
     .cuts { padding-top: 80px; }
   }
 </style>
@@ -111,6 +115,14 @@
       <div class="text">
         <h2>Cues and loops, on the waveform</h2>
         <p>Eight hot cues, memory cues and a beat loop on every track, with the beatgrid, key lock and pitch right there.</p>
+      </div>
+    </div>
+
+    <div class="cut feature">
+      <img class="shot" src="screens/automatch.jpg" loading="lazy" alt="Settings, Discogs tab: Automatic matching with 'Match new imports automatically' ticked and the preferred pressing rule." />
+      <div class="text">
+        <h2>Metadata from Discogs, filled in for you</h2>
+        <p>Turn on automatic matching and every file you add is looked up on Discogs as it lands: the release gets linked, the cover art comes down, and empty tags like album, label, genre and year are filled from the record. Pick which pressing wins, and re-pick any track by hand with "Find Discogs release".</p>
       </div>
     </div>
 
