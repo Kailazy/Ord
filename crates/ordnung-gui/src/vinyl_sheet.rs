@@ -1749,8 +1749,9 @@ impl App {
                 // is within a few points of the truth.
                 let col_h_id = ui.id().with("sheet-header-col-h");
                 let col_h: Option<f32> = ui.data(|d| d.get_temp(col_h_id));
+                const C_MIN: f32 = 160.0;
+                const C_GAP: f32 = 14.0;
                 ui.horizontal(|ui| {
-                    const C_MIN: f32 = 160.0;
                     let c = col_h.map_or(C_MIN, |h| h.max(C_MIN)).round();
                     let (rect, _) = ui.allocate_exact_size(egui::vec2(c, c), egui::Sense::hover());
                     match &cover {
@@ -1768,11 +1769,18 @@ impl App {
                             );
                         }
                     }
-                    ui.add_space(14.0);
+                    ui.add_space(C_GAP);
                     let col = ui.vertical(|ui| {
-                        // Clear of the window's close button in the corner,
-                        // which sits on the artist's line.
-                        ui.set_max_width(ui.available_width() - crate::ui::window::CLOSE_W);
+                        // Wrap at a width that doesn't follow the cover.
+                        // The cover is as tall as this column and the
+                        // column is as tall as its wrapped lines, so a wrap
+                        // width that shrinks as the cover grows is a loop:
+                        // on some records it never settles (cover 292 →
+                        // column 298 → cover 298 → column 292 …) and the
+                        // header shimmers between two layouts. The width
+                        // beside the smallest cover, clear of the window's
+                        // close button in the corner on the artist's line.
+                        ui.set_max_width(SHEET_W - C_MIN - C_GAP - crate::ui::window::CLOSE_W);
                         let artist_font = crate::ui::tokens::font::strong(
                             crate::ui::tokens::font::headline().size,
                         );
