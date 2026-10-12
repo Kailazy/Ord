@@ -7,7 +7,6 @@
 <meta name="description" content="Ordnung for macOS. A music library and record shelf for DJs: files, cues, vinyl and Discogs in one window." />
 <meta property="og:title" content="Ordnung" />
 <meta property="og:type" content="website" />
-<meta property="og:image" content="https://kailazy.github.io/Ordnung/screens/hero.jpg" />
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1024 1024'%3E%3Crect width='1024' height='1024' rx='229' fill='%2342454b'/%3E%3Cpath d='M512 192A320 320 0 1 0 512 832A320 320 0 1 0 512 192ZM512 292A220 220 0 1 1 512 732A220 220 0 1 1 512 292Z' fill='%2393a6bf' fill-rule='evenodd'/%3E%3Crect x='402' y='490' width='220' height='44' rx='22' fill='%2393a6bf'/%3E%3C/svg%3E" />
 <style>
   :root {
@@ -23,6 +22,9 @@
   html { scroll-behavior: smooth; }
   body {
     margin: 0;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
     background: var(--bg);
     color: var(--text);
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, Helvetica, Arial, sans-serif;
@@ -34,7 +36,7 @@
   .wrap { max-width: 1120px; margin: 0 auto; padding: 0 24px; }
 
   /* Hero */
-  .hero { padding: 96px 0 40px; text-align: center; }
+  .hero { padding: 96px 0 40px; text-align: center; flex: 1; display: flex; align-items: center; }
   .hero h1 { margin: 0 0 14px; font-size: 3.4rem; font-weight: 650; letter-spacing: -0.035em; line-height: 1.05; }
   .hero p { margin: 0 auto 30px; max-width: 560px; font-size: 1.2rem; color: var(--muted); }
   .cta { display: inline-flex; gap: 18px; align-items: center; }
@@ -52,37 +54,10 @@
   .gh:hover { color: var(--text); }
   .fine { margin-top: 14px; font-size: 0.82rem; color: #6a6a6a; }
 
-  /* Shots */
-  .shot {
-    display: block;
-    width: 100%;
-    height: auto;
-    border-radius: 14px;
-    border: 1px solid var(--line);
-    background: var(--card);
-  }
-  .hero-shot { margin: 56px auto 0; max-width: 1120px; }
-  .hero-shot .shot { border-radius: 18px; box-shadow: 0 40px 120px rgba(0,0,0,.6); }
-
-  /* Feature cuts */
-  .cuts { padding: 120px 0 80px; }
-  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; }
-  .cut { display: flex; flex-direction: column; gap: 18px; }
-  .cut.wide { grid-column: 1 / -1; }
-  .cut h2 { margin: 0 0 4px; font-size: 1.35rem; font-weight: 620; letter-spacing: -0.02em; }
-  .cut p { margin: 0; color: var(--muted); font-size: 1rem; max-width: 520px; }
-  .cut .text { padding: 0 4px; }
-  .cut:not(.wide) .shot { aspect-ratio: 4 / 3; object-fit: cover; object-position: top left; }
-
-  footer { padding: 40px 0 70px; text-align: center; color: #6a6a6a; font-size: 0.85rem; }
-  footer a { color: var(--muted); text-decoration: none; }
-  footer a:hover { color: var(--text); }
 
   @media (max-width: 760px) {
     .hero { padding-top: 64px; }
     .hero h1 { font-size: 2.4rem; }
-    .grid { grid-template-columns: 1fr; gap: 40px; }
-    .cuts { padding-top: 80px; }
   }
 </style>
 </head>
@@ -97,103 +72,8 @@
       <a class="gh" href="https://github.com/Kailazy/Ordnung">GitHub</a>
     </div>
     <div class="fine">Free and open source. Apple silicon and Intel.</div>
-    <div class="hero-shot">
-      <img class="shot" src="screens/hero.jpg" width="2400" height="1500" alt="The Ordnung library: a table of tracks with inline waveforms, cover art, BPM and Camelot key chips, and tags." />
-    </div>
   </div>
 </section>
-
-<section class="cuts">
-  <div class="wrap grid">
-
-    <div class="cut wide">
-      <img class="shot" src="screens/cues.jpg" width="2400" height="338" loading="lazy" alt="The player strip: eight hot cue pads, a beat loop, memory cues and a zoomed waveform with cue marks." />
-      <div class="text">
-        <h2>Cues and loops, on the waveform</h2>
-        <p>Eight hot cues, memory cues and a beat loop on every track, with the beatgrid, key lock and pitch right there.</p>
-      </div>
-    </div>
-
-    <div class="cut">
-      <img class="shot" src="screens/keys.jpg" loading="lazy" alt="Table columns with BPM and colour-coded Camelot key chips." />
-      <div class="text">
-        <h2>BPM and key, analyzed for you</h2>
-        <p>Every file gets a beatgrid, a Camelot key and a waveform the moment it lands. Harmonic neighbours share a colour.</p>
-      </div>
-    </div>
-
-    <div class="cut">
-      <img class="shot" src="screens/shelf.jpg" loading="lazy" alt="The vinyl collection as a grid of record covers with current prices." />
-      <div class="text">
-        <h2>Every record you own</h2>
-        <p>Your Discogs collection and wantlist as a shelf, with what each record goes for today and which ones you already have as files.</p>
-      </div>
-    </div>
-
-    <div class="cut">
-      <img class="shot" src="screens/map.jpg" loading="lazy" alt="The record map: hundreds of record covers clustered into labelled genre clouds." />
-      <div class="text">
-        <h2>A map of your taste</h2>
-        <p>Collection, wantlist and everything you ever dug, laid out as one web and clustered by genre or by artist.</p>
-      </div>
-    </div>
-
-    <div class="cut">
-      <img class="shot" src="screens/dig.jpg" loading="lazy" alt="The dig window: three records joined by style and label threads." />
-      <div class="text">
-        <h2>Dig</h2>
-        <p>Start on a record and follow a thread, its style, its label, its artist, to the next one. Discogs, as a walk.</p>
-      </div>
-    </div>
-
-    <div class="cut">
-      <img class="shot" src="screens/sheet.jpg" loading="lazy" alt="A record sheet: cover, tracklist with play buttons, lowest price, and buttons for Discogs, label, collection, wantlist and dig." />
-      <div class="text">
-        <h2>One record, everything about it</h2>
-        <p>Tracklist, playback, the lowest price and your sellers' copies, with the label and Discogs one click away.</p>
-      </div>
-    </div>
-
-    <div class="cut">
-      <img class="shot" src="screens/search.jpg" loading="lazy" alt="Search results from Discogs in a dropdown under the search bar, with add-to-collection and wantlist buttons." />
-      <div class="text">
-        <h2>Search all of Discogs</h2>
-        <p>The same search bar covers your library and the whole Discogs catalog. Add a record to your collection or wantlist right there.</p>
-      </div>
-    </div>
-
-    <div class="cut">
-      <img class="shot" src="screens/tracklists.jpg" loading="lazy" alt="The tracklists window: a pasted mix tracklist with each line matched to a record." />
-      <div class="text">
-        <h2>Tracklists that find their records</h2>
-        <p>Paste a mix tracklist and every line gets matched to the record it came from, ready to like, buy or dig.</p>
-      </div>
-    </div>
-
-    <div class="cut">
-      <img class="shot" src="screens/market.jpg" loading="lazy" alt="The market: record covers from saved sellers' inventories with condition and price." />
-      <div class="text">
-        <h2>Your sellers, one crate</h2>
-        <p>Save the shops you trust and browse their inventories together, with the condition and the price under every record.</p>
-      </div>
-    </div>
-
-    <div class="cut wide">
-      <img class="shot" src="screens/liked.jpg" width="1600" height="786" loading="lazy" alt="The liked songs crate: songs with their records, marked as file or still to get." />
-      <div class="text">
-        <h2>Liked songs, wherever you heard them</h2>
-        <p>Heart a song on a record, in a tracklist or on the radio. The crate keeps track of what you have as a file and what is still to get.</p>
-      </div>
-    </div>
-
-  </div>
-</section>
-
-<footer>
-  <div class="wrap">
-    <a href="https://github.com/Kailazy/Ordnung">Source on GitHub</a> &nbsp;·&nbsp; <a href="https://github.com/Kailazy/Ordnung/releases">All releases</a>
-  </div>
-</footer>
 
 </body>
 </html>
