@@ -181,7 +181,7 @@ pub(crate) fn open_url(url: &str) {
 
 /// Names of the apps that currently have files open on `vol`, via `lsof`
 /// (field output, so command names aren't truncated). Deduplicated in first
-/// seen order; our own process reads as "Ordnung (this app)" so the eject
+/// seen order; our own process reads as "Ord (this app)" so the eject
 /// message can point at, say, a track still loaded in the player. Empty on
 /// any failure or when nothing holds the volume.
 pub(crate) fn volume_users(vol: &Path) -> Vec<String> {
@@ -197,8 +197,8 @@ pub(crate) fn volume_users(vol: &Path) -> Vec<String> {
         let Some(name) = line.strip_prefix('c') else {
             continue;
         };
-        let name = if name == "Ordnung" {
-            "Ordnung (this app)".to_string()
+        let name = if name == "Ord" {
+            "Ord (this app)".to_string()
         } else {
             name.to_string()
         };

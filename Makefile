@@ -11,7 +11,7 @@ help: ## Show this help
 app: ## Build, sign, install to /Applications, pin to Dock, relaunch
 	@bash tools/build-app.sh
 
-app-only: ## Build + sign the local Ordnung.app, don't touch /Applications
+app-only: ## Build + sign the local Ord.app, don't touch /Applications
 	@bash tools/build-app.sh --no-install
 
 run: ## Run the GUI from source (debug, no bundle)

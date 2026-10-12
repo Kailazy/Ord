@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# Build, sign, and install the macOS .app bundle for Ordnung.
+# Build, sign, and install the macOS .app bundle for Ord.
 #
 # Usage:
 #   tools/build-app.sh            # build → sign → install to /Applications → relaunch
-#   tools/build-app.sh --no-install   # build the local Ordnung.app only, don't touch /Applications
+#   tools/build-app.sh --no-install   # build the local Ord.app only, don't touch /Applications
 #   tools/build-app.sh --no-launch    # install but don't relaunch the app
 #   tools/build-app.sh --universal    # build a fat arm64+x86_64 binary (runs on any Mac)
-#   tools/build-app.sh --dmg          # also package Ordnung.dmg (drag-to-Applications)
+#   tools/build-app.sh --dmg          # also package Ord.dmg (drag-to-Applications)
 #   tools/build-app.sh --version=X.Y.Z  # stamp this version into Info.plist / DMG name
 #   tools/build-app.sh --dist         # distribution build: compiles out the beta USB export
 #   # The release CI uses: --no-install --no-launch --universal --dmg --dist --version=<tag>
@@ -54,9 +54,9 @@ fi
 
 here="$(cd "$(dirname "$0")/.." && pwd)"
 src_icon="$here/tools/icon.svg"
-bin="$here/target/release/Ordnung"
-out_app="$here/Ordnung.app"
-installed_app="/Applications/Ordnung.app"
+bin="$here/target/release/Ord"
+out_app="$here/Ord.app"
+installed_app="/Applications/Ord.app"
 work="$here/tools/.app-build"
 
 # Version stamped into the bundle. Default to the workspace Cargo.toml so local
@@ -81,16 +81,16 @@ if [[ "$universal" -eq 1 ]]; then
   # shellcheck disable=SC2086  # $features is deliberately word-split
   cargo build --release -p ordnung-gui $features --target aarch64-apple-darwin
   cargo build --release -p ordnung-gui $features --target x86_64-apple-darwin
-  bin="$here/target/release/Ordnung-universal"
+  bin="$here/target/release/Ord-universal"
   lipo -create -output "$bin" \
-    "$here/target/aarch64-apple-darwin/release/Ordnung" \
-    "$here/target/x86_64-apple-darwin/release/Ordnung"
+    "$here/target/aarch64-apple-darwin/release/Ord" \
+    "$here/target/x86_64-apple-darwin/release/Ord"
   echo "    arches: $(lipo -archs "$bin")"
 else
   echo "==> Building release binary"
   # shellcheck disable=SC2086  # $features is deliberately word-split
   cargo build --release -p ordnung-gui $features
-  bin="$here/target/release/Ordnung"
+  bin="$here/target/release/Ord"
 fi
 
 if [[ ! -f "$bin" ]]; then
@@ -116,27 +116,27 @@ for entry in "${sizes[@]}"; do
   sips -z "$px" "$px" "$work/icon-1024.png" --out "$work/icon.iconset/$name" >/dev/null
 done
 
-iconutil -c icns "$work/icon.iconset" -o "$work/Ordnung.icns"
+iconutil -c icns "$work/icon.iconset" -o "$work/Ord.icns"
 
 echo "==> Assembling .app bundle"
 rm -rf "$out_app"
 mkdir -p "$out_app/Contents/MacOS" "$out_app/Contents/Resources"
-cp "$bin" "$out_app/Contents/MacOS/Ordnung"
-chmod +x "$out_app/Contents/MacOS/Ordnung"
-cp "$work/Ordnung.icns" "$out_app/Contents/Resources/Ordnung.icns"
+cp "$bin" "$out_app/Contents/MacOS/Ord"
+chmod +x "$out_app/Contents/MacOS/Ord"
+cp "$work/Ord.icns" "$out_app/Contents/Resources/Ord.icns"
 
 cat >"$out_app/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <key>CFBundleName</key>                <string>Ordnung</string>
-    <key>CFBundleDisplayName</key>         <string>Ordnung</string>
+    <key>CFBundleName</key>                <string>Ord</string>
+    <key>CFBundleDisplayName</key>         <string>Ord</string>
     <key>CFBundleIdentifier</key>          <string>app.ordnung.gui</string>
     <key>CFBundleVersion</key>             <string>$version</string>
     <key>CFBundleShortVersionString</key>  <string>$version</string>
-    <key>CFBundleExecutable</key>          <string>Ordnung</string>
-    <key>CFBundleIconFile</key>            <string>Ordnung</string>
+    <key>CFBundleExecutable</key>          <string>Ord</string>
+    <key>CFBundleIconFile</key>            <string>Ord</string>
     <key>CFBundlePackageType</key>         <string>APPL</string>
     <key>LSMinimumSystemVersion</key>      <string>11.0</string>
     <key>NSHighResolutionCapable</key>     <true/>
@@ -145,15 +145,15 @@ cat >"$out_app/Contents/Info.plist" <<PLIST
     <!-- Shown in the macOS permission prompts. Required: without a usage string
          the app can be killed outright when it touches a protected location. -->
     <key>NSDesktopFolderUsageDescription</key>
-    <string>Ordnung needs access to read music files and playlists stored on your Desktop.</string>
+    <string>Ord needs access to read music files and playlists stored on your Desktop.</string>
     <key>NSDocumentsFolderUsageDescription</key>
-    <string>Ordnung needs access to read music files and playlists stored in your Documents folder.</string>
+    <string>Ord needs access to read music files and playlists stored in your Documents folder.</string>
     <key>NSDownloadsFolderUsageDescription</key>
-    <string>Ordnung needs access to read music files you have downloaded.</string>
+    <string>Ord needs access to read music files you have downloaded.</string>
     <key>NSRemovableVolumesUsageDescription</key>
-    <string>Ordnung needs access to removable drives to export your library to a rekordbox USB.</string>
+    <string>Ord needs access to removable drives to export your library to a rekordbox USB.</string>
     <key>NSNetworkVolumesUsageDescription</key>
-    <string>Ordnung needs access to network volumes that hold your music library.</string>
+    <string>Ord needs access to network volumes that hold your music library.</string>
 </dict>
 </plist>
 PLIST
@@ -200,13 +200,13 @@ echo "Built: $out_app"
 # then right-click → Open once (ad-hoc signed, so Gatekeeper prompts the first time).
 if [[ "$make_dmg" -eq 1 ]]; then
   echo "==> Building DMG"
-  dmg_out="$here/Ordnung.dmg"
+  dmg_out="$here/Ord.dmg"
   dmg_work="$here/tools/.dmg-build"
   rm -rf "$dmg_work" "$dmg_out"
   mkdir -p "$dmg_work"
-  cp -R "$out_app" "$dmg_work/Ordnung.app"
+  cp -R "$out_app" "$dmg_work/Ord.app"
   ln -s /Applications "$dmg_work/Applications"
-  hdiutil create -volname "Ordnung $version" \
+  hdiutil create -volname "Ord $version" \
     -srcfolder "$dmg_work" -fs HFS+ -format UDZO -ov "$dmg_out" >/dev/null
   rm -rf "$dmg_work"
   echo "Built: $dmg_out"
@@ -218,11 +218,11 @@ if [[ "$install" -eq 0 ]]; then
 fi
 
 # Quit a running instance so we can overwrite the bundle and relaunch fresh code.
-if pgrep -x Ordnung >/dev/null 2>&1; then
-  echo "==> Quitting running Ordnung"
-  osascript -e 'tell application "Ordnung" to quit' >/dev/null 2>&1 || killall Ordnung 2>/dev/null || true
+if pgrep -x Ord >/dev/null 2>&1; then
+  echo "==> Quitting running Ord"
+  osascript -e 'tell application "Ord" to quit' >/dev/null 2>&1 || killall Ord 2>/dev/null || true
   # give it a moment to release the bundle
-  for _ in 1 2 3 4 5; do pgrep -x Ordnung >/dev/null 2>&1 || break; sleep 0.3; done
+  for _ in 1 2 3 4 5; do pgrep -x Ord >/dev/null 2>&1 || break; sleep 0.3; done
 fi
 
 echo "==> Installing to $installed_app"
@@ -235,7 +235,7 @@ lsregister="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchS
 touch "$installed_app"
 
 # Pin to the Dock once (idempotent).
-if ! defaults read com.apple.dock persistent-apps 2>/dev/null | grep -q "Ordnung.app"; then
+if ! defaults read com.apple.dock persistent-apps 2>/dev/null | grep -q "Ord.app"; then
   echo "==> Pinning to Dock"
   defaults write com.apple.dock persistent-apps -array-add "<dict><key>tile-data</key><dict><key>file-data</key><dict><key>_CFURLString</key><string>$installed_app</string><key>_CFURLStringType</key><integer>0</integer></dict></dict></dict>"
   killall Dock 2>/dev/null || true

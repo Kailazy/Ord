@@ -57,7 +57,7 @@ CLAUDE.md). Then:
 4. Tag and push the tag:
    `git tag vX.Y.Z && git push origin vX.Y.Z`
 5. CI takes over: the `Release` workflow builds the universal DMG
-   (`Ordnung-X.Y.Z-macos-universal.dmg`) and publishes the GitHub Release.
+   (`Ord-X.Y.Z-macos-universal.dmg`) and publishes the GitHub Release.
    Confirm it started with `gh run list --workflow=release.yml --limit 1`
    and report the outcome; if it fails, read the log with
    `gh run view <id> --log-failed` and fix before re-tagging. The result

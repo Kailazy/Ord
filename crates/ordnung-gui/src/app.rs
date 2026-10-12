@@ -2379,7 +2379,7 @@ impl App {
                 .show(ctx, |ui| {
                     ui.horizontal(|ui| {
                         ui.label(
-                            egui::RichText::new(format!("Ordnung {} is available", info.version))
+                            egui::RichText::new(format!("Ord {} is available", info.version))
                                 .color(egui::Color32::WHITE)
                                 .strong(),
                         );

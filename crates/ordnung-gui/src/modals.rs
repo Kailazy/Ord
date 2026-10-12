@@ -288,7 +288,7 @@ impl App {
                     egui::Color32::from_rgb(70, 155, 90),
                     "✓",
                     format!("Connected as {username}"),
-                    "Ordnung can fetch artwork and read your collection.".into(),
+                    "Ord can fetch artwork and read your collection.".into(),
                 ),
                 DiscogsAuth::Checking => (
                     accent,
@@ -637,7 +637,7 @@ impl App {
                         // procedure bumps.
                         ui.add_space(10.0);
                         ui.label(
-                            egui::RichText::new(concat!("Ordnung v", env!("CARGO_PKG_VERSION")))
+                            egui::RichText::new(concat!("Ord v", env!("CARGO_PKG_VERSION")))
                                 .font(crate::ui::tokens::font::caption())
                                 .color(egui::Color32::from_gray(120)),
                         );
@@ -893,7 +893,7 @@ impl App {
                                         );
                                         ui.label(
                     egui::RichText::new(
-                        "The tour shown on first launch: what Ordnung does, what Discogs                          adds, and how tag writeback works.",
+                        "The tour shown on first launch: what Ord does, what Discogs                          adds, and how tag writeback works.",
                     )
                     .small()
                     .weak(),
@@ -1622,7 +1622,7 @@ impl App {
                                             let (text, retry) = match &self.ffmpeg_state {
                                                 FfmpegState::Unknown => ("checking…".to_string(), false),
                                                 FfmpegState::Ready(v) => {
-                                                    (format!("ffmpeg {v}, installed by Ordnung"), false)
+                                                    (format!("ffmpeg {v}, installed by Ord"), false)
                                                 }
                                                 FfmpegState::Downloading { read, total } if *total > 0 => (
                                                     format!("downloading… {} of {} MB", read >> 20, total >> 20),

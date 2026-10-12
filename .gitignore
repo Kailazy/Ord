@@ -16,8 +16,8 @@ Cargo.lock.orig
 .DS_Store
 
 # Built app bundle + DMG — regenerate with tools/build-app.sh
-/Ordnung.app/
-/Ordnung.dmg
+/Ord.app/
+/Ord.dmg
 /tools/.app-build/
 /tools/.dmg-build/
 

@@ -164,7 +164,7 @@ impl App {
             Ok(img) => img,
             Err(_) => {
                 self.status = format!(
-                    "{} isn't an image Ordnung can read (PNG/JPEG/WebP).",
+                    "{} isn't an image Ord can read (PNG/JPEG/WebP).",
                     image_path
                         .file_name()
                         .map(|s| s.to_string_lossy().into_owned())

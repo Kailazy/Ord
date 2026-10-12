@@ -207,10 +207,10 @@ mod imp {
 
         // ── Ordnung ────────────────────────────────────────────────────────
         // The first submenu is always the app menu, whatever its title.
-        let app_menu = submenu(mtm, &bar, "Ordnung");
+        let app_menu = submenu(mtm, &bar, "Ord");
         app_menu.addItem(&item(
             mtm,
-            "About Ordnung",
+            "About Ord",
             "",
             NONE,
             None,
@@ -230,7 +230,7 @@ mod imp {
         separator(mtm, &app_menu);
         app_menu.addItem(&item(
             mtm,
-            "Hide Ordnung",
+            "Hide Ord",
             "h",
             CMD,
             None,
@@ -239,7 +239,7 @@ mod imp {
         ));
         app_menu.addItem(&item(
             mtm,
-            "Quit Ordnung",
+            "Quit Ord",
             "q",
             CMD,
             None,

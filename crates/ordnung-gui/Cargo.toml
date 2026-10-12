@@ -7,10 +7,10 @@ authors.workspace = true
 description = "Ordnung desktop GUI — browse catalog, convert tracks via double-click."
 
 # Binary artifact is "Ordnung" (capital, no suffix) so macOS labels the Dock
-# tile / app-switcher "Ordnung" even when the raw binary is launched instead of
+# tile / app-switcher "Ord" even when the raw binary is launched instead of
 # the .app bundle. The package itself stays `ordnung-gui` (see [package] above).
 [[bin]]
-name = "Ordnung"
+name = "Ord"
 path = "src/main.rs"
 
 [features]

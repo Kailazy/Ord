@@ -59,24 +59,24 @@ jobs:
 
       - name: Name the artifact
         # Two copies of the same DMG: the versioned one, and a fixed name so
-        # `releases/latest/download/Ordnung-macos-universal.dmg` is a stable
+        # `releases/latest/download/Ord-macos-universal.dmg` is a stable
         # link the README and website can point at.
         run: |
-          mv Ordnung.dmg "Ordnung-${{ steps.ver.outputs.version }}-macos-universal.dmg"
-          cp "Ordnung-${{ steps.ver.outputs.version }}-macos-universal.dmg" Ordnung-macos-universal.dmg
+          mv Ord.dmg "Ord-${{ steps.ver.outputs.version }}-macos-universal.dmg"
+          cp "Ord-${{ steps.ver.outputs.version }}-macos-universal.dmg" Ord-macos-universal.dmg
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Ordnung-macos-universal
-          path: Ordnung-*.dmg
+          name: Ord-macos-universal
+          path: Ord-*.dmg
 
       - name: Publish GitHub Release
         if: github.ref_type == 'tag'
         uses: softprops/action-gh-release@v2
         with:
-          files: Ordnung-*.dmg
-          name: Ordnung ${{ github.ref_name }}
+          files: Ord-*.dmg
+          name: Ord ${{ github.ref_name }}
           prerelease: true
           body: |
             **Universal macOS build** (Apple Silicon + Intel), ad-hoc signed.
@@ -84,11 +84,11 @@ jobs:
             plugged-in sticks can still be browsed, played and edited in place.
 
             ### Install
-            1. Open the `.dmg` and drag **Ordnung** into **Applications**.
-            2. Double-click Ordnung. macOS says it can't verify the app: click **Done**.
+            1. Open the `.dmg` and drag **Ord** into **Applications**.
+            2. Double-click Ord. macOS says it can't verify the app: click **Done**.
             3. Open **System Settings → Privacy & Security**, scroll down and click
-               **Open Anyway** next to the Ordnung message. Confirm once more.
+               **Open Anyway** next to the Ord message. Confirm once more.
 
             That's a one-time step: the build isn't notarized by Apple, so
             Gatekeeper asks the first time and trusts the app from then on.
-            Terminal shortcut: `xattr -dr com.apple.quarantine /Applications/Ordnung.app`.
+            Terminal shortcut: `xattr -dr com.apple.quarantine /Applications/Ord.app`.

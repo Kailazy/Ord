@@ -1,4 +1,4 @@
-# Ordnung
+# Ord
 
 A DJ music library for macOS that does its own analysis and writes USB sticks
 your CDJs can read. No rekordbox required.
@@ -10,31 +10,31 @@ a stick.
 
 ## Download
 
-**[Download Ordnung for macOS](../../releases/latest/download/Ordnung-macos-universal.dmg)**
+**[Download Ord for macOS](../../releases/latest/download/Ord-macos-universal.dmg)**
 — one `.dmg` for both Apple Silicon and Intel Macs. Requires macOS 11 or
 newer. All versions are on the [Releases](../../releases) page.
 
-1. Open the `.dmg` and drag **Ordnung** into **Applications**.
-2. Double-click Ordnung. macOS will say it can't verify the app — click **Done**.
+1. Open the `.dmg` and drag **Ord** into **Applications**.
+2. Double-click Ord. macOS will say it can't verify the app — click **Done**.
 3. Open **System Settings → Privacy & Security**, scroll down, and click
-   **Open Anyway** next to the Ordnung message. Confirm once more.
+   **Open Anyway** next to the Ord message. Confirm once more.
 
-That's a one-time step. From then on Ordnung opens like any other app, and it
+That's a one-time step. From then on Ord opens like any other app, and it
 tells you in-app when a newer version is out.
 
 <details>
 <summary>Why the extra step, and the Terminal shortcut</summary>
 
-Ordnung isn't yet notarized with Apple, so Gatekeeper treats it as an app from
+Ord isn't yet notarized with Apple, so Gatekeeper treats it as an app from
 an unidentified developer the first time it runs. If you'd rather skip the
 Settings trip, run this once after copying the app to Applications:
 
 ```bash
-xattr -dr com.apple.quarantine /Applications/Ordnung.app
+xattr -dr com.apple.quarantine /Applications/Ord.app
 ```
 </details>
 
-Nothing else to install. Ordnung is a single self-contained app: no Homebrew,
+Nothing else to install. Ord is a single self-contained app: no Homebrew,
 no runtimes, no rekordbox.
 
 ## What it does
@@ -43,7 +43,7 @@ no runtimes, no rekordbox.
   add files. Search, sort and filter by anything, and see every track's
   waveform in the player.
 - **Analysis.** BPM, beatgrid, Camelot key, waveform and loudness are computed
-  by Ordnung itself, offline, and cached so they only run once.
+  by Ord itself, offline, and cached so they only run once.
 - **Cues and loops.** Eight hot cues, memory cues and a beat loop on the player
   bar. Everything you set rides along on the next USB export.
 - **Liked songs and crates.** Heart a song anywhere it appears, and organise
@@ -64,10 +64,10 @@ no runtimes, no rekordbox.
 ## Converting audio
 
 The **Convert** action (turning a file into another format) runs on
-[ffmpeg](https://ffmpeg.org). You don't install it: the first time Ordnung
+[ffmpeg](https://ffmpeg.org). You don't install it: the first time Ord
 opens it quietly downloads its own copy, about 30 MB, into its data folder
 and keeps it there across app updates. It only downloads again when a new
-Ordnung version ships with a newer ffmpeg. If the download fails, Settings →
+Ord version ships with a newer ffmpeg. If the download fails, Settings →
 Conversion shows why and has a Download button.
 
 ## Discogs
@@ -78,7 +78,7 @@ and paste it into **Settings → Discogs** inside the app.
 
 ## Where your data lives
 
-Everything Ordnung knows is kept in `~/.ordnung/`: the catalog database, the
+Everything Ord knows is kept in `~/.ordnung/`: the catalog database, the
 analysis cache and your settings. Your music files are never modified unless
 you explicitly ask for a tag write or an in-place conversion, and anything
 deleted goes to the Trash.

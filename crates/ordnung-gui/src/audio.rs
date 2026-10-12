@@ -1524,7 +1524,7 @@ fn init_media_controls(
     let config = PlatformConfig {
         // Required on Linux (MPRIS); ignored on macOS.
         dbus_name: "org.ordnung.Ordnung",
-        display_name: "Ordnung",
+        display_name: "Ord",
         // Required on Windows (SMTC); we don't pass a window handle, so media
         // controls are macOS/Linux-only.
         hwnd: None,

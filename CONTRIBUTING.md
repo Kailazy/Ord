@@ -22,7 +22,7 @@ the [README](README.md) has the download.
 
 ```bash
 make run                                # run the GUI from source (debug)
-cargo build --release -p ordnung-gui    # release binary -> target/release/Ordnung
+cargo build --release -p ordnung-gui    # release binary -> target/release/Ord
 cargo test --workspace                  # run the tests
 ```
 
@@ -32,7 +32,7 @@ cargo test --workspace                  # run the tests
 
 ```bash
 make app        # build, sign, install to /Applications, pin to Dock, relaunch
-make app-only   # build + sign the local Ordnung.app, leave /Applications alone
+make app-only   # build + sign the local Ord.app, leave /Applications alone
 ```
 
 The USB export is a beta: it's a default cargo feature (`usb-export`), so
@@ -41,13 +41,13 @@ release build passes `--dist`, which compiles it out. To see exactly what
 users get, run `cargo run -p ordnung-gui --no-default-features`.
 
 `make app` rasterizes [tools/icon.svg](tools/icon.svg), assembles
-`Ordnung.app`, and codesigns it. Run `bash tools/make-signing-cert.sh` once to
+`Ord.app`, and codesigns it. Run `bash tools/make-signing-cert.sh` once to
 create a local signing certificate; without it the bundle is ad-hoc signed and
 macOS forgets its file-access and media-key permissions on every rebuild.
 
 [tools/build-app.sh](tools/build-app.sh) also takes `--universal` (fat
 arm64 + x86_64 binary), `--dmg` (package a drag-to-Applications
-`Ordnung.dmg`) and `--version=X.Y.Z`. The release CI runs it as
+`Ord.dmg`) and `--version=X.Y.Z`. The release CI runs it as
 `--no-install --no-launch --universal --dmg --dist --version=<tag>`.
 
 ### Configuration for dev launches

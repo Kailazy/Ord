@@ -126,7 +126,7 @@ fn main() -> eframe::Result<()> {
     let mut viewport = egui::ViewportBuilder::default()
         .with_inner_size([1100.0, 680.0])
         .with_min_inner_size([MIN_WINDOW_W, MIN_WINDOW_H])
-        .with_title("Ordnung");
+        .with_title("Ord");
     if let Some(icon) = load_app_icon() {
         viewport = viewport.with_icon(icon);
     }

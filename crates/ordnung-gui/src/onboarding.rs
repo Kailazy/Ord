@@ -315,7 +315,7 @@ impl App {
         let mut auto_fetch = tour.auto_fetch;
         let mut auto_match = tour.auto_match;
 
-        crate::ui::window::Window::new("Welcome to Ordnung")
+        crate::ui::window::Window::new("Welcome to Ord")
             .open(&mut open)
             .show(ctx, |ui| {
                 // Every page is laid out inside one fixed box, so the window
@@ -925,7 +925,7 @@ impl App {
         self.config.onboarding_completed_version = TOUR_VERSION;
         if self.save_config() {
             self.status = if auto_write {
-                "Ordnung will keep your files in sync as you edit.".to_string()
+                "Ord will keep your files in sync as you edit.".to_string()
             } else {
                 "Edits stay in the catalog until you write them to files.".to_string()
             };
