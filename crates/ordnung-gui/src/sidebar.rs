@@ -1097,15 +1097,22 @@ pub(crate) fn section_caption(ui: &mut egui::Ui, caption: &str) {
     tight_caption(ui, caption, |_| {});
 }
 
-/// The caption row, hugging the rows it heads: the row already carries air
-/// around its small caps, so the item gap under it is a short S2, not the
-/// full item gap. The gap is S2 rather than a hairline because the row can
-/// hold a 24 pt button ("+", chevron), which would sit flush on the first
-/// row at a hairline.
+/// The caption row with the S3 gap under it allocated as real space rather
+/// than left to item spacing. The Playlists caption ends the `nav_library`
+/// panel and the tree follows in the next panel; a panel's height comes from
+/// its content's min_rect, which never includes trailing item spacing, so
+/// any gap set that way vanished at the panel edge and the 24 pt "+" sat
+/// flush on the first row (or on the next folded caption's "+"). Allocating
+/// the gap keeps it on both sides of a panel boundary; S3 matches the gap
+/// between the rows the caption heads.
 fn tight_caption(ui: &mut egui::Ui, caption: &str, action: impl FnOnce(&mut egui::Ui)) {
     let gap = ui.spacing().item_spacing.y;
-    ui.spacing_mut().item_spacing.y = space::S2;
+    ui.spacing_mut().item_spacing.y = 0.0;
     crate::ui::sidebar::caption_row(ui, caption, action);
+    ui.allocate_exact_size(
+        egui::vec2(ui.available_width(), space::S3),
+        egui::Sense::hover(),
+    );
     ui.spacing_mut().item_spacing.y = gap;
 }
 
