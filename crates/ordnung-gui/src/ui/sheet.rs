@@ -26,7 +26,8 @@ pub struct SheetSize {
 impl SheetSize {
     /// The tour's geometry. Width holds a paragraph at a comfortable measure at
     /// the sheet's type sizes; height is fitted to the tallest page — the
-    /// writeback fork, whose two cards plus a two-line heading run ~315pt.
+    /// writeback fork, whose two cards, a two-line heading and the three-line
+    /// "what write to file does on import" paragraph and the closing Settings note run ~410pt.
     ///
     /// The icon tiles are what keep this honest: at 38pt they set a row's height
     /// rather than the text doing it, so the three-row pages come out ~255pt and
@@ -35,7 +36,7 @@ impl SheetSize {
     /// the fork — the wrong trade, since the fork is the page that matters.
     pub const TOUR: SheetSize = SheetSize {
         width: 520.0,
-        body_height: 320.0,
+        body_height: 420.0,
     };
 }
 

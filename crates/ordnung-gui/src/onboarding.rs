@@ -716,18 +716,42 @@ impl App {
                                     ui,
                                     crate::ui::icon::tag,
                                     "Or drop into rekordbox",
-                                    "BPM, key, artwork and release data end up in the \
-                                     files' own tags, so adding them to rekordbox as you \
-                                     always have works too.",
+                                    "Artwork and release data end up in the files' own \
+                                     tags, so adding them to rekordbox as you always have \
+                                     works too.",
                                 );
                             }
                             TourStep::Writeback => {
                                 step_heading(
                                     ui,
                                     "Updating your files",
-                                    "Edits and Discogs data land in the catalog. Writing them \
-                                     into the files is your call.",
+                                    "Everything Ordnung learns about a song goes in its \
+                                     catalog first. Writing it into the file is your call.",
                                 );
+                                // What "write to file" actually does on import,
+                                // in the terms of the choice the user just made
+                                // on the Discogs step: this is the paragraph
+                                // the fork below is a decision about.
+                                ui.label(
+                                    egui::RichText::new(if auto_fetch {
+                                        "When a song is imported, Ordnung reads its tags and \
+                                         Discogs fills in what they're missing: genre, label, \
+                                         year and cover art. Write to file copies those tags \
+                                         and the cover into the song file itself, so they \
+                                         travel with it to rekordbox or anywhere else. The \
+                                         audio is never touched."
+                                    } else {
+                                        "When a song is imported, Ordnung reads its tags; \
+                                         edits and any Discogs release you match land in the \
+                                         catalog. Write to file copies those tags and the \
+                                         cover into the song file itself, so they travel with \
+                                         it to rekordbox or anywhere else. The audio is never \
+                                         touched."
+                                    })
+                                    .font(crate::ui::tokens::font::body())
+                                    .color(crate::ui::tokens::color::LABEL_2),
+                                );
+                                ui.add_space(crate::ui::tokens::space::S3);
 
                                 // The fork itself: two framed, clickable cards.
                                 // Radio rows would read as a settings detail;
@@ -738,8 +762,9 @@ impl App {
                                     auto_write,
                                     crate::ui::icon::sync,
                                     "Automatic",
-                                    "Keeps files in sync in the background. Only tracks you \
-                                     changed, only their tags. Recommended.",
+                                    "Each song is written as soon as its Discogs data lands, \
+                                     and later edits follow by themselves. Only the tags, only \
+                                     songs that changed. Recommended.",
                                 ) {
                                     auto_write = true;
                                 }
@@ -750,8 +775,8 @@ impl App {
                                     !auto_write,
                                     crate::ui::icon::hold,
                                     "Manual",
-                                    "Nothing is written until you press Write. Files stay \
-                                     byte-identical.",
+                                    "Nothing is written until you press Write in the toolbar. \
+                                     Files stay byte-identical.",
                                 ) {
                                     auto_write = false;
                                 }
