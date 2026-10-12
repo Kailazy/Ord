@@ -1341,9 +1341,6 @@ impl App {
     /// opens the record, right-click buys, wantlists or digs.
     fn seller_row(&mut self, ui: &mut egui::Ui, idx: usize, row_h: f32) -> Option<SellerAct> {
         const THUMB: f32 = 44.0;
-        /// Right-edge budget for the price + grade column.
-        const TERMS_W: f32 = 150.0;
-
         // Snapshot the row's strings before `dig_cover` needs `self` mutably
         // (same dance as the card).
         let (listing_id, release_id, artist, title, sub, price_line, thumb, owned, wanted, viewed) = {
@@ -1439,14 +1436,17 @@ impl App {
         }
         // Sale terms on the right edge, then the membership chip to their
         // left — a record already on a shelf changes what the price means.
-        ui.painter().text(
+        // The marker column starts where the painted text actually ends, not
+        // at a fixed budget: "$375.00 · VG+/Not Graded" is wider than
+        // "$23.00 · M/M" and used to run under the eye.
+        let terms = ui.painter().text(
             egui::pos2(rect.right() - 10.0, rect.center().y),
             egui::Align2::RIGHT_CENTER,
             &price_line,
             crate::ui::tokens::font::callout(),
             egui::Color32::from_rgb(120, 200, 140),
         );
-        let mut right_edge = rect.right() - TERMS_W;
+        let mut right_edge = terms.left() - 10.0;
         for (show, list) in [
             (!owned && wanted, VinylList::Wantlist),
             (owned, VinylList::Collection),
