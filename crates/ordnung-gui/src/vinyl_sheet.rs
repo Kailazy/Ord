@@ -1332,7 +1332,6 @@ impl App {
         // below need it mutably).
         let (
             key,
-            cover_url,
             title,
             artist,
             sub,
@@ -1358,7 +1357,6 @@ impl App {
                     .is_some_and(|n| n.release_id == s.release_id);
             (
                 s.key,
-                s.cover_url.clone(),
                 s.title.clone(),
                 s.artist.clone(),
                 s.sub.clone(),
@@ -1389,21 +1387,6 @@ impl App {
                     || !s.extra_videos.is_empty(),
             )
         };
-        // Cover from the local cache when it has one, falling back to the URL.
-        // The fallback covers a keyed record too, not just a dug one: a key is
-        // live only while the record is in a list, and the sheet outlives that.
-        // Removing the record evicts its texture (and deletes the row its PNG
-        // sits on), which used to blank an open sheet. `dig_cover` refetches
-        // on a miss, so the worst case is the cover returning a moment later
-        // rather than vanishing.
-        let cached = key.and_then(|k| match self.vinyl_covers.get(&k) {
-            Some(ThumbState::Ready(Some(t))) => Some(t.clone()),
-            _ => None,
-        });
-        let local_cover = self
-            .vinyl_sheet
-            .as_ref()
-            .and_then(|s| s.local_cover.clone());
         // Every genre tag on the release: Discogs' coarse genres plus its finer
         // styles, deduplicated — "Electronic · House · Deep House". Arrives with
         // the fetched detail, so the line simply appears once that lands.
@@ -1414,20 +1397,7 @@ impl App {
             .map(|d| d.genre_tags().join(" · "))
             .filter(|l| !l.is_empty());
         let label_line = self.vinyl_sheet.as_ref().and_then(|s| s.label.clone());
-        let cover = match cached {
-            Some(t) => Some(t),
-            None => cover_url
-                .as_deref()
-                .and_then(|u| self.dig_cover(u))
-                .cloned()
-                // A sheet opened from a library track falls back to that
-                // track's own cover — the same texture the inspector shows —
-                // so a match with no (loadable) release URL still has art.
-                .or_else(|| {
-                    let (id, path) = local_cover?;
-                    self.cover_full_texture(ctx, id, &path)
-                }),
-        };
+        let cover = self.sheet_cover(ctx);
         // Whether the marked video row's bars should move: the transport is
         // running, not merely open on a paused video.
         let video_running = video_open && webview::transport().playing;
@@ -2609,13 +2579,37 @@ impl App {
         }
     }
 
+    /// The open record's art, from wherever it is to be had: the shelf's
+    /// cover cache while the record is on a list; else its cover URL through
+    /// the dig cache — a key is live only while the record is in a list and
+    /// the sheet outlives that, and `dig_cover` refetches on a miss, so the
+    /// worst case is the cover returning a moment later; and last, for a
+    /// sheet opened from a library track, that track's own cover, the
+    /// texture the inspector shows, so a match with no loadable release URL
+    /// still has art.
+    fn sheet_cover(&mut self, ctx: &egui::Context) -> Option<Tex> {
+        let s = self.vinyl_sheet.as_ref()?;
+        let (key, url, local) = (s.key, s.cover_url.clone(), s.local_cover.clone());
+        if let Some(ThumbState::Ready(Some(t))) = key.and_then(|k| self.vinyl_covers.get(&k)) {
+            return Some(t.clone());
+        }
+        if let Some(t) = url.as_deref().and_then(|u| self.dig_cover(u)) {
+            return Some(t.clone());
+        }
+        let (id, path) = local?;
+        self.cover_full_texture(ctx, id, &path)
+    }
+
     /// The record bar: a strip at the window's bottom standing in for a sheet
     /// hidden by a view switch while its video rolls (see `VinylSheet::hidden`).
-    /// Cover, record and song, the same transport the sheet draws, and a
-    /// close. A click on the record brings the sheet back. Drawn before the
-    /// central panel like the player bar, since it is a bottom panel too.
+    /// Laid out as the player bar's control row is — art, words, the play
+    /// disc, then the scrubber out to the clock and the close — so the two
+    /// bars read as one kind of thing. Art, words and the chevron bring the
+    /// sheet back. Drawn before the central panel like the player bar, since
+    /// it is a bottom panel too.
     pub(crate) fn draw_record_bar(&mut self, ctx: &egui::Context) {
-        use crate::ui::tokens::{font, space};
+        use crate::player::{draw_scrolling_line, flat_track, play_disc, scrub_knob};
+        use crate::ui::tokens::font;
         let Some(sheet) = self.vinyl_sheet.as_ref().filter(|s| s.hidden) else {
             return;
         };
@@ -2626,30 +2620,29 @@ impl App {
             self.vinyl_sheet = None;
             return;
         }
-        let key = sheet.key;
-        let cover_url = sheet.cover_url.clone();
         let title = sheet.title.clone();
-        let artist = sheet.artist.clone();
         let playing_video = sheet.playing_video;
-        // The song on air: the tracklist row the playing video belongs to.
-        let song = sheet
+        // Under the record: artist, and the song on air when a tracklist
+        // row owns the playing video.
+        let line = match sheet
             .rows
             .iter()
             .find(|r| matches!(r.source, SheetSource::Video(v) if Some(v) == playing_video)
                 || r.also_video == playing_video)
-            .map(|r| r.title.clone());
+        {
+            Some(r) => format!("{} · {}", sheet.artist, r.title),
+            None => sheet.artist.clone(),
+        };
         let mut scrub = sheet.video_scrub;
-        let cover = key
-            .and_then(|k| match self.vinyl_covers.get(&k) {
-                Some(ThumbState::Ready(Some(t))) => Some(t.clone()),
-                _ => None,
-            })
-            .or_else(|| cover_url.as_deref().and_then(|u| self.dig_cover(u)).cloned());
+        let cover = self.sheet_cover(ctx);
         let held = self.video_held_start();
+        let t = webview::transport();
 
-        const BAR_H: f32 = 64.0;
-        const COVER: f32 = 44.0;
-        const WORDS_W: f32 = 220.0;
+        // The player bar's row, measure for measure.
+        const ART: f32 = 56.0;
+        const LABEL_W: f32 = 220.0;
+        const TOP_GAP: f32 = 6.0;
+        const BAR_H: f32 = 2.0 + TOP_GAP + ART + TOP_GAP + 2.0;
         let mut act = None;
         let mut reopen = false;
         let mut close = false;
@@ -2663,94 +2656,139 @@ impl App {
             .exact_height(BAR_H)
             .frame(
                 egui::Frame::none()
-                    .inner_margin(egui::Margin::symmetric(space::S3, 0.0))
+                    .inner_margin(egui::Margin::symmetric(8.0, 2.0))
                     .fill(egui::Color32::TRANSPARENT),
             )
             .show_separator_line(false)
             .show(ctx, |ui| {
                 let slot = crate::ui::glass::begin(ui);
-                ui.allocate_ui_with_layout(
-                    egui::vec2(ui.available_width(), BAR_H),
-                    egui::Layout::left_to_right(egui::Align::Center),
-                    |ui| {
-                        // Cover and words: one click target, the way back to the sheet.
-                        let (rect, cover_resp) =
-                            ui.allocate_exact_size(egui::vec2(COVER, COVER), egui::Sense::click());
-                        match &cover {
-                            Some(h) => {
-                                egui::Image::new(h)
-                                    .fit_to_exact_size(egui::vec2(COVER, COVER))
-                                    .rounding(egui::Rounding::same(4.0))
-                                    .paint_at(ui, rect);
-                            }
-                            None => {
-                                ui.painter().rect_filled(
-                                    rect,
-                                    egui::Rounding::same(4.0),
-                                    ui.visuals().faint_bg_color,
-                                );
-                            }
+                ui.add_space(TOP_GAP);
+                ui.horizontal(|ui| {
+                    let (art_rect, art) =
+                        ui.allocate_exact_size(egui::vec2(ART, ART), egui::Sense::click());
+                    match &cover {
+                        Some(h) => {
+                            egui::Image::new(h)
+                                .fit_to_exact_size(egui::vec2(ART, ART))
+                                .rounding(egui::Rounding::same(6.0))
+                                .paint_at(ui, art_rect);
                         }
-                        ui.add_space(space::S3);
-                        let words = ui
-                            .allocate_ui_with_layout(
-                                egui::vec2(WORDS_W, COVER),
-                                egui::Layout::top_down(egui::Align::Min)
-                                    .with_main_align(egui::Align::Center),
-                                |ui| {
-                                    ui.set_width(WORDS_W);
-                                    ui.add(
-                                        egui::Label::new(
-                                            egui::RichText::new(&title).font(font::body()).strong(),
-                                        )
-                                        .truncate(),
-                                    );
-                                    let line = match &song {
-                                        Some(s) => format!("{artist} · {s}"),
-                                        None => artist.clone(),
-                                    };
-                                    ui.add(
-                                        egui::Label::new(
-                                            egui::RichText::new(line).font(font::caption()).weak(),
-                                        )
-                                        .truncate(),
-                                    );
-                                },
-                            )
-                            .response
-                            .interact(egui::Sense::click());
-                        let back = cover_resp.union(words).on_hover_note("Back to the record");
-                        if back.hovered() {
-                            ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+                        None => {
+                            ui.painter().rect_filled(
+                                art_rect,
+                                egui::Rounding::same(6.0),
+                                egui::Color32::from_gray(38),
+                            );
+                            ui.painter().text(
+                                art_rect.center(),
+                                egui::Align2::CENTER_CENTER,
+                                "♪",
+                                egui::FontId::proportional(22.0),
+                                egui::Color32::from_gray(110),
+                            );
                         }
-                        if back.clicked() {
-                            reopen = true;
-                        }
-                        ui.add_space(space::S4);
+                    }
+                    ui.add_space(12.0);
 
-                        // The transport takes what is left short of the close.
-                        let w = ui.available_width() - crate::ui::window::CLOSE_W - space::S3;
-                        ui.allocate_ui_with_layout(
-                            egui::vec2(w, COVER),
-                            egui::Layout::top_down(egui::Align::Min)
-                                .with_main_align(egui::Align::Center),
-                            |ui| {
-                                ui.set_width(w);
-                                act = video_transport_ui(
-                                    ui,
-                                    &mut scrub,
-                                    true,
-                                    webview::transport(),
-                                    held,
-                                );
-                            },
+                    let (block, words) =
+                        ui.allocate_exact_size(egui::vec2(LABEL_W, ART), egui::Sense::click());
+                    let now = ui.input(|i| i.time);
+                    let (anim_title, _) = draw_scrolling_line(
+                        ui,
+                        egui::pos2(block.left(), block.top() + 8.0),
+                        LABEL_W,
+                        &title,
+                        font::strong(font::headline().size),
+                        egui::Color32::from_gray(240),
+                        now,
+                    );
+                    let (anim_line, _) = draw_scrolling_line(
+                        ui,
+                        egui::pos2(block.left(), block.top() + 32.0),
+                        LABEL_W,
+                        &line,
+                        font::callout(),
+                        egui::Color32::from_gray(165),
+                        now,
+                    );
+                    if anim_title || anim_line {
+                        ui.ctx().request_repaint();
+                    }
+                    let back = art.union(words).on_hover_note("Back to the record");
+                    if back.hovered() {
+                        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+                    }
+                    if back.clicked() {
+                        reopen = true;
+                    }
+                    ui.add_space(16.0);
+
+                    // A video still on its way in has nothing to pause yet.
+                    let loading = held.is_some() && scrub.is_none();
+                    if play_disc(ui, t.playing, loading).clicked() && !loading {
+                        act = Some(VideoAct::TogglePause);
+                    }
+                    ui.add_space(10.0);
+                    // Where the player bar keeps its shuffle: the way up to the sheet.
+                    if crate::ui::button::icon(
+                        ui,
+                        crate::ui::phosphor_icons::named(crate::ui::phosphor_icons::app::CARET_UP),
+                        true,
+                    )
+                    .on_hover_note("Open the record")
+                    .clicked()
+                    {
+                        reopen = true;
+                    }
+                    ui.add_space(12.0);
+
+                    // Elapsed, fixed width so its digits can't shift the scrubber.
+                    let real = if t.duration > 0.0 {
+                        (t.position / t.duration).clamp(0.0, 1.0)
+                    } else {
+                        0.0
+                    };
+                    let shown = scrub.or(held).unwrap_or(real);
+                    if loading {
+                        ui.add_sized(egui::vec2(46.0, 18.0), egui::Spinner::new().size(14.0));
+                    } else {
+                        ui.add_sized(
+                            egui::vec2(46.0, 18.0),
+                            egui::Label::new(
+                                egui::RichText::new(fmt_time(shown * t.duration))
+                                    .font(font::mono_small())
+                                    .color(egui::Color32::from_gray(170)),
+                            ),
                         );
-                        ui.add_space(space::S3);
-                        if crate::ui::icon::close_button(ui, "Stop the record") {
-                            close = true;
-                        }
-                    },
-                );
+                    }
+
+                    // Scrubber: the space left after the clock and the close,
+                    // the same reserve as the player bar so the closes line up.
+                    let track_w = (ui.available_width() - 86.0).max(60.0);
+                    let (rect, resp) = ui.allocate_exact_size(
+                        egui::vec2(track_w, 40.0),
+                        egui::Sense::click_and_drag(),
+                    );
+                    flat_track(ui.painter(), rect, shown);
+                    if let Some(s) = scrub_knob(ui, rect, &resp, shown, &mut scrub, t.duration) {
+                        act = Some(VideoAct::Seek(s));
+                    }
+
+                    ui.add_space(6.0);
+                    ui.label(
+                        egui::RichText::new(if t.ready && t.duration > 0.0 {
+                            fmt_time(t.duration)
+                        } else {
+                            "--:--".to_string()
+                        })
+                        .font(font::mono_small())
+                        .color(egui::Color32::from_gray(170)),
+                    );
+                    ui.add_space(4.0);
+                    if crate::ui::icon::close_button(ui, "Stop the record") {
+                        close = true;
+                    }
+                });
                 crate::ui::glass::end_from(
                     ctx,
                     slot,

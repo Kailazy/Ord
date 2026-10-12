@@ -45,8 +45,8 @@ impl App {
     ///
     /// The player taking over *closes* the video: a video has nowhere to show
     /// paused, and the radio, which owns the panel while it is on, goes off
-    /// with it. The video taking over only *pauses* the player: the bar stays
-    /// up with the track loaded, so one click brings it back.
+    /// with it. The video taking over closes the player too, so one bar is up
+    /// at a time.
     pub(crate) fn claim_sound(&mut self, who: Sound) {
         match who {
             Sound::Player => {
@@ -61,13 +61,9 @@ impl App {
                     webview::close();
                 }
             }
-            Sound::Video => {
-                if let Some(a) = self.audio.as_mut() {
-                    if a.is_active() {
-                        a.toggle_pause();
-                    }
-                }
-            }
+            // One bar at a time: the video's own bar (a record's, or the
+            // radio's) replaces the player's, scrubber and beatgrid included.
+            Sound::Video => self.close_player(),
         }
     }
 }

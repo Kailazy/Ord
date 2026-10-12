@@ -191,6 +191,16 @@ impl App {
     /// button and a draggable scrubber. Shown only while the engine still has the
     /// `now_playing` track loaded (or decoding). The seek fires on scrub release so
     /// the audio sink is rebuilt once per gesture, not every frame.
+    /// Take the player down: stop the engine and drop the bar. The bar's own
+    /// close, and what a video taking over does to it (see `claim_sound`).
+    pub(crate) fn close_player(&mut self) {
+        if let Some(a) = self.audio.as_mut() {
+            a.stop();
+        }
+        self.now_playing = None;
+        self.scrub = None;
+    }
+
     pub(crate) fn draw_player(&mut self, ctx: &egui::Context) {
         let Some(np_id) = self.now_playing.as_ref().map(|n| n.id) else {
             return;
@@ -536,50 +546,7 @@ impl App {
 
                     // Play / pause button — a white disc with a hand-drawn glyph so
                     // it renders identically regardless of which fonts are present.
-                    let (btn_rect, btn) =
-                        ui.allocate_exact_size(egui::vec2(36.0, 36.0), egui::Sense::click());
-                    let c = btn_rect.center();
-                    let disc = if btn.hovered() {
-                        egui::Color32::WHITE
-                    } else {
-                        egui::Color32::from_gray(210)
-                    };
-                    ui.painter().circle_filled(c, 17.0, disc);
-                    let fg = egui::Color32::from_gray(18);
-                    if loading {
-                        ui.painter().text(
-                            c,
-                            egui::Align2::CENTER_CENTER,
-                            "…",
-                            egui::FontId::proportional(16.0),
-                            fg,
-                        );
-                    } else if playing {
-                        for dx in [-3.5_f32, 3.5] {
-                            ui.painter().rect_filled(
-                                egui::Rect::from_center_size(
-                                    c + egui::vec2(dx, 0.0),
-                                    egui::vec2(3.5, 13.0),
-                                ),
-                                egui::Rounding::same(1.0),
-                                fg,
-                            );
-                        }
-                    } else {
-                        let r = 7.0;
-                        ui.painter().add(egui::Shape::convex_polygon(
-                            vec![
-                                c + egui::vec2(-r * 0.55, -r),
-                                c + egui::vec2(-r * 0.55, r),
-                                c + egui::vec2(r, 0.0),
-                            ],
-                            fg,
-                            egui::Stroke::NONE,
-                        ));
-                    }
-                    if btn.hovered() {
-                        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
-                    }
+                    let btn = play_disc(ui, playing, loading);
                     if btn.clicked() && !loading {
                         toggle = true;
                     }
@@ -683,20 +650,10 @@ impl App {
                         egui::vec2(track_w, 40.0),
                         egui::Sense::click_and_drag(),
                     );
-                    let y = rect.center().y;
-                    let (x0, x1) = (rect.left(), rect.right());
-                    let knob_x = x0 + shown_frac * (x1 - x0);
                     let painter = ui.painter();
                     if waveform.is_empty() {
                         // Unanalyzed track: keep the original flat progress line.
-                        painter.line_segment(
-                            [egui::pos2(x0, y), egui::pos2(x1, y)],
-                            egui::Stroke::new(4.0, egui::Color32::from_gray(70)),
-                        );
-                        painter.line_segment(
-                            [egui::pos2(x0, y), egui::pos2(knob_x, y)],
-                            egui::Stroke::new(4.0, ACCENT),
-                        );
+                        flat_track(painter, rect, shown_frac);
                     } else {
                         draw_waveform(
                             painter,
@@ -718,32 +675,8 @@ impl App {
                             true,
                         );
                     }
-                    let knob_r = if resp.hovered() || self.scrub.is_some() {
-                        6.5
-                    } else {
-                        5.0
-                    };
-                    ui.painter()
-                        .circle_filled(egui::pos2(knob_x, y), knob_r, egui::Color32::WHITE);
-                    if resp.hovered() {
-                        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
-                    }
-                    let frac_at = |p: egui::Pos2| ((p.x - x0) / (x1 - x0)).clamp(0.0, 1.0);
-                    if (resp.dragged() || resp.drag_started()) && dur > 0.0 {
-                        if let Some(p) = resp.interact_pointer_pos() {
-                            self.scrub = Some(frac_at(p));
-                        }
-                    }
-                    if resp.drag_stopped() {
-                        if let Some(f) = self.scrub.take() {
-                            seek_to = Some(f * dur);
-                        }
-                    }
-                    if resp.clicked() && dur > 0.0 {
-                        if let Some(p) = resp.interact_pointer_pos() {
-                            seek_to = Some(frac_at(p) * dur);
-                        }
-                        self.scrub = None;
+                    if let Some(s) = scrub_knob(ui, rect, &resp, shown_frac, &mut self.scrub, dur) {
+                        seek_to = Some(s);
                     }
 
                     // Total time.
@@ -803,11 +736,7 @@ impl App {
             self.player_native_drag = Some(PathBuf::from(&np_path));
         }
         if close {
-            if let Some(a) = self.audio.as_mut() {
-                a.stop();
-            }
-            self.now_playing = None;
-            self.scrub = None;
+            self.close_player();
         }
 
         // Title/artist label click: show the full library narrowed to the playing
@@ -2124,7 +2053,7 @@ mod grid_tests {
 /// `true` while the line is animating (so the caller can request a repaint) plus
 /// the displayed size — text size clamped to `width` — for hit-testing the text
 /// as a link.
-fn draw_scrolling_line(
+pub(crate) fn draw_scrolling_line(
     ui: &egui::Ui,
     top_left: egui::Pos2,
     width: f32,
@@ -3394,4 +3323,117 @@ fn fill_envelope(mesh: &mut egui::epaint::Mesh, pts: &[(f32, f32, egui::Color32)
             c,
         );
     }
+}
+
+/// The play/pause disc of a now-playing bar: a white disc with a hand-drawn
+/// glyph, so it renders identically regardless of which fonts are present.
+/// `loading` shows an ellipsis while the engine brings the track in. The
+/// caller reads `clicked()` off the response.
+pub(crate) fn play_disc(ui: &mut egui::Ui, playing: bool, loading: bool) -> egui::Response {
+    let (btn_rect, btn) = ui.allocate_exact_size(egui::vec2(36.0, 36.0), egui::Sense::click());
+    let c = btn_rect.center();
+    let disc = if btn.hovered() {
+        egui::Color32::WHITE
+    } else {
+        egui::Color32::from_gray(210)
+    };
+    ui.painter().circle_filled(c, 17.0, disc);
+    let fg = egui::Color32::from_gray(18);
+    if loading {
+        ui.painter().text(
+            c,
+            egui::Align2::CENTER_CENTER,
+            "…",
+            egui::FontId::proportional(16.0),
+            fg,
+        );
+    } else if playing {
+        for dx in [-3.5_f32, 3.5] {
+            ui.painter().rect_filled(
+                egui::Rect::from_center_size(
+                    c + egui::vec2(dx, 0.0),
+                    egui::vec2(3.5, 13.0),
+                ),
+                egui::Rounding::same(1.0),
+                fg,
+            );
+        }
+    } else {
+        let r = 7.0;
+        ui.painter().add(egui::Shape::convex_polygon(
+            vec![
+                c + egui::vec2(-r * 0.55, -r),
+                c + egui::vec2(-r * 0.55, r),
+                c + egui::vec2(r, 0.0),
+            ],
+            fg,
+            egui::Stroke::NONE,
+        ));
+    }
+    if btn.hovered() {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+    }    btn
+}
+
+/// A scrubber's flat progress line, for a bar with no waveform to paint
+/// under the playhead: the played part in the accent, the rest in grey.
+pub(crate) fn flat_track(painter: &egui::Painter, rect: egui::Rect, frac: f32) {
+    const ACCENT: egui::Color32 = egui::Color32::from_rgb(90, 200, 120);
+    let y = rect.center().y;
+    let (x0, x1) = (rect.left(), rect.right());
+    let knob_x = x0 + frac * (x1 - x0);
+    painter.line_segment(
+        [egui::pos2(x0, y), egui::pos2(x1, y)],
+        egui::Stroke::new(4.0, egui::Color32::from_gray(70)),
+    );
+    painter.line_segment(
+        [egui::pos2(x0, y), egui::pos2(knob_x, y)],
+        egui::Stroke::new(4.0, ACCENT),
+    );
+}
+
+/// A scrubber's knob and its handling, shared by every now-playing bar: the
+/// knob at `shown` (grown under the pointer), a drag carried in `scrub` until
+/// release, a click landing straight away. Returns the seek in seconds the
+/// gesture asked for, if any; a track with no length (`dur` 0) scrubs nowhere.
+pub(crate) fn scrub_knob(
+    ui: &mut egui::Ui,
+    rect: egui::Rect,
+    resp: &egui::Response,
+    shown: f32,
+    scrub: &mut Option<f32>,
+    dur: f32,
+) -> Option<f32> {
+    let y = rect.center().y;
+    let (x0, x1) = (rect.left(), rect.right());
+    let knob_x = x0 + shown * (x1 - x0);
+    let knob_r = if resp.hovered() || scrub.is_some() {
+        6.5
+    } else {
+        5.0
+    };
+    ui.painter()
+        .circle_filled(egui::pos2(knob_x, y), knob_r, egui::Color32::WHITE);
+    if resp.hovered() {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+    }
+    let frac_at = |p: egui::Pos2| ((p.x - x0) / (x1 - x0)).clamp(0.0, 1.0);
+    let mut seek = None;
+    if (resp.dragged() || resp.drag_started()) && dur > 0.0 {
+        if let Some(p) = resp.interact_pointer_pos() {
+            *scrub = Some(frac_at(p));
+        }
+    }
+    if resp.drag_stopped() {
+        if let Some(f) = scrub.take() {
+            seek = Some(f * dur);
+        }
+    }
+    if resp.clicked() && dur > 0.0 {
+        if let Some(p) = resp.interact_pointer_pos() {
+            seek = Some(frac_at(p) * dur);
+        }
+        *scrub = None;
+    }
+    seek
 }
