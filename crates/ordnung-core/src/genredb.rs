@@ -181,7 +181,7 @@ pub fn latest_dump(agent: &ureq::Agent) -> Result<(String, String)> {
 /// against the dump's ~10 GB — the download users should get by default, with
 /// [`import_latest`] as the fallback when this asset is unreachable.
 pub const PREBUILT_URL: &str =
-    "https://github.com/Kailazy/Ordnung/releases/download/genredb/discogs-genres.db.gz";
+    "https://github.com/Kailazy/Ord/releases/download/genredb/discogs-genres.db.gz";
 
 /// Download the prebuilt genre database from [`PREBUILT_URL`] into `db_path`:
 /// stream, gunzip to a temp file, verify it opens with its completion stamp,
@@ -254,7 +254,7 @@ pub fn import_latest(
     // Long stream: generous read timeout, no overall cap.
     let agent = ureq::AgentBuilder::new()
         .timeout_read(std::time::Duration::from_secs(120))
-        .user_agent("Ordnung/0.1 +https://kailazy.github.io/Ordnung/")
+        .user_agent("Ordnung/0.1 +https://kailazy.github.io/Ord/")
         .build();
     let (stamp, url) = latest_dump(&agent)?;
     import_from(db_path, &stamp, &url, progress, cancel)
@@ -272,7 +272,7 @@ pub fn import_from(
 ) -> Result<ImportStats> {
     let agent = ureq::AgentBuilder::new()
         .timeout_read(std::time::Duration::from_secs(120))
-        .user_agent("Ordnung/0.1 +https://kailazy.github.io/Ordnung/")
+        .user_agent("Ordnung/0.1 +https://kailazy.github.io/Ord/")
         .build();
     let stamp = stamp.to_string();
     let resp = agent

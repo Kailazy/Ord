@@ -1855,7 +1855,7 @@ fn auto_match_tracks(
     // slot ahead of this sweep rather than queueing behind it.
     let client = discogs::Client::new(
         spec.token.clone(),
-        "Ordnung/0.1 +https://kailazy.github.io/Ordnung/",
+        "Ordnung/0.1 +https://kailazy.github.io/Ord/",
     )
     .background();
     let total = ids.len();
@@ -2523,7 +2523,7 @@ pub(crate) fn run_sweep_seller(
     };
     // Paced as background: a click elsewhere in the app takes the request
     // slot ahead of this sweep rather than queueing behind it.
-    let client = discogs::Client::new(token, "Ordnung/0.1 +https://kailazy.github.io/Ordnung/")
+    let client = discogs::Client::new(token, "Ordnung/0.1 +https://kailazy.github.io/Ord/")
         .background();
     // Without the genre database there is nothing to filter by, so every
     // genre is kept and the Done message says why.
@@ -2734,7 +2734,7 @@ pub(crate) fn run_refresh_vinyl(
     };
     // Paced as background: a click elsewhere in the app takes the request
     // slot ahead of this sweep rather than queueing behind it.
-    let client = discogs::Client::new(token, "Ordnung/0.1 +https://kailazy.github.io/Ordnung/")
+    let client = discogs::Client::new(token, "Ordnung/0.1 +https://kailazy.github.io/Ord/")
         .background();
 
     if !quiet {
@@ -2977,7 +2977,7 @@ pub(crate) fn run_vinyl_edit(
     let Some(catalog) = open_or_fail(&db, &tx, &ctx) else {
         return;
     };
-    let client = discogs::Client::new(token, "Ordnung/0.1 +https://kailazy.github.io/Ordnung/");
+    let client = discogs::Client::new(token, "Ordnung/0.1 +https://kailazy.github.io/Ord/");
 
     // Every collection/wantlist endpoint is keyed by username. Resolve it once
     // if a previous sync hasn't already, and report it back so the next edit
@@ -3618,7 +3618,7 @@ pub(crate) fn run_fetch_tracks(
     };
     // Paced as background: a click elsewhere in the app takes the request
     // slot ahead of this sweep rather than queueing behind it.
-    let client = discogs::Client::new(token, "Ordnung/0.1 +https://kailazy.github.io/Ordnung/")
+    let client = discogs::Client::new(token, "Ordnung/0.1 +https://kailazy.github.io/Ord/")
         .background();
     let total = ids.len();
     // Every Discogs search is paced to ~1.1 s (and a track can cost up to four
@@ -4421,7 +4421,7 @@ pub(crate) fn run_match_tracklist(
     // slot ahead of this run rather than queueing behind it.
     let client = discogs::Client::new(
         spec.token.clone(),
-        "Ordnung/0.1 +https://kailazy.github.io/Ordnung/",
+        "Ordnung/0.1 +https://kailazy.github.io/Ord/",
     )
     .background();
     let _ = tx.send(JobMsg::Progress { done: 0, total });

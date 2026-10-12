@@ -4,7 +4,7 @@ name: Genre DB
 # so the app downloads a few hundred MB instead of the ~10 GB monthly dump.
 # The dump is CC0, so redistributing this derived table is fine. The asset
 # lives on the rolling `genredb` prerelease tag, always at:
-#   https://github.com/Kailazy/Ordnung/releases/download/genredb/discogs-genres.db.gz
+#   https://github.com/Kailazy/Ord/releases/download/genredb/discogs-genres.db.gz
 #
 # Manual-only, and currently expected to FAIL from GitHub runners: Cloudflare
 # serves data.discogs.com's downloads a JS challenge on datacenter IPs

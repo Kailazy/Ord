@@ -8,7 +8,7 @@ use ordnung_core::discogs::Client;
 #[ignore = "network + token"]
 fn free_text_lookup_returns_usable_records() {
     let token = std::env::var("DISCOGS_TOKEN").expect("DISCOGS_TOKEN");
-    let c = Client::new(token, "Ordnung/0.1 +https://kailazy.github.io/Ordnung/");
+    let c = Client::new(token, "Ordnung/0.1 +https://kailazy.github.io/Ord/");
     let page = c
         .search_records("metro area", 1, 10)
         .expect("search should succeed");

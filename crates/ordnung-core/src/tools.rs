@@ -41,7 +41,7 @@ pub const FFMPEG_VERSION: &str = "9.0.2";
 
 /// Rolling GitHub release carrying the per-architecture ffmpeg builds
 /// (`tools/publish-ffmpeg.sh` fills it).
-const FFMPEG_RELEASE_URL: &str = "https://github.com/Kailazy/Ordnung/releases/download/ffmpeg";
+const FFMPEG_RELEASE_URL: &str = "https://github.com/Kailazy/Ord/releases/download/ffmpeg";
 
 /// Architecture tag in the asset name for the CPU this process runs on. A
 /// universal app binary runs natively on either kind of Mac, so the process
@@ -142,7 +142,7 @@ pub fn download_gunzip(
 ) -> Result<bool> {
     let agent = ureq::AgentBuilder::new()
         .timeout_read(std::time::Duration::from_secs(120))
-        .user_agent("Ordnung/0.1 +https://kailazy.github.io/Ordnung/")
+        .user_agent("Ordnung/0.1 +https://kailazy.github.io/Ord/")
         .build();
     let resp = agent
         .get(url)

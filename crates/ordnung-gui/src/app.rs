@@ -508,7 +508,7 @@ impl App {
         self.discogs_auth = DiscogsAuth::Checking;
         thread::spawn(move || {
             let client =
-                discogs::Client::new(token, "Ordnung/0.1 +https://kailazy.github.io/Ordnung/");
+                discogs::Client::new(token, "Ordnung/0.1 +https://kailazy.github.io/Ord/");
             let outcome = match client.identity() {
                 Ok(username) => DiscogsAuth::Connected { username },
                 // "Token is bad" and "network is down" need very different

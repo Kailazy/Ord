@@ -551,7 +551,7 @@ fn versions_for(
     }
     let client = discogs::Client::new(
         token.to_string(),
-        "Ordnung/0.1 +https://kailazy.github.io/Ordnung/",
+        "Ordnung/0.1 +https://kailazy.github.io/Ord/",
     );
     let cat = Catalog::open(db).ok();
     let master_id = match cached_master {

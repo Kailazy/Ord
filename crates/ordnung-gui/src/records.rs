@@ -279,7 +279,7 @@ impl App {
         let (tx, ctx) = (self.record_tx.clone(), self.egui_ctx.clone());
         thread::spawn(move || {
             let client =
-                discogs::Client::new(token, "Ordnung/0.1 +https://kailazy.github.io/Ordnung/");
+                discogs::Client::new(token, "Ordnung/0.1 +https://kailazy.github.io/Ord/");
             if records {
                 let result = client
                     .search_records(&query, 1, RECORD_PER_PAGE)

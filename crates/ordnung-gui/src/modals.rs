@@ -3064,7 +3064,7 @@ files elsewhere on the device stay plain storage.",
         let ctx = ctx.clone();
         thread::spawn(move || {
             let client =
-                discogs::Client::new(token, "Ordnung/0.1 +https://kailazy.github.io/Ordnung/");
+                discogs::Client::new(token, "Ordnung/0.1 +https://kailazy.github.io/Ord/");
             // Open the catalog first so the fetch can go cache-first (reusing a
             // release already pulled, sparing a rate-limited round trip).
             let resolved = Catalog::open(&db_path).and_then(|catalog| {
@@ -3157,7 +3157,7 @@ files elsewhere on the device stay plain storage.",
             } else {
                 Some(discogs::Client::new(
                     token,
-                    "Ordnung/0.1 +https://kailazy.github.io/Ordnung/",
+                    "Ordnung/0.1 +https://kailazy.github.io/Ord/",
                 ))
             };
 

@@ -13,7 +13,7 @@ use std::time::Duration;
 /// GitHub "latest release" endpoint for the public Ordnung repo. Returns the
 /// most recent non-prerelease, non-draft release as JSON.
 const LATEST_RELEASE_URL: &str =
-    "https://api.github.com/repos/Kailazy/Ordnung/releases/latest";
+    "https://api.github.com/repos/Kailazy/Ord/releases/latest";
 
 /// A published release newer than the running build, ready for the GUI to offer
 /// as a download. `version` is the tag with any leading `v` stripped (e.g.
@@ -58,7 +58,7 @@ pub fn check_latest(current: &str) -> Result<UpdateOutcome> {
             .get("html_url")
             .and_then(|v| v.as_str())
             .filter(|s| !s.is_empty())
-            .unwrap_or("https://github.com/Kailazy/Ordnung/releases/latest")
+            .unwrap_or("https://github.com/Kailazy/Ord/releases/latest")
             .to_string();
         Ok(UpdateOutcome::Update(UpdateInfo {
             version: latest.to_string(),

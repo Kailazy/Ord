@@ -946,7 +946,7 @@ impl App {
                     return None;
                 }
                 let client =
-                    discogs::Client::new(token, "Ordnung/0.1 +https://kailazy.github.io/Ordnung/");
+                    discogs::Client::new(token, "Ordnung/0.1 +https://kailazy.github.io/Ord/");
                 let client = if ahead { client.background() } else { client };
                 cat.release_cached_or(&id, || client.fetch_release(&id)).ok()
             });

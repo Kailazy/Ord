@@ -190,7 +190,7 @@ impl App {
         let ctx = self.egui_ctx.clone();
         thread::spawn(move || {
             let client =
-                discogs::Client::new(token, "Ordnung/0.1 +https://kailazy.github.io/Ordnung/");
+                discogs::Client::new(token, "Ordnung/0.1 +https://kailazy.github.io/Ord/");
             let id = release_id.to_string();
             let detail = Catalog::open(&db).ok().and_then(|cat| {
                 if let Ok(Some(d)) = cat.cached_release(&id) {
@@ -307,7 +307,7 @@ impl App {
         let ctx = self.egui_ctx.clone();
         thread::spawn(move || {
             let mut client =
-                discogs::Client::new(token, "Ordnung/0.1 +https://kailazy.github.io/Ordnung/");
+                discogs::Client::new(token, "Ordnung/0.1 +https://kailazy.github.io/Ord/");
             if prefetch {
                 client = client.background();
             }

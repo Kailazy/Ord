@@ -46,4 +46,4 @@ genredb-publish: ## Rebuild the prebuilt genre DB from the Discogs dump (~10 GB 
 		--title "Discogs genre database" \
 		--notes "Rolling prebuilt genre database, regenerated from the Discogs data dump (CC0). Downloaded automatically by Ordnung's genre-database import."
 	@gh release upload genredb /tmp/discogs-genres.db.gz --clobber
-	@echo "Published: https://github.com/Kailazy/Ordnung/releases/download/genredb/discogs-genres.db.gz"
+	@echo "Published: https://github.com/Kailazy/Ord/releases/download/genredb/discogs-genres.db.gz"

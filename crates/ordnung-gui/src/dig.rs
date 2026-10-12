@@ -2203,7 +2203,7 @@ impl App {
         let ctx = self.egui_ctx.clone();
         thread::spawn(move || {
             let client =
-                discogs::Client::new(token, "Ordnung/0.1 +https://kailazy.github.io/Ordnung/");
+                discogs::Client::new(token, "Ordnung/0.1 +https://kailazy.github.io/Ord/");
             // An explicit step is never stood down: it's the request the user
             // is waiting on, so it runs to completion.
             let result = browse_step(
@@ -2473,7 +2473,7 @@ impl App {
                 return;
             }
             let client =
-                discogs::Client::new(token, "Ordnung/0.1 +https://kailazy.github.io/Ordnung/")
+                discogs::Client::new(token, "Ordnung/0.1 +https://kailazy.github.io/Ord/")
                     .background();
             let _ = cat.release_cached_or(&id, || client.fetch_release(&id));
         });
@@ -2498,7 +2498,7 @@ impl App {
                 }
                 let client = discogs::Client::new(
                     token.clone(),
-                    "Ordnung/0.1 +https://kailazy.github.io/Ordnung/",
+                    "Ordnung/0.1 +https://kailazy.github.io/Ord/",
                 );
                 cat.release_cached_or(&id, || client.fetch_release(&id))
                     .ok()
@@ -2524,7 +2524,7 @@ impl App {
             let mut family: Vec<(NamedRef, &'static str)> = Vec::new();
             if !token.trim().is_empty() {
                 let client =
-                    discogs::Client::new(token, "Ordnung/0.1 +https://kailazy.github.io/Ordnung/")
+                    discogs::Client::new(token, "Ordnung/0.1 +https://kailazy.github.io/Ord/")
                         .background();
                 if let Some(id) = artist_id {
                     if let Ok(a) = client.fetch_artist(id) {
@@ -2669,7 +2669,7 @@ impl App {
             // Speculation stands aside for anything the user is waiting on:
             // a click here or a sheet opened elsewhere takes the pace first.
             let client =
-                discogs::Client::new(token, "Ordnung/0.1 +https://kailazy.github.io/Ordnung/")
+                discogs::Client::new(token, "Ordnung/0.1 +https://kailazy.github.io/Ord/")
                     .background();
             for (i, (thread, query, page)) in jobs.into_iter().enumerate() {
                 // Checked before each browse rather than only at the top: each
@@ -2830,7 +2830,7 @@ impl App {
             let token = self.discogs_token();
             thread::spawn(move || {
                 let client =
-                    discogs::Client::new(token, "Ordnung/0.1 +https://kailazy.github.io/Ordnung/");
+                    discogs::Client::new(token, "Ordnung/0.1 +https://kailazy.github.io/Ord/");
                 // Image CDN downloads don't count against the API rate limit,
                 // so a cover fetch never delays the next dig step.
                 let img = client.fetch_thumb(&url_owned).and_then(|png| {
