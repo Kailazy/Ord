@@ -1098,10 +1098,13 @@ pub(crate) fn section_caption(ui: &mut egui::Ui, caption: &str) {
 }
 
 /// The caption row, hugging the rows it heads: the row already carries air
-/// around its small caps, so the item gap under it is cut to a hairline.
+/// around its small caps, so the item gap under it is a short S2, not the
+/// full item gap. The gap is S2 rather than a hairline because the row can
+/// hold a 24 pt button ("+", chevron), which would sit flush on the first
+/// row at a hairline.
 fn tight_caption(ui: &mut egui::Ui, caption: &str, action: impl FnOnce(&mut egui::Ui)) {
     let gap = ui.spacing().item_spacing.y;
-    ui.spacing_mut().item_spacing.y = space::S1;
+    ui.spacing_mut().item_spacing.y = space::S2;
     crate::ui::sidebar::caption_row(ui, caption, action);
     ui.spacing_mut().item_spacing.y = gap;
 }
