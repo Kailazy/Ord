@@ -2820,28 +2820,37 @@ impl App {
                             }
                         }
                         ui.separator();
+                        // Tracklist search: paste a mix's tracklist and match
+                        // every line to its record. A compact button hard
+                        // against the counts' divider, not a tab: a tool you
+                        // reach for, not a place you live in.
+                        {
+                            let n = self.tracklists.len();
+                            let resp = crate::ui::button::compact(
+                                ui,
+                                "Tracklist search",
+                                self.tracklist_open,
+                            )
+                            .on_hover_note(if n == 0 {
+                                "Paste a mix tracklist and match every line to its record".to_string()
+                            } else {
+                                format!("Tracklists ({n}): paste a mix tracklist and match every line to its record")
+                            });
+                            if resp.clicked() {
+                                self.tracklist_open = !self.tracklist_open;
+                                self.tracklist_focus_paste = self.tracklist_open;
+                            }
+                        }
                         // The filter group fills whatever horizontal space the utility
                         // group left over. Rendered left-to-right inside the reserved
                         // remainder so it can never collide with the counts.
                         ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
-                            // Room for the Clear-filters button, the tracklist
-                            // search button and the scope toggle, so the field
-                            // shrinks rather than pushing any of them past the
-                            // edge of this remainder.
+                            // Room for the Clear-filters button *and* the
+                            // scope toggle, so the field shrinks rather than
+                            // pushing either past the edge of this remainder.
                             let gap = ui.spacing().item_spacing.x;
                             let clear_w = if has_filters { 140.0 + gap } else { 0.0 };
-                            let tracklist_w = ui
-                                .painter()
-                                .layout_no_wrap(
-                                    "Tracklist search".to_owned(),
-                                    egui::TextStyle::Button.resolve(ui.style()),
-                                    egui::Color32::PLACEHOLDER,
-                                )
-                                .size()
-                                .x
-                                + 2.0 * ui.spacing().button_padding.x
-                                + gap;
-                            let reserved = clear_w + tracklist_w + SCOPE_TOGGLE_W + gap;
+                            let reserved = clear_w + SCOPE_TOGGLE_W + gap;
                             let w = (ui.available_width() - reserved)
                                 .clamp(SEARCH_FIELD_MIN_W, 320.0);
                             // Anchor the field + scope toggle to the window's
@@ -2857,7 +2866,7 @@ impl App {
                             let group_w = w + gap + SCOPE_TOGGLE_W;
                             let left = (toolbar_center_x - group_w / 2.0).clamp(
                                 avail.left(),
-                                (avail.right() - group_w - clear_w - tracklist_w).max(avail.left()),
+                                (avail.right() - group_w - clear_w).max(avail.left()),
                             );
                             ui.add_space((left - avail.left()).max(0.0));
                             // Read before the field borrows `search_query`
@@ -2923,21 +2932,6 @@ impl App {
                             // field, reading as part of the same control: it
                             // says what the box you just typed in will search.
                             self.draw_scope_toggle(ui);
-                            // Tracklist search: paste a mix's tracklist and match
-                            // every line to its record. Sits at the end of the
-                            // search group, left of the divider, so it reads as a
-                            // search tool rather than a count.
-                            let n = self.tracklists.len();
-                            let resp_tl = crate::ui::button::button(ui, "Tracklist search")
-                                .on_hover_note(if n == 0 {
-                                    "Paste a mix tracklist and match every line to its record".to_string()
-                                } else {
-                                    format!("Tracklists ({n}): paste a mix tracklist and match every line to its record")
-                                });
-                            if resp_tl.clicked() {
-                                self.tracklist_open = !self.tracklist_open;
-                                self.tracklist_focus_paste = self.tracklist_open;
-                            }
                             self.draw_search_popup(&resp);
                             // A prominent "clear all filters" button, shown only while a
                             // filter is actually hiding rows. This rescues the case where

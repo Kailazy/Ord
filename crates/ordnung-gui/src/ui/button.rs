@@ -27,6 +27,26 @@ pub fn button(ui: &mut egui::Ui, label: impl Into<egui::WidgetText>) -> egui::Re
     ui.add(egui::Button::new(label))
 }
 
+/// A short push button in footnote type: the same frame as [`button`],
+/// drawn tighter, for a tool offered beside a line of text (the Tracklist
+/// search entry beside the top bar's counts) where a full-height button
+/// outweighs the words around it. `selected` lights it while what it opens
+/// is open. Never on a row of controls, where every button comes out the
+/// standard height (see the module doc).
+pub fn compact(ui: &mut egui::Ui, label: &str, selected: bool) -> egui::Response {
+    ui.scope(|ui| {
+        let s = ui.spacing_mut();
+        s.button_padding = egui::vec2(8.0, 2.0);
+        s.interact_size.y = 0.0;
+        ui.add(
+            egui::Button::new(egui::RichText::new(label).font(font::footnote()))
+                .rounding(radius::SM)
+                .selected(selected),
+        )
+    })
+    .inner
+}
+
 /// A push button for the one action a dialog is for (write, convert, set
 /// cover): white on the accent, so the row says which button is the
 /// answer. Goes on a [`super::choices`] row.
