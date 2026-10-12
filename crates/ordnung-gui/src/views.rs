@@ -1406,20 +1406,22 @@ impl App {
 
         // Clear-all sits top right as a small button rather than a menu row:
         // it's the popup's escape hatch, not one of the facets, and the
-        // corner placement keeps the facet list starting at the top.
-        if self.vinyl_flt.active(seller_mode) > 0 {
-            m.ui().horizontal(|ui| {
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if ui
-                        .small_button("✖ Clear")
-                        .on_hover_note("Clear every filter")
-                        .clicked()
-                    {
-                        self.vinyl_flt.clear();
-                    }
-                });
+        // corner placement keeps the facet list starting at the top. It
+        // keeps its row while greyed out, so the first filter picked doesn't
+        // push every facet down a row.
+        let active = self.vinyl_flt.active(seller_mode) > 0;
+        m.ui().horizontal(|ui| {
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                let clear = ui
+                    .add_enabled_ui(active, |ui| crate::ui::button::compact(ui, "✖ Clear", false))
+                    .inner
+                    .on_hover_note("Clear every filter")
+                    .clicked();
+                if clear {
+                    self.vinyl_flt.clear();
+                }
             });
-        }
+        });
 
         m.header("Year");
         m.ui().horizontal(|ui| {
@@ -1642,19 +1644,33 @@ impl App {
         let wanted_recs: Vec<VinylRecord> = self.wantlist.iter().filter(keep).cloned().collect();
 
         // Every genre tag occurring in the current scope (the active shelf, or
-        // the current seller's crates), with how many records carry it — the
-        // genre menu's option list. Counted the way Discogs facets: only over
-        // records that match the tags already picked, so choosing a genre
-        // re-ranks the styles by how often they co-occur inside it (and tags
-        // that can no longer match anything drop out — except the active ones,
-        // re-added below so they can be seen and cleared). For sellers, also
-        // count how many listings have known tags at all: their tags come from
-        // caches (see `seller_genres`), and a filter that silently drops
-        // untagged records should say so.
+        // the current seller's crates) — the genre menu's option list. Each
+        // tag's count is the Discogs facet count: how many records carry it
+        // among those matching the tags already picked, so a tag that would
+        // narrow the shelf to nothing reads 0. The list itself and its order
+        // come from the whole scope, not the matching part: a row that
+        // dropped out or re-ranked on every pick made the open popup change
+        // height and shuffle under the pointer. For sellers, also count how
+        // many listings have known tags at all: their tags come from caches
+        // (see `seller_genres`), and a filter that silently drops untagged
+        // records should say so.
         let (genre_options, seller_tagged) = {
-            let mut counts: std::collections::BTreeMap<&str, usize> =
+            // tag -> (records in scope carrying it, of those, records that
+            // also match the picked tags)
+            let mut counts: std::collections::BTreeMap<&str, (usize, usize)> =
                 std::collections::BTreeMap::new();
             let mut tagged = 0usize;
+            fn census<'a>(
+                counts: &mut std::collections::BTreeMap<&'a str, (usize, usize)>,
+                keep: bool,
+                tags: &'a [String],
+            ) {
+                for t in tags {
+                    let e = counts.entry(t.as_str()).or_default();
+                    e.0 += 1;
+                    e.1 += usize::from(keep);
+                }
+            }
             match self.vinyl_tab {
                 VinylTab::Shelf(list) => {
                     let recs = match list {
@@ -1662,12 +1678,7 @@ impl App {
                         VinylList::Wantlist => &self.wantlist,
                     };
                     for r in recs {
-                        if !flt.genres_keep(&r.genres) {
-                            continue;
-                        }
-                        for t in &r.genres {
-                            *counts.entry(t.as_str()).or_default() += 1;
-                        }
+                        census(&mut counts, flt.genres_keep(&r.genres), &r.genres);
                     }
                 }
                 VinylTab::Graph => {}
@@ -1675,22 +1686,18 @@ impl App {
                     for l in &self.seller_listings {
                         if let Some(tags) = self.seller_genres.get(&l.release_id) {
                             tagged += 1;
-                            if !flt.genres_keep(tags) {
-                                continue;
-                            }
-                            for t in tags {
-                                *counts.entry(t.as_str()).or_default() += 1;
-                            }
+                            census(&mut counts, flt.genres_keep(tags), tags);
                         }
                     }
                 }
             }
-            let mut v: Vec<(String, usize)> = counts
+            let mut v: Vec<(String, usize, usize)> = counts
                 .into_iter()
-                .map(|(t, n)| (t.to_string(), n))
+                .map(|(t, (total, n))| (t.to_string(), total, n))
                 .collect();
             // Biggest crates first; the tail is alphabetical for scanning.
             v.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+            let mut v: Vec<(String, usize)> = v.into_iter().map(|(t, _, n)| (t, n)).collect();
             // Keep every active tag visible even when the current scope has no
             // record carrying it, so it can be seen and cleared.
             for g in &flt.genres {

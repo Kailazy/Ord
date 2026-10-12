@@ -101,6 +101,21 @@ pub fn dropdown(anchor: &egui::Response, width: f32, add: impl FnOnce(&mut MenuU
     // never drift apart.
     let rise = RISE * (1.0 - open_t);
 
+    // The panel hangs from the anchor's left edge, but that edge is pinned
+    // for as long as the menu is up: an anchor whose label grows while the
+    // menu is open (the Filters button taking on its count) grows leftwards
+    // when it is laid right-aligned, and the panel must not walk with it.
+    // The anchor's right edge tells the two cases apart: it holds while a
+    // right-aligned label grows, and moves when the window itself relaid
+    // the anchor, which is when the pin is dropped and the panel follows.
+    let pin_id = id.with("pin");
+    let pin: Option<(f32, f32)> = ctx.data(|d| d.get_temp(pin_id));
+    let left = match pin {
+        Some((left, right)) if right == anchor.rect.right() => left,
+        _ => anchor.rect.left(),
+    };
+    ctx.data_mut(|d| d.insert_temp(pin_id, (left, anchor.rect.right())));
+
     let mut rows = 0usize;
     let mut want_close = false;
     let mut slot = None;
@@ -109,7 +124,7 @@ pub fn dropdown(anchor: &egui::Response, width: f32, add: impl FnOnce(&mut MenuU
         // Non-interactive until fully materialised, so a click during the fade
         // lands on whatever the user aimed at rather than on a ghost row.
         .interactable(open && open_t > 0.99)
-        .fixed_pos(anchor.rect.left_bottom() + egui::vec2(0.0, GAP - rise))
+        .fixed_pos(egui::pos2(left, anchor.rect.bottom() + GAP - rise))
         .constrain(true)
         .show(&ctx, |ui| {
             ui.multiply_opacity(open_t);
@@ -575,5 +590,39 @@ mod tests {
             rx.recv_timeout(std::time::Duration::from_secs(10)).is_ok(),
             "drawing an open dropdown deadlocked"
         );
+    }
+
+    /// An anchor laid right-aligned grows leftwards when its label grows
+    /// (the Filters button taking on its count); the open panel stays put.
+    /// When the anchor's right edge moves too, the window relaid it and the
+    /// panel follows.
+    #[test]
+    fn open_dropdown_keeps_its_left_edge_while_a_right_aligned_anchor_grows() {
+        let ctx = egui::Context::default();
+        let id = egui::Id::new("anchor").with("ord_dropdown");
+        ctx.data_mut(|d| d.insert_temp(id, true));
+        let area_left = |anchor: egui::Rect| {
+            let mut left = None;
+            for _ in 0..2 {
+                let _ = ctx.run(Default::default(), |ctx| {
+                    egui::CentralPanel::default().show(ctx, |ui| {
+                        let resp = ui.interact(anchor, egui::Id::new("anchor"), egui::Sense::click());
+                        dropdown(&resp, 120.0, |m| {
+                            m.item("Row");
+                        });
+                        left = ctx
+                            .memory(|m| m.area_rect(id.with("area")))
+                            .map(|r| r.left());
+                    });
+                });
+            }
+            left.expect("the open dropdown has an area")
+        };
+        let at = |l: f32, r: f32| egui::Rect::from_min_max(egui::pos2(l, 10.0), egui::pos2(r, 30.0));
+        let first = area_left(at(300.0, 360.0));
+        // Label grows leftwards, right edge holds: pinned.
+        assert_eq!(area_left(at(280.0, 360.0)), first);
+        // The whole anchor moved: the panel follows.
+        assert_ne!(area_left(at(380.0, 460.0)), first);
     }
 }
