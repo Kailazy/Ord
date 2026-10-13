@@ -864,6 +864,32 @@ struct ArtworkChoice {
     thumb_png: Vec<u8>,
 }
 
+impl ArtworkChoice {
+    /// A search hit (or a pasted release) as a picker row, its preview
+    /// thumbnail downloaded now so the list draws at once.
+    fn fetch(client: &discogs::Client, c: discogs::ReleaseCandidate) -> Self {
+        let thumb_png = client.fetch_thumb(&c.thumb_url).unwrap_or_default();
+        ArtworkChoice {
+            release_id: c.release_id,
+            title: c.title,
+            year: c.year,
+            label: c.label,
+            country: c.country,
+            format: c.format,
+            thumb_url: c.thumb_url,
+            cover_image_url: c.cover_image_url,
+            thumb_png,
+        }
+    }
+}
+
+/// The release a pasted link named, fetched for the picker's front track
+/// (`id`), or why it couldn't be.
+struct LinkFetched {
+    id: Id,
+    result: Result<ArtworkChoice, String>,
+}
+
 /// All candidate releases fetched for one track, awaiting the user's pick.
 struct ArtworkChoices {
     id: Id,
@@ -1794,6 +1820,12 @@ struct App {
     /// and blocks the picker's controls so the front track can't change until
     /// the save lands.
     artwork_saving: bool,
+    /// The picker's pasted Discogs release link, and whether its release is
+    /// being fetched; the result lands on `link_rx`.
+    artwork_link: String,
+    artwork_link_busy: bool,
+    link_tx: Sender<LinkFetched>,
+    link_rx: Receiver<LinkFetched>,
     /// Channel carrying a finished background artwork save (the picked track plus
     /// any album-mates the cover was propagated to). The saver thread clones the
     /// sender; the UI drains the receiver each frame to advance the queue and
@@ -2476,6 +2508,9 @@ enum TrackMenuAction {
     /// this same picker. Works regardless of whether a track was already
     /// fetched, so it doubles as the re-pick.
     FetchRelease(Vec<Id>),
+    /// Take the Discogs match off the target tracks: release link, cover and
+    /// the fields the match filled. Only offered when at least one is matched.
+    RemoveMatch(Vec<Id>),
     /// Add the Discogs releases behind the target track(s) to the user's
     /// wantlist. `release_ids` are the deduplicated releases already on file
     /// (several tracks off one record are one want); `fetch_first` are the

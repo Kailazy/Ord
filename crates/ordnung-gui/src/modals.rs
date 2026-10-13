@@ -2576,6 +2576,10 @@ files elsewhere on the device stay plain storage.",
         let mut save = false;
         let mut skip = false;
         let mut skip_all = false;
+        // The pasted release link: fetch it into the list when asked.
+        let mut use_link = false;
+        let mut link = std::mem::take(&mut self.artwork_link);
+        let link_busy = self.artwork_link_busy;
         // "None of these" — the user reviewed the candidates and none is the
         // right release. Marks the track fetched so it drops out of the Recently
         // Added inbox and won't be re-offered, without writing any cover/tags.
@@ -2653,14 +2657,41 @@ files elsewhere on the device stay plain storage.",
                 // past the screen and shove the action buttons out of reach.
                 ui.set_max_width(max_w);
                 ui.label(egui::RichText::new(&choices.label).strong());
-                ui.label(
-                    egui::RichText::new(format!(
+                let found = if choices.candidates.is_empty() {
+                    "Nothing found on Discogs. Paste a link to the right release".to_string()
+                } else {
+                    format!(
                         "{} release(s) on Discogs — pick the right one",
                         choices.candidates.len()
-                    ))
-                    .small()
-                    .weak(),
-                );
+                    )
+                };
+                ui.label(egui::RichText::new(found).small().weak());
+                // The release the search missed: paste its Discogs link and it
+                // joins the list at the top, selected.
+                crate::ui::control_row(ui, |ui| {
+                    ui.horizontal(|ui| {
+                        let field = ui.add(
+                            egui::TextEdit::singleline(&mut link)
+                                .hint_text("Paste a Discogs release link")
+                                .desired_width(ui.available_width() - 90.0),
+                        );
+                        let entered = field.lost_focus()
+                            && ui.input(|i| i.key_pressed(egui::Key::Enter));
+                        if link_busy {
+                            ui.add(egui::Spinner::new());
+                        } else if ui
+                            .add_enabled(
+                                discogs::release_id_from_link(&link).is_some(),
+                                egui::Button::new("Use link"),
+                            )
+                            .on_hover_note("Add this release to the list")
+                            .clicked()
+                            || entered
+                        {
+                            use_link = true;
+                        }
+                    });
+                });
                 if enrich {
                     ui.label(
                         egui::RichText::new(
@@ -2977,6 +3008,10 @@ files elsewhere on the device stay plain storage.",
                 });
             });
 
+        self.artwork_link = link;
+        if use_link {
+            self.fetch_release_link(ctx);
+        }
         self.artwork_selected = selected;
         self.artwork_overwrite = overwrite;
         self.artwork_set_cover = set_cover;
@@ -3092,6 +3127,66 @@ files elsewhere on the device stay plain storage.",
             });
             ctx.request_repaint();
         });
+    }
+
+    /// Fetch the release a pasted link names and put it at the top of the
+    /// front track's candidates, selected. One request; the detail lands in
+    /// the release cache so Save doesn't fetch it again.
+    pub(crate) fn fetch_release_link(&mut self, ctx: &egui::Context) {
+        let Some(release_id) = discogs::release_id_from_link(&self.artwork_link) else {
+            return;
+        };
+        let Some(track_id) = self.artwork_queue.front().map(|c| c.id) else {
+            return;
+        };
+        let Some(token) = self.require_token() else {
+            return;
+        };
+        if self.artwork_link_busy {
+            return;
+        }
+        self.artwork_link_busy = true;
+        let db_path = self.db_path.clone();
+        let tx = self.link_tx.clone();
+        let ctx = ctx.clone();
+        thread::spawn(move || {
+            let client =
+                discogs::Client::new(token, "Ordnung/0.1 +https://kailazy.github.io/Ordnung/");
+            let result = client
+                .fetch_release_candidate(&release_id)
+                .map(|(c, detail)| {
+                    if let Ok(catalog) = Catalog::open(&db_path) {
+                        let _ = catalog.cache_release(&detail);
+                    }
+                    ArtworkChoice::fetch(&client, c)
+                })
+                .map_err(|e| e.to_string());
+            let _ = tx.send(LinkFetched {
+                id: track_id,
+                result,
+            });
+            ctx.request_repaint();
+        });
+    }
+
+    /// Drain fetched link releases into the front track's list. A result for
+    /// a track that is no longer at the front is dropped.
+    pub(crate) fn poll_link_fetch(&mut self) {
+        while let Ok(msg) = self.link_rx.try_recv() {
+            self.artwork_link_busy = false;
+            match msg.result {
+                Ok(choice) => {
+                    if let Some(front) = self.artwork_queue.front_mut().filter(|c| c.id == msg.id) {
+                        front.candidates.retain(|c| c.release_id != choice.release_id);
+                        front.candidates.insert(0, choice);
+                        // Re-decode the previews with the new row at the top.
+                        self.artwork_previews = None;
+                        self.artwork_link.clear();
+                    }
+                }
+                Err(e) => self.status = format!("Couldn't fetch that release: {e}"),
+            }
+        }
     }
 
     /// Drain finished field previews into the caches.
@@ -3242,13 +3337,10 @@ files elsewhere on the device stay plain storage.",
                 if let (true, Some(client)) = (enrich, &client) {
                     // Cache-first so committing several tracks from the same release
                     // (or a re-edit) doesn't re-fetch its immutable detail each time.
-                    let rel = catalog
-                        .release_cached_or(&release_id, || client.fetch_release(&release_id));
-                    if let (Ok(rel), Ok(track)) = (rel, catalog.get_track(track_id)) {
-                        let mut tags = track.tags;
-                        if rel.apply_to_tags(&mut tags, overwrite) > 0 {
-                            let _ = catalog.update_tags(track_id, &tags);
-                        }
+                    if let Ok(rel) = catalog
+                        .release_cached_or(&release_id, || client.fetch_release(&release_id))
+                    {
+                        let _ = catalog.apply_release_tags(track_id, &rel, overwrite);
                     }
                     // The user committed to a release for this track — mark it
                     // fetched so a later run won't re-present it (even if Discogs

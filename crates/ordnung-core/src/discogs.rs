@@ -670,7 +670,7 @@ impl ReleaseVideo {
 /// Which album-level tag field a [`FieldFill`] targets. Kept as an enum (rather
 /// than matching on display strings) so [`ReleaseDetail::proposed_fills`] and
 /// [`ReleaseDetail::apply_to_tags`] can never drift out of sync.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum FillField {
     Genre,
     Label,
@@ -679,6 +679,35 @@ pub enum FillField {
     Album,
     ReleaseDate,
     Year,
+}
+
+impl FillField {
+    /// The field's current value on `tags`, in the string form a fill carries
+    /// (`year` as its digits).
+    pub fn get(self, tags: &Tags) -> Option<String> {
+        match self {
+            FillField::Genre => tags.genre.clone(),
+            FillField::Label => tags.label.clone(),
+            FillField::CatalogNumber => tags.catalog_number.clone(),
+            FillField::Country => tags.release_country.clone(),
+            FillField::Album => tags.album.clone(),
+            FillField::ReleaseDate => tags.release_date.clone(),
+            FillField::Year => tags.year.map(|y| y.to_string()),
+        }
+    }
+
+    /// Set the field on `tags`, or clear it with `None`.
+    pub fn set(self, tags: &mut Tags, value: Option<String>) {
+        match self {
+            FillField::Genre => tags.genre = value,
+            FillField::Label => tags.label = value,
+            FillField::CatalogNumber => tags.catalog_number = value,
+            FillField::Country => tags.release_country = value,
+            FillField::Album => tags.album = value,
+            FillField::ReleaseDate => tags.release_date = value,
+            FillField::Year => tags.year = value.and_then(|v| v.parse().ok()),
+        }
+    }
 }
 
 impl FillField {
@@ -1188,18 +1217,32 @@ impl ReleaseDetail {
     pub fn apply_to_tags(&self, tags: &mut Tags, overwrite: bool) -> usize {
         let fills = self.proposed_fills(tags, overwrite);
         for f in &fills {
-            match f.field {
-                FillField::Genre => tags.genre = Some(f.value.clone()),
-                FillField::Label => tags.label = Some(f.value.clone()),
-                FillField::CatalogNumber => tags.catalog_number = Some(f.value.clone()),
-                FillField::Country => tags.release_country = Some(f.value.clone()),
-                FillField::Album => tags.album = Some(f.value.clone()),
-                FillField::ReleaseDate => tags.release_date = Some(f.value.clone()),
-                FillField::Year => tags.year = f.value.parse().ok(),
-            }
+            f.field.set(tags, Some(f.value.clone()));
         }
         fills.len()
     }
+}
+
+/// The release id named by a pasted Discogs link, a `[r249504]` shorthand or
+/// a bare number: `https://www.discogs.com/release/249504-Daft-Punk-Discovery`,
+/// `discogs.com/de/release/249504?ev=rr`, `api.discogs.com/releases/249504`.
+/// A master link is a release group, not a release, and gives `None`.
+pub fn release_id_from_link(text: &str) -> Option<String> {
+    let t = text.trim();
+    let digits = |s: &str| -> Option<String> {
+        let d: String = s.chars().take_while(char::is_ascii_digit).collect();
+        (!d.is_empty()).then_some(d)
+    };
+    if !t.is_empty() && t.chars().all(|c| c.is_ascii_digit()) {
+        return Some(t.to_string());
+    }
+    if let Some(rest) = t.strip_prefix("[r") {
+        return digits(rest);
+    }
+    let lower = t.to_ascii_lowercase();
+    ["/release/", "/releases/"]
+        .iter()
+        .find_map(|m| lower.find(m).and_then(|i| digits(&t[i + m.len()..])))
 }
 
 /// True when an optional tag field is absent or only whitespace.
@@ -1736,6 +1779,18 @@ impl Client {
     /// One authenticated request — pace alongside the search rate limit.
     pub fn fetch_release(&self, release_id: &str) -> Result<ReleaseDetail> {
         Ok(self.get_release(release_id)?.into_detail())
+    }
+
+    /// One release by id as a picker candidate plus its full detail: the
+    /// pasted-link path, where there is no search hit to build the candidate
+    /// from. One request serves both.
+    pub fn fetch_release_candidate(
+        &self,
+        release_id: &str,
+    ) -> Result<(ReleaseCandidate, ReleaseDetail)> {
+        let resp = self.get_release(release_id)?;
+        let candidate = resp.to_candidate();
+        Ok((candidate, resp.into_detail()))
     }
 
     /// The format summary of one release (`Vinyl, 12", 33 ⅓ RPM`), for deciding
@@ -3939,6 +3994,36 @@ impl ReleaseResponse {
             .join(", ")
     }
 
+    /// The release as a picker candidate, labelled `Artist - Title` the way
+    /// a search hit is. No popularity counts: the release endpoint has none.
+    fn to_candidate(&self) -> ReleaseCandidate {
+        let artist = billed_artist(self.artists.iter().map(|a| a.name.as_str()));
+        let title = if artist.is_empty() {
+            self.title.clone()
+        } else {
+            format!("{artist} - {}", self.title)
+        };
+        let (label, catno) = first_label(&self.labels);
+        ReleaseCandidate {
+            release_id: self.id.to_string(),
+            artist,
+            title,
+            year: self
+                .year
+                .filter(|y| *y > 0)
+                .map(|y| y.to_string())
+                .unwrap_or_default(),
+            label: label.unwrap_or_default(),
+            catno: catno.unwrap_or_default(),
+            country: self.country.clone(),
+            format: self.format_summary(),
+            thumb_url: self.thumb.clone(),
+            cover_image_url: self.cover_url().unwrap_or_default(),
+            in_collection: 0,
+            in_wantlist: 0,
+        }
+    }
+
     fn into_detail(self) -> ReleaseDetail {
         let format = self.format_summary();
         // Discogs lists labels in release order; the first is the primary one.
@@ -4590,6 +4675,31 @@ mod tests {
             credits: Vec::new(),
             companies: Vec::new(),
         }
+    }
+
+    #[test]
+    fn release_id_from_link_reads_every_pasted_shape() {
+        for (link, want) in [
+            ("https://www.discogs.com/release/249504-Daft-Punk-Discovery", Some("249504")),
+            ("discogs.com/de/release/249504?ev=rr", Some("249504")),
+            ("https://api.discogs.com/releases/249504", Some("249504")),
+            (" [r249504] ", Some("249504")),
+            ("249504", Some("249504")),
+            ("https://www.discogs.com/master/2898-Discovery", None),
+            ("not a link", None),
+        ] {
+            assert_eq!(release_id_from_link(link).as_deref(), want, "{link}");
+        }
+    }
+
+    #[test]
+    fn fill_field_get_set_round_trip() {
+        let mut tags = Tags::default();
+        FillField::Year.set(&mut tags, Some("1993".into()));
+        assert_eq!(tags.year, Some(1993));
+        assert_eq!(FillField::Year.get(&tags).as_deref(), Some("1993"));
+        FillField::Year.set(&mut tags, None);
+        assert_eq!(tags.year, None);
     }
 
     fn video(uri: &str, title: &str) -> ReleaseVideo {

@@ -1985,6 +1985,33 @@ impl App {
                                             ));
                                             ui.close_menu();
                                         }
+                                        // Take the match off again: the release
+                                        // link, its cover and the fields it
+                                        // filled. Only the matched tracks go.
+                                        if matched > 0 {
+                                            let label = if drag_ids.len() > 1 {
+                                                format!("Remove Discogs match ({matched})")
+                                            } else {
+                                                "Remove Discogs match".to_string()
+                                            };
+                                            if ui
+                                                .button(label)
+                                                .on_hover_note(
+                                                    "Unlink the release, drop its cover and \
+                                                     put the fields it filled back",
+                                                )
+                                                .clicked()
+                                            {
+                                                menu_action = Some(TrackMenuAction::RemoveMatch(
+                                                    drag_ids
+                                                        .iter()
+                                                        .copied()
+                                                        .filter(|id| track_releases.contains_key(id))
+                                                        .collect(),
+                                                ));
+                                                ui.close_menu();
+                                            }
+                                        }
                                         // Wantlist the release behind the selection —
                                         // "I have the file, now I want the record".
                                         // Only the tracks with a fetched release can
@@ -2489,6 +2516,25 @@ impl App {
                 let url = discogs_url(release_id.as_deref(), &query);
                 open_url(&url);
                 self.status = format!("Opening Discogs: {url}");
+            }
+            Some(TrackMenuAction::RemoveMatch(ids)) => {
+                let catalog = Catalog::open(&self.db_path);
+                let done = ids
+                    .iter()
+                    .filter(|&&id| catalog.as_ref().is_ok_and(|c| c.remove_release_match(id).is_ok()))
+                    .count();
+                // The fetched cover is gone; let each track re-decode to its own.
+                for id in &ids {
+                    self.cover_cache.remove(id);
+                    self.cover_full_cache.remove(id);
+                    self.cover_inflight.remove(id);
+                }
+                self.status = if done == ids.len() {
+                    format!("Removed the Discogs match from {done} track(s).")
+                } else {
+                    format!("Removed the Discogs match from {done} of {} track(s).", ids.len())
+                };
+                self.reload();
             }
             Some(TrackMenuAction::FetchRelease(ids)) => {
                 // Always the full match: cover *and* empty fields. The picker is

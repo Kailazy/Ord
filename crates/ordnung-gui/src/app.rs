@@ -66,6 +66,7 @@ impl App {
         let (cover_tx, cover_rx) = mpsc::channel();
         let (art_save_tx, art_save_rx) = mpsc::channel();
         let (preview_tx, preview_rx) = mpsc::channel();
+        let (link_tx, link_rx) = mpsc::channel();
         // Persistent thumbnail loader: one long-lived catalog connection serves
         // every visible-row cover, so we never pay a fresh `Catalog::open` per
         // thumbnail and the disk read + PNG decode stay off the UI thread.
@@ -290,6 +291,10 @@ impl App {
             artwork_selected: 0,
             artwork_previews: None,
             artwork_saving: false,
+            artwork_link: String::new(),
+            artwork_link_busy: false,
+            link_tx,
+            link_rx,
             art_save_tx,
             art_save_rx,
             preview_tx,
@@ -2113,6 +2118,7 @@ impl App {
         }
         self.poll_discogs_identity();
         self.poll_metadata_preview();
+        self.poll_link_fetch();
         self.poll_vinyl_sheet();
         self.poll_sheet_price();
         self.poll_sheet_bandcamp();

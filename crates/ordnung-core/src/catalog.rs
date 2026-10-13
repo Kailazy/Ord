@@ -11,8 +11,9 @@ use crate::model::{
     Format, Id, Playlist, SellerListing, SellerShop, SongPin, Tags, Track, Tracklist,
     TracklistEntry, TranscodeVerdict, VinylList, VinylRecord,
 };
+use crate::discogs::{FillField, ReleaseDetail};
 use rusqlite::{params, Connection, OptionalExtension, Row};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::Path;
 use unicode_normalization::{char::is_combining_mark, UnicodeNormalization};
 
@@ -404,7 +405,7 @@ const RECENTLY_ADDED_WINDOW_SECS: i64 = 24 * 60 * 60;
 ///
 /// Schema 25 adds the covering indexes the GUI's launch reads run on, so
 /// they stop walking the waveform and cover blobs (see `init_schema`).
-const SCHEMA_VERSION: i64 = 25;
+const SCHEMA_VERSION: i64 = 26;
 
 /// The columns of the two vinyl list tables (`vinyl_collection`,
 /// `vinyl_wantlist`), shared so both are created alike and so an older
@@ -1007,6 +1008,11 @@ impl Catalog {
             // rescan once (which fills the signature), then skip thereafter.
             ("src_size", "INTEGER"),
             ("src_mtime", "INTEGER"),
+            // What a Discogs match wrote, by field, with the value each
+            // replaced (JSON map keyed by `FillField`), so the match can be
+            // taken back. NULL until a match fills a field, cleared by
+            // `remove_release_match`.
+            ("match_undo", "TEXT"),
         ];
         for (name, ddl) in cols {
             self.add_column_if_missing("tracks", name, ddl)?;
@@ -2078,6 +2084,94 @@ impl Catalog {
     pub fn mark_metadata_fetched(&self, id: Id) -> Result<()> {
         self.conn.execute(
             "UPDATE tracks SET discogs_meta_fetched_at = unixepoch() WHERE id = ?1",
+            params![id as i64],
+        )?;
+        Ok(())
+    }
+
+    /// The fields a Discogs match has written onto the track and what each
+    /// held before. Empty when no match wrote anything.
+    fn match_undo(&self, id: Id) -> Result<BTreeMap<FillField, Option<String>>> {
+        let json: Option<String> = self
+            .conn
+            .query_row(
+                "SELECT match_undo FROM tracks WHERE id = ?1",
+                params![id as i64],
+                |r| r.get(0),
+            )
+            .optional()?
+            .flatten();
+        Ok(json
+            .and_then(|j| serde_json::from_str(&j).ok())
+            .unwrap_or_default())
+    }
+
+    /// Fill the track's album-level tag fields from `rel` the way the release
+    /// picker's Save does, remembering what each field held so
+    /// [`Self::remove_release_match`] can put it back. A field keeps the value
+    /// from before the *first* match that touched it, so re-picking a release
+    /// never buries the original. Catalog only. Returns how many fields were
+    /// written.
+    pub fn apply_release_tags(&self, id: Id, rel: &ReleaseDetail, overwrite: bool) -> Result<usize> {
+        let mut tags = self.get_track(id)?.tags;
+        let fills = rel.proposed_fills(&tags, overwrite);
+        if fills.is_empty() {
+            return Ok(0);
+        }
+        let mut undo = self.match_undo(id)?;
+        for f in &fills {
+            undo.entry(f.field).or_insert_with(|| f.field.get(&tags));
+        }
+        rel.apply_to_tags(&mut tags, overwrite);
+        self.update_tags(id, &tags)?;
+        let json = serde_json::to_string(&undo)
+            .map_err(|e| Error::Invalid(format!("serializing match undo: {e}")))?;
+        self.conn.execute(
+            "UPDATE tracks SET match_undo = ?2 WHERE id = ?1",
+            params![id as i64, json],
+        )?;
+        Ok(fills.len())
+    }
+
+    /// Take a Discogs match off a track: the release link and its cover go,
+    /// the fields the match filled go back to what they held, and the track
+    /// is offered to the picker again. A match made before the undo record
+    /// existed has no record of what it replaced; there every field still
+    /// holding the release's own value goes back to what the source file
+    /// says (a file the edits were written to agrees with the release, so
+    /// nothing moves), or is cleared when the file can't be read.
+    pub fn remove_release_match(&self, id: Id) -> Result<()> {
+        let track = self.get_track(id)?;
+        let mut tags = track.tags;
+        let undo = self.match_undo(id)?;
+        let mut reverted = false;
+        if !undo.is_empty() {
+            for (field, prev) in undo {
+                field.set(&mut tags, prev);
+            }
+            reverted = true;
+        } else if let Some(rel) = self
+            .external_release_id(id)?
+            .and_then(|rid| self.cached_release(&rid).ok().flatten())
+        {
+            let file_tags = crate::scan::scan_file(&track.source_path).ok().map(|s| s.tags);
+            for f in rel.proposed_fills(&Tags::default(), true) {
+                if f.field.get(&tags).as_deref().map(str::trim) == Some(f.value.as_str()) {
+                    f.field
+                        .set(&mut tags, file_tags.as_ref().and_then(|t| f.field.get(t)));
+                    reverted = true;
+                }
+            }
+        }
+        if reverted {
+            self.write_all_tags(id, &tags)?;
+        }
+        self.conn.execute(
+            "DELETE FROM track_external_artwork WHERE track_id = ?1",
+            params![id as i64],
+        )?;
+        self.conn.execute(
+            "UPDATE tracks SET discogs_meta_fetched_at = NULL, match_undo = NULL WHERE id = ?1",
             params![id as i64],
         )?;
         Ok(())
@@ -5665,6 +5759,56 @@ mod tests {
         assert!(missing.contains(&mid), "absent file reported");
         assert!(!missing.contains(&pid), "present file not reported");
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn remove_release_match_puts_the_filled_fields_back() {
+        let cat = Catalog::open(":memory:").unwrap();
+        let (id, _) = cat
+            .upsert_scanned(&scanned("/a.mp3", "Plastikman", "", 1000))
+            .unwrap();
+        let mut tags = cat.get_track(id).unwrap().tags;
+        tags.genre = None;
+        tags.year = Some(1999);
+        cat.update_tags(id, &tags).unwrap();
+        let rel = ReleaseDetail {
+            release_id: "123".into(),
+            title: "Plastikman EP".into(),
+            year: Some(1993),
+            released: None,
+            country: None,
+            genres: vec!["Electronic".into()],
+            styles: vec!["Acid".into()],
+            label: Some("Plus 8".into()),
+            catalog_number: None,
+            artist_ids: Vec::new(),
+            artists: Vec::new(),
+            label_ids: Vec::new(),
+            master_id: None,
+            format: String::new(),
+            tracklist: Vec::new(),
+            videos: Vec::new(),
+            credits: Vec::new(),
+            companies: Vec::new(),
+        };
+        cat.set_external_artwork(id, "discogs", Some("123"), None, Some(&[1]), None)
+            .unwrap();
+        // Fill empties, then overwrite: the undo keeps the pre-first-match year.
+        assert_eq!(cat.apply_release_tags(id, &rel, false).unwrap(), 3);
+        assert_eq!(cat.apply_release_tags(id, &rel, true).unwrap(), 1);
+        cat.mark_metadata_fetched(id).unwrap();
+        let t = cat.get_track(id).unwrap().tags;
+        assert_eq!((t.genre.as_deref(), t.year), (Some("Acid"), Some(1993)));
+
+        cat.remove_release_match(id).unwrap();
+        let t = cat.get_track(id).unwrap().tags;
+        assert_eq!(t.genre, None);
+        assert_eq!(t.label, None);
+        assert_eq!(t.album, None);
+        assert_eq!(t.year, Some(1999));
+        assert_eq!(t.artist.as_deref(), Some("Plastikman"), "untouched field kept");
+        assert_eq!(cat.external_release_id(id).unwrap(), None);
+        assert!(cat.match_undo(id).unwrap().is_empty());
     }
 
     #[test]

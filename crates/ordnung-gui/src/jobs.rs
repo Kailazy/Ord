@@ -33,7 +33,7 @@ impl App {
     }
 
     /// The Discogs token, or `None` after pointing the user at Settings.
-    fn require_token(&mut self) -> Option<String> {
+    pub(crate) fn require_token(&mut self) -> Option<String> {
         let token = self.discogs_token();
         if token.trim().is_empty() {
             self.status = "No Discogs token set. Add one in Settings \
@@ -2200,12 +2200,8 @@ fn apply_release(
         Some(&thumb_png),
         Some(&full),
     );
-    let rel = catalog.release_cached_or(&c.release_id, || client.fetch_release(&c.release_id));
-    if let (Ok(rel), Ok(track)) = (rel, catalog.get_track(track_id)) {
-        let mut tags = track.tags;
-        if rel.apply_to_tags(&mut tags, false) > 0 {
-            let _ = catalog.update_tags(track_id, &tags);
-        }
+    if let Ok(rel) = catalog.release_cached_or(&c.release_id, || client.fetch_release(&c.release_id)) {
+        let _ = catalog.apply_release_tags(track_id, &rel, false);
     }
     let _ = catalog.mark_metadata_fetched(track_id);
 }
@@ -3690,20 +3686,7 @@ pub(crate) fn run_fetch_tracks(
                 let candidates: Vec<ArtworkChoice> = found
                     .into_iter()
                     .take(MAX_CANDIDATES)
-                    .map(|c| {
-                        let thumb_png = client.fetch_thumb(&c.thumb_url).unwrap_or_default();
-                        ArtworkChoice {
-                            release_id: c.release_id,
-                            title: c.title,
-                            year: c.year,
-                            label: c.label,
-                            country: c.country,
-                            format: c.format,
-                            thumb_url: c.thumb_url,
-                            cover_image_url: c.cover_image_url,
-                            thumb_png,
-                        }
-                    })
+                    .map(|c| ArtworkChoice::fetch(&client, c))
                     .collect();
                 let _ = tx.send(JobMsg::ArtworkChoices(ArtworkChoices {
                     id: track_id,
@@ -3727,6 +3710,16 @@ pub(crate) fn run_fetch_tracks(
                     // via the menu's ↻ re-pick.
                     if enrich {
                         let _ = catalog.mark_metadata_fetched(track_id);
+                        // One track with nothing found still gets the picker,
+                        // empty, so the right release's link can be pasted.
+                        if total == 1 {
+                            let _ = tx.send(JobMsg::ArtworkChoices(ArtworkChoices {
+                                id: track_id,
+                                label,
+                                candidates: Vec::new(),
+                            }));
+                            queued += 1;
+                        }
                     }
                 }
             }
