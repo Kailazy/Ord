@@ -35,7 +35,9 @@
 
   /* Hero */
   .hero { padding: 96px 0 40px; text-align: center; }
-  .hero h1 { margin: 0 0 14px; font-size: 3.4rem; font-weight: 650; letter-spacing: -0.035em; line-height: 1.05; }
+  .hero h1 { margin: 0 0 26px; font-size: 3.4rem; font-weight: 650; letter-spacing: -0.035em; line-height: 1.05; }
+  .hero h1 .d { position: relative; display: inline-block; }
+  .hero h1 .by { position: absolute; left: 0; bottom: 0; transform: translateY(100%); font-size: 0.72rem; font-weight: 400; letter-spacing: 0.02em; line-height: 1; white-space: nowrap; color: var(--muted); }
   .hero p { margin: 0 auto 30px; max-width: 560px; font-size: 1.2rem; color: var(--muted); }
   .cta { display: inline-flex; gap: 18px; align-items: center; }
   .btn {
@@ -121,7 +123,7 @@
 
 <section class="hero">
   <div class="wrap">
-    <h1>Ord</h1>
+    <h1>Or<span class="d">d<span class="by">by Kai Lazarov</span></span></h1>
     <p>A music library and a record shelf for DJs. Your files, your cues, your vinyl and all of Discogs, in one window.</p>
     <div class="cta">
       <a class="btn" id="download" href="https://github.com/Kailazy/Ord/releases/latest/download/Ord-macos-universal.dmg">Download for macOS</a>
