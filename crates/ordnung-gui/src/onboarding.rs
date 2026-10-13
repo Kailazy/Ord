@@ -370,8 +370,11 @@ impl App {
                                             egui::RichText::new(
                                                 "Ordnung reads your music into its own catalog. \
                                                  Nothing is moved or renamed. The only thing \
-                                                 that writes to your files is tag writeback, \
-                                                 and you choose how that works in a moment.",
+                                                 that writes to your files on its own is tag \
+                                                 writeback, and you choose how that works in a \
+                                                 moment. Converting a file or trashing a \
+                                                 duplicate only ever happens when you start it \
+                                                 and confirm.",
                                             )
                                             .font(crate::ui::tokens::font::body())
                                             .color(crate::ui::tokens::color::LABEL_2),
@@ -763,8 +766,8 @@ impl App {
                                     crate::ui::icon::sync,
                                     "Automatic",
                                     "Each song is written as soon as its Discogs data lands, \
-                                     and later edits follow by themselves. Only the tags, only \
-                                     songs that changed. Recommended.",
+                                     and later edits follow by themselves. Only the tags and \
+                                     cover art, only songs that changed. Recommended.",
                                 ) {
                                     auto_write = true;
                                 }
@@ -856,9 +859,15 @@ impl App {
                 auto_match,
             );
         } else if !open {
-            // Closing with the X is a deliberate "not now": don't write a
-            // writeback choice the user skipped past, but do stop reopening the
-            // tour on every launch. The config default (automatic) stands.
+            // Closing with the X is a deliberate "not now": stop reopening the
+            // tour on every launch, but never treat a skipped question as a yes.
+            // On a fresh install nobody has agreed to automatic writeback, so
+            // the files stay untouched until the user turns it on in Settings.
+            // A replay (an older tour already finished) keeps whatever is in
+            // force; the user answered that question once.
+            if self.config.onboarding_completed_version == 0 {
+                self.config.auto_write_tags = false;
+            }
             self.config.onboarding_completed_version = TOUR_VERSION;
             self.save_config();
             self.tour = None;
