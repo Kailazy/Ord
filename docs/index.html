@@ -52,6 +52,33 @@
   .gh:hover { color: var(--text); }
   .fine { margin-top: 14px; font-size: 0.82rem; color: #6a6a6a; }
 
+  /* First-launch guide: the build isn't notarized, so macOS blocks it once. */
+  .gate {
+    margin: 24px auto 0;
+    max-width: 560px;
+    padding: 18px 22px;
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    background: var(--card);
+    text-align: left;
+  }
+  .gate h2 { margin: 0 0 6px; font-size: 1rem; font-weight: 620; }
+  .gate p { margin: 0 0 10px; font-size: 0.92rem; color: var(--muted); max-width: none; }
+  .gate ol { margin: 0; padding-left: 20px; font-size: 0.92rem; }
+  .gate li { margin: 4px 0; }
+  .gate b { color: var(--text); font-weight: 600; }
+  dialog {
+    border: 0;
+    padding: 0;
+    background: transparent;
+    color: var(--text);
+    max-width: calc(100vw - 32px);
+  }
+  dialog::backdrop { background: rgba(0,0,0,.6); }
+  dialog .gate { margin: 0; border-color: var(--accent); }
+  dialog form { margin: 16px 0 0; text-align: center; }
+  dialog .btn { border: 0; cursor: pointer; font: inherit; font-weight: 600; }
+
   /* Shots */
   .shot {
     display: block;
@@ -97,8 +124,17 @@
     <h1>Ord</h1>
     <p>A music library and a record shelf for DJs. Your files, your cues, your vinyl and all of Discogs, in one window.</p>
     <div class="cta">
-      <a class="btn" href="https://github.com/Kailazy/Ord/releases/latest/download/Ord-macos-universal.dmg">Download for macOS</a>
+      <a class="btn" id="download" href="https://github.com/Kailazy/Ord/releases/latest/download/Ord-macos-universal.dmg">Download for macOS</a>
       <a class="gh" href="https://github.com/Kailazy/Ord">GitHub</a>
+    </div>
+    <div class="gate">
+      <h2>First launch: macOS will say it can't verify Ord</h2>
+      <p>Ord isn't notarized by Apple, so Gatekeeper blocks it once. Three clicks and it opens from then on.</p>
+      <ol>
+        <li>Double-click Ord. In the warning, click <b>Done</b>.</li>
+        <li>Open <b>System Settings → Privacy &amp; Security</b> and scroll down.</li>
+        <li>Click <b>Open Anyway</b> next to the Ord message, then confirm.</li>
+      </ol>
     </div>
     <div class="fine">Free and open source. Apple silicon and Intel.</div>
     <div class="hero-shot">
@@ -206,6 +242,18 @@
     <a href="https://github.com/Kailazy/Ord">Source on GitHub</a> &nbsp;·&nbsp; <a href="https://github.com/Kailazy/Ord/releases">All releases</a>
   </div>
 </footer>
+
+<dialog id="gate-dialog">
+  <div class="gate"></div>
+  <form method="dialog"><button class="btn">Got it</button></form>
+</dialog>
+<script>
+  // The download starts normally; the dialog repeats the first-launch steps
+  // so nobody is surprised by the Gatekeeper warning.
+  const dlg = document.getElementById('gate-dialog');
+  dlg.querySelector('.gate').innerHTML = document.querySelector('.hero .gate').innerHTML;
+  document.getElementById('download').addEventListener('click', () => dlg.showModal());
+</script>
 
 </body>
 </html>
