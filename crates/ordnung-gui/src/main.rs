@@ -136,7 +136,7 @@ fn main() -> eframe::Result<()> {
     };
     util::mark("window requested");
     eframe::run_native(
-        "Ordnung",
+        "Ord",
         opts,
         Box::new(move |cc| {
             util::mark("window + gpu ready");

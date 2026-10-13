@@ -270,7 +270,7 @@ impl App {
         ui.label(egui::RichText::new("Discogs account").strong());
         ui.label(
             egui::RichText::new(
-                "Ordnung uses Discogs to fetch cover art and release details, and \
+                "Ord uses Discogs to fetch cover art and release details, and \
                  to read your collection and wantlist.",
             )
             .small()
@@ -861,7 +861,7 @@ impl App {
                                         ui.label(egui::RichText::new("Tags").strong());
                                         ui.label(
                     egui::RichText::new(
-                        "On, Ordnung keeps the source files in sync as you edit and as \
+                        "On, Ord keeps the source files in sync as you edit and as \
                          Discogs fills in fields and cover art. Files change on disk, so \
                          those tracks get re-analyzed on the next Analyze. Turn it off to \
                          keep edits in the catalog until you press the toolbar's Write \
@@ -2074,7 +2074,7 @@ Converted copies go on the stick; your library files stay as they are. Needs ffm
                 .response
                 .on_hover_note(
                     "CDJs show the comment under the song info. Tags are the song's \
-Ordnung tags, as in the table's Tags column.",
+Ord tags, as in the table's Tags column.",
                 );
                 if picked != current {
                     self.config.export_comment = picked.key().to_string();
@@ -2133,7 +2133,7 @@ Ordnung tags, as in the table's Tags column.",
                 ui.label(format!(
                     "Creates the rekordbox/CDJ structure on {name}: a PIONEER folder \
 with empty databases, plus Contents for exported audio. Players will then recognize the \
-device, and Ordnung's export menus can target it."
+device, and Ord's export menus can target it."
                 ));
                 ui.add_space(6.0);
                 ui.label(
@@ -2427,7 +2427,7 @@ files elsewhere on the device stay plain storage.",
             &format!("{} — {}", record.artist, record.title),
             &format!(
                 "{detail} It changes your real Discogs account and can't be undone \
-                 from Ordnung."
+                 from Ord."
             ),
             match kind {
                 Kind::Move => "Move",

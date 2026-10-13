@@ -368,7 +368,7 @@ impl App {
                                         ui.add_space(crate::ui::tokens::space::S3);
                                         ui.label(
                                             egui::RichText::new(
-                                                "Ordnung reads your music into its own catalog. \
+                                                "Ord reads your music into its own catalog. \
                                                  Nothing is moved or renamed. The only thing \
                                                  that writes to your files on its own is tag \
                                                  writeback, and you choose how that works in a \
@@ -385,7 +385,7 @@ impl App {
                                 step_heading(
                                     ui,
                                     "How do you play?",
-                                    "Ordnung holds both. This just decides which library \
+                                    "Ord holds both. This just decides which library \
                                      leads.",
                                 );
                                 if choice_card(
@@ -704,7 +704,7 @@ impl App {
                                 step_heading(
                                     ui,
                                     "Off to the decks",
-                                    "Ordnung gets your tracks ready, then writes a \
+                                    "Ord gets your tracks ready, then writes a \
                                      stick the players read directly.",
                                 );
                                 feature_row(
@@ -728,7 +728,7 @@ impl App {
                                 step_heading(
                                     ui,
                                     "Updating your files",
-                                    "Everything Ordnung learns about a song goes in its \
+                                    "Everything Ord learns about a song goes in its \
                                      catalog first. Writing it into the file is your call.",
                                 );
                                 // What "write to file" actually does on import,
@@ -737,14 +737,14 @@ impl App {
                                 // the fork below is a decision about.
                                 ui.label(
                                     egui::RichText::new(if auto_fetch {
-                                        "When a song is imported, Ordnung reads its tags and \
+                                        "When a song is imported, Ord reads its tags and \
                                          Discogs fills in what they're missing: genre, label, \
                                          year and cover art. Write to file copies those tags \
                                          and the cover into the song file itself, so they \
                                          travel with it to rekordbox or anywhere else. The \
                                          audio is never touched."
                                     } else {
-                                        "When a song is imported, Ordnung reads its tags; \
+                                        "When a song is imported, Ord reads its tags; \
                                          edits and any Discogs release you match land in the \
                                          catalog. Write to file copies those tags and the \
                                          cover into the song file itself, so they travel with \
