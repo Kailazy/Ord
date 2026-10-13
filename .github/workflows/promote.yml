@@ -1,15 +1,17 @@
 name: Promote
 
-# Promote a dev build (a prerelease published by the Release workflow) to prod:
-# it becomes `releases/latest`, which the website download button, the README
-# link and the in-app update check all follow. No rebuild, the DMG is the one
-# the dev build shipped. Run with `make promote` (newest dev build) or
-# `make promote V=X.Y.Z`.
+# Promote the current dev build (the rolling `dev` prerelease published by the
+# Release workflow) to prod: its DMGs are published as a `vX.Y.Z` release that
+# becomes `releases/latest`, which the website download button, the README link
+# and the in-app update check all follow. No rebuild, the DMG is the one the
+# dev build shipped. Only the newest dev build can be promoted, since older
+# ones are replaced. Run with `make promote`, or `make promote V=X.Y.Z` to
+# assert which version you expect to promote.
 on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version to promote (e.g. 0.165.0). Empty = newest release.'
+        description: 'Expected version (e.g. 0.165.0). Fails if the dev build is a different one. Empty = whatever dev holds.'
         required: false
         default: ''
 
@@ -20,18 +22,27 @@ jobs:
   promote:
     runs-on: ubuntu-latest
     steps:
-      - name: Mark the release as latest
+      - name: Publish the dev build as the latest release
         env:
           GH_TOKEN: ${{ github.token }}
           VER: ${{ github.event.inputs.version }}
         run: |
           set -euo pipefail
-          if [ -n "$VER" ]; then
-            tag="v${VER#v}"
-          else
-            # Newest v* release (skips the rolling ffmpeg/genredb assets).
-            tag=$(gh release list --repo "$GITHUB_REPOSITORY" --limit 50 \
-              --json tagName,createdAt --jq '[.[] | select(.tagName | startswith("v"))] | sort_by(.createdAt) | last | .tagName')
+          repo="$GITHUB_REPOSITORY"
+          # The versioned DMG name says which version dev holds.
+          dmg=$(gh release view dev --repo "$repo" --json assets \
+            --jq '.assets[].name | select(test("^Ord-[0-9.]+-macos-universal\\.dmg$"))')
+          ver=${dmg#Ord-}; ver=${ver%-macos-universal.dmg}
+          if [ -n "$VER" ] && [ "${VER#v}" != "$ver" ]; then
+            echo "dev holds v$ver, not v${VER#v}; only the newest dev build can be promoted." >&2
+            exit 1
           fi
+          tag="v$ver"
           echo "Promoting $tag"
-          gh release edit "$tag" --repo "$GITHUB_REPOSITORY" --prerelease=false --latest
+          mkdir dl
+          gh release download dev --repo "$repo" --dir dl
+          gh release view dev --repo "$repo" --json body --jq .body > notes.md
+          # The vX.Y.Z tag was pushed by the release procedure, so the release
+          # attaches to it.
+          gh release create "$tag" dl/*.dmg --repo "$repo" --verify-tag \
+            --title "Ord $tag" --notes-file notes.md --latest

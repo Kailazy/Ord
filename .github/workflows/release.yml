@@ -1,10 +1,12 @@
 name: Release
 
 # Push a version tag (e.g. `git tag v0.0.2 && git push origin v0.0.2`) to build a
-# universal macOS DMG and publish it as a GitHub **prerelease**: the dev channel.
-# Prereleases never become `releases/latest`, so the website button, the README
-# link and the in-app update check keep pointing at the last prod release until
-# a dev build is promoted with the Promote workflow (`make promote`).
+# universal macOS DMG and publish it as the rolling `dev` **prerelease**: the dev
+# channel. Each build replaces the previous one, so there is only ever one dev
+# release. Prereleases never become `releases/latest`, so the website button,
+# the README link and the in-app update check keep pointing at the last prod
+# release until the dev build is promoted with the Promote workflow
+# (`make promote`), which publishes it as its own `vX.Y.Z` release.
 # `workflow_dispatch` lets you dry-run a build (artifact only, no Release) by hand.
 on:
   push:
@@ -71,24 +73,36 @@ jobs:
           name: Ord-macos-universal
           path: Ord-*.dmg
 
-      - name: Publish GitHub Release
+      - name: Write release notes
         if: github.ref_type == 'tag'
-        uses: softprops/action-gh-release@v2
-        with:
-          files: Ord-*.dmg
-          name: Ord ${{ github.ref_name }}
-          prerelease: true
-          body: |
-            **Universal macOS build** (Apple Silicon + Intel), ad-hoc signed.
-            The rekordbox USB export is in beta and not included in this build;
-            plugged-in sticks can still be browsed, played and edited in place.
+        run: |
+          cat > notes.md <<'NOTES'
+          **Universal macOS build** (Apple Silicon + Intel), ad-hoc signed.
+          The rekordbox USB export is in beta and not included in this build;
+          plugged-in sticks can still be browsed, played and edited in place.
 
-            ### Install
-            1. Open the `.dmg` and drag **Ord** into **Applications**.
-            2. Double-click Ord. macOS says it can't verify the app: click **Done**.
-            3. Open **System Settings → Privacy & Security**, scroll down and click
-               **Open Anyway** next to the Ord message. Confirm once more.
+          ### Install
+          1. Open the `.dmg` and drag **Ord** into **Applications**.
+          2. Double-click Ord. macOS says it can't verify the app: click **Done**.
+          3. Open **System Settings → Privacy & Security**, scroll down and click
+             **Open Anyway** next to the Ord message. Confirm once more.
 
-            That's a one-time step: the build isn't notarized by Apple, so
-            Gatekeeper asks the first time and trusts the app from then on.
-            Terminal shortcut: `xattr -dr com.apple.quarantine /Applications/Ord.app`.
+          That's a one-time step: the build isn't notarized by Apple, so
+          Gatekeeper asks the first time and trusts the app from then on.
+          Terminal shortcut: `xattr -dr com.apple.quarantine /Applications/Ord.app`.
+          NOTES
+
+      - name: Publish the rolling dev prerelease
+        # One `dev` release, replaced on every build, so dev builds don't pile
+        # up on the Releases page. Its tag is moved to this commit; the
+        # versioned DMG name tells Promote which version it holds.
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VER: ${{ steps.ver.outputs.version }}
+        run: |
+          set -euo pipefail
+          gh release delete dev --repo "$GITHUB_REPOSITORY" --cleanup-tag -y || true
+          gh release create dev "Ord-$VER-macos-universal.dmg" Ord-macos-universal.dmg \
+            --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --prerelease \
+            --title "Ord dev (v$VER)" --notes-file notes.md

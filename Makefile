@@ -26,7 +26,7 @@ rb-capture: ## Snapshot a rekordbox stick as a suite reference (STICK=/Volumes/X
 rb-accept: ## Pin the last rb-suite run as the accepted baseline (NAME=…)
 	@cargo run --release -q -p ordnung-rbdb --example rb_suite -- accept $(NAME)
 
-promote: ## Promote a dev build to prod: it becomes releases/latest (website button, README, in-app update). V=X.Y.Z, default newest
+promote: ## Promote the rolling dev build to prod as vX.Y.Z: it becomes releases/latest (website button, README, in-app update). V=X.Y.Z to assert the version
 	@gh workflow run promote.yml $(if $(V),-f version=$(V))
 	@echo "Promote started: gh run list --workflow=promote.yml --limit 1"
 

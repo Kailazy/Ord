@@ -13,16 +13,20 @@ publishes a GitHub Release whenever a `v*` tag is pushed.
 
 ## Channels: dev and prod
 
-Every pushed tag publishes a **prerelease**: the dev channel. GitHub never
-makes a prerelease `releases/latest`, and everything users install from
-follows `latest` (the website download button in `docs/index.html`, the
-README link, the in-app update check in `ordnung-core/src/update.rs`). So
-dev builds ship as often as we like and users stay on the last prod build.
+Every pushed tag replaces the rolling **`dev` prerelease**: the dev channel.
+There is only ever one dev release (its tag is moved to the newest build), so
+dev builds don't pile up on the Releases page. GitHub never makes a
+prerelease `releases/latest`, and everything users install from follows
+`latest` (the website download button in `docs/index.html`, the README link,
+the in-app update check in `ordnung-core/src/update.rs`). So dev builds ship
+as often as we like and users stay on the last prod build.
 
-Prod is a promotion, not a rebuild: `make promote V=X.Y.Z` (or bare
-`make promote` for the newest build) runs `.github/workflows/promote.yml`,
-which flips that release to non-prerelease and `latest`. Only Kai decides
-when a build goes prod; never promote unasked.
+Prod is a promotion, not a rebuild: `make promote` runs
+`.github/workflows/promote.yml`, which copies the DMGs from `dev` into a new
+`vX.Y.Z` release (on the already-pushed tag) marked `latest`. Only the newest
+dev build can be promoted; `make promote V=X.Y.Z` fails if `dev` holds a
+different version. Only Kai decides when a build goes prod; never promote
+unasked.
 
 ## Semver contract
 
@@ -57,11 +61,12 @@ CLAUDE.md). Then:
 4. Tag and push the tag:
    `git tag vX.Y.Z && git push origin vX.Y.Z`
 5. CI takes over: the `Release` workflow builds the universal DMG
-   (`Ord-X.Y.Z-macos-universal.dmg`) and publishes the GitHub Release.
+   (`Ord-X.Y.Z-macos-universal.dmg`) and publishes it as the `dev` release.
    Confirm it started with `gh run list --workflow=release.yml --limit 1`
    and report the outcome; if it fails, read the log with
    `gh run view <id> --log-failed` and fix before re-tagging. The result
-   is a dev prerelease; it reaches users only when promoted (see Channels).
+   replaces the `dev` prerelease; it reaches users only when promoted (see
+   Channels).
 6. Install it locally: from the tagged commit run `make app`, which builds,
    signs and installs the bundle to `/Applications` and relaunches it. The
    installed app must never lag the latest tag; also run it after
