@@ -205,59 +205,125 @@ fn listing_hay(l: &SellerListing) -> String {
 }
 
 impl App {
-    /// Make sure the current seller's cached listings are in memory. Lazy
-    /// (rather than part of `reload`, which runs on every search keystroke)
-    /// because a swept shop can be tens of thousands of rows; a finished job
-    /// clears `seller_listings_for` so a fresh sweep shows up next frame.
+    /// Make sure the current seller's cached listings are in memory, or on
+    /// their way. A swept shop can be tens of thousands of rows, so they are
+    /// read off the UI thread (a cold read held the Market tab's first frame
+    /// for a quarter of a second) and land here on a later frame. Lazy
+    /// rather than part of `reload`, which runs on every search keystroke;
+    /// a finished sweep drops them (see [`Self::drop_seller_listings`]) so
+    /// a fresh read shows up.
     fn ensure_seller_listings(&mut self) {
         let Some(cur) = self.seller_current.clone() else {
-            self.seller_listings = Vec::new();
-            self.seller_hay = Vec::new();
-            self.seller_genres = HashMap::new();
-            self.seller_listings_for = None;
+            self.drop_seller_listings();
             return;
         };
         if self.seller_listings_for.as_deref() == Some(cur.as_str()) {
             return;
         }
-        self.seller_listings = Catalog::open(&self.db_path)
-            .and_then(|c| c.list_seller_listings(&cur))
-            .unwrap_or_default();
-        self.seller_hay = self.seller_listings.iter().map(listing_hay).collect();
-        // Genre tags for the crates. The inventory endpoint carries none, so
-        // mine the release-detail cache, then the user's own shelves for
-        // anything not fetched yet: a listed record you own or want is tagged
-        // by your own sync. Listings in neither stay unknown and drop out of a
-        // genre filter.
-        let mut ids: Vec<u64> = self.seller_listings.iter().map(|l| l.release_id).collect();
-        ids.sort_unstable();
-        ids.dedup();
-        self.seller_genres = Catalog::open(&self.db_path)
-            .and_then(|c| c.release_genres(&ids))
-            .unwrap_or_default();
-        // The bulk source: the imported Discogs genre database covers whatever
-        // the release-detail cache doesn't, which after one import is nearly
-        // everything.
-        if let Ok(Some(gdb)) = genredb::GenreDb::open(&genredb::default_path(&self.db_path)) {
-            let missing: Vec<u64> = ids
-                .iter()
-                .copied()
-                .filter(|id| !self.seller_genres.contains_key(id))
-                .collect();
-            if let Ok(map) = gdb.genres_for(&missing) {
-                for (id, tags) in map {
-                    self.seller_genres.entry(id).or_insert(tags);
+        if let Some((who, rx)) = &self.seller_listings_rx {
+            if *who == cur {
+                match rx.try_recv() {
+                    Ok((listings, mut genres)) => {
+                        // A listed record you own or want is tagged by your
+                        // own sync, whatever the caches know.
+                        for r in self.vinyl.iter().chain(self.wantlist.iter()) {
+                            if !r.genres.is_empty() {
+                                genres
+                                    .entry(r.release_id)
+                                    .or_insert_with(|| r.genres.clone());
+                            }
+                        }
+                        self.seller_hay = listings.iter().map(listing_hay).collect();
+                        self.seller_listings = listings;
+                        self.seller_genres = genres;
+                        self.seller_listings_for = Some(cur);
+                        self.seller_listings_rx = None;
+                    }
+                    Err(mpsc::TryRecvError::Empty) => {}
+                    // The read failed: the shop shows empty rather than
+                    // being asked for again every frame.
+                    Err(mpsc::TryRecvError::Disconnected) => {
+                        self.seller_listings_for = Some(cur);
+                        self.seller_listings_rx = None;
+                    }
                 }
+                return;
             }
         }
-        for r in self.vinyl.iter().chain(self.wantlist.iter()) {
-            if !r.genres.is_empty() {
-                self.seller_genres
-                    .entry(r.release_id)
-                    .or_insert_with(|| r.genres.clone());
+        // Another shop's rows must not show under this one's name while
+        // its own are read.
+        self.drop_seller_listings();
+        let db = self.db_path.clone();
+        let who = cur.clone();
+        self.seller_listings_rx = Some((
+            cur,
+            util::read_off_thread(&self.db_path, &self.egui_ctx, move |c| {
+                let listings = c.list_seller_listings(&who)?;
+                // Genre tags for the crates. The inventory endpoint carries
+                // none, so mine the release-detail cache, then the bulk
+                // genre database for whatever it doesn't cover (after one
+                // import, nearly everything). Listings in neither stay
+                // unknown and drop out of a genre filter.
+                let mut ids: Vec<u64> = listings.iter().map(|l| l.release_id).collect();
+                ids.sort_unstable();
+                ids.dedup();
+                let mut genres = c.release_genres(&ids)?;
+                if let Ok(Some(gdb)) = genredb::GenreDb::open(&genredb::default_path(&db)) {
+                    let missing: Vec<u64> = ids
+                        .iter()
+                        .copied()
+                        .filter(|id| !genres.contains_key(id))
+                        .collect();
+                    if let Ok(map) = gdb.genres_for(&missing) {
+                        for (id, tags) in map {
+                            genres.entry(id).or_insert(tags);
+                        }
+                    }
+                }
+                Ok((listings, genres))
+            }),
+        ));
+    }
+
+    /// Land the sellers, shipping floors and wantlist watch read off the UI
+    /// thread (see `reload`), and keep the current seller valid against the
+    /// list: one no longer saved gives way to the first.
+    pub(crate) fn poll_seller_meta(&mut self) {
+        let Some((sellers, shipping, watch)) = self
+            .seller_meta_rx
+            .as_ref()
+            .and_then(|rx| rx.try_recv().ok())
+        else {
+            return;
+        };
+        self.seller_meta_rx = None;
+        self.sellers = sellers;
+        // One aggregate row per seller; sellers updated before shipping was
+        // cached simply have no entry.
+        self.seller_shipping = shipping
+            .into_iter()
+            .map(|(seller, price, currency)| (seller, (price, currency)))
+            .collect();
+        self.wantlist_watch = watch;
+        if let Some(cur) = &self.seller_current {
+            if !self.sellers.iter().any(|s| &s.username == cur) {
+                self.seller_current = None;
             }
         }
-        self.seller_listings_for = Some(cur);
+        if self.seller_current.is_none() {
+            self.seller_current = self.sellers.first().map(|s| s.username.clone());
+        }
+    }
+
+    /// Let the current seller's listings go, read in flight included: the
+    /// Market tab's next frame reads them again (a sweep finished, the shop
+    /// changed, the section was left).
+    pub(crate) fn drop_seller_listings(&mut self) {
+        self.seller_listings = Vec::new();
+        self.seller_hay = Vec::new();
+        self.seller_genres = HashMap::new();
+        self.seller_listings_for = None;
+        self.seller_listings_rx = None;
     }
 
     /// The Sellers tab body: shop picker + sweep controls, then the crates as
@@ -479,7 +545,7 @@ impl App {
                     self.refresh_sheet_stocked();
                     if self.seller_current.as_deref() == Some(name.as_str()) {
                         self.seller_current = self.sellers.first().map(|s| s.username.clone());
-                        self.seller_listings_for = None;
+                        self.drop_seller_listings();
                         self.ensure_seller_listings();
                     }
                 }
@@ -595,6 +661,13 @@ impl App {
         });
         ui.add_space(4.0);
 
+        // Being read (see `ensure_seller_listings`): a spinner, not an
+        // empty shop.
+        if self.seller_listings_rx.is_some() && self.seller_listings.is_empty() {
+            ui.add_space(30.0);
+            ui.vertical_centered(|ui| ui.spinner());
+            return;
+        }
         if self.seller_listings.is_empty() {
             ui.add_space(30.0);
             ui.vertical_centered(|ui| {

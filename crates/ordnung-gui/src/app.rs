@@ -194,6 +194,7 @@ impl App {
             tracklist_editing: None,
             tracklist_pick: None,
             seller_genres: HashMap::new(),
+            seller_listings_rx: None,
             seller_hay: Vec::new(),
             seller_add: String::new(),
             seller_add_genres: Vec::new(),
@@ -213,6 +214,7 @@ impl App {
             dig_window_open: false,
             seller_shipping: HashMap::new(),
             wantlist_watch: Vec::new(),
+            seller_meta_rx: None,
             show_watch: false,
             watch_by_seller: true,
             browse_panel: None,
@@ -1050,41 +1052,25 @@ impl App {
                 .ok()
                 .flatten()
                 .map(|db| (db.dump_date().unwrap_or_default(), db.kept()));
-            // Saved sellers are a handful of rows; their (potentially huge)
+            // Saved sellers, their shipping floors and the wantlist watch.
+            // The sellers are a handful of rows, but the count and the floor
+            // behind each are aggregates over every cached listing (tens of
+            // thousands of rows) and the watch is a join against them: ~20 ms
+            // that held every Vinyl visit after a catalog change. They're
+            // read off the UI thread and land in `poll_seller_meta`; until
+            // then the section shows what it had. Their (potentially huge)
             // listing caches load lazily in the Sellers tab, not here.
-            self.sellers = Catalog::open(&self.db_path)
-                .and_then(|c| c.list_sellers())
-                .unwrap_or_default();
+            self.seller_meta_rx = Some(util::read_off_thread(
+                &self.db_path,
+                &self.egui_ctx,
+                |c| Ok((c.list_sellers()?, c.seller_shipping_floor()?, c.wantlist_offers()?)),
+            ));
             // The auditioned-releases set is one row per record actually
             // listened to, so it loads whole alongside.
             self.viewed_releases = Catalog::open(&self.db_path)
                 .and_then(|c| c.viewed_releases())
                 .map(|ids| ids.into_iter().collect())
                 .unwrap_or_default();
-            // One aggregate row per seller, so this too loads whole; sellers
-            // updated before shipping was cached simply have no entry.
-            self.seller_shipping = Catalog::open(&self.db_path)
-                .and_then(|c| c.seller_shipping_floor())
-                .map(|rows| {
-                    rows.into_iter()
-                        .map(|(seller, price, currency)| (seller, (price, currency)))
-                        .collect()
-                })
-                .unwrap_or_default();
-            // The wantlist watch is a keyed join of the wantlist against the
-            // swept listings — bounded by the wantlist's size, so cheap enough
-            // to rebuild here where every sweep and wantlist edit refreshes it.
-            self.wantlist_watch = Catalog::open(&self.db_path)
-                .and_then(|c| c.wantlist_offers())
-                .unwrap_or_default();
-            if let Some(cur) = &self.seller_current {
-                if !self.sellers.iter().any(|s| &s.username == cur) {
-                    self.seller_current = None;
-                }
-            }
-            if self.seller_current.is_none() {
-                self.seller_current = self.sellers.first().map(|s| s.username.clone());
-            }
             // Evict cover textures for records no longer present (`Tex` makes
             // the mid-frame eviction safe — see `tex.rs`).
             let live: HashSet<VinylCoverKey> = self
@@ -1098,16 +1084,15 @@ impl App {
                 )
                 .collect();
             self.vinyl_covers.retain(|key, _| live.contains(key));
-        } else if self.view != LibraryView::Vinyl && !self.seller_listings.is_empty() {
+        } else if self.view != LibraryView::Vinyl
+            && (!self.seller_listings.is_empty() || self.seller_listings_rx.is_some())
+        {
             // Leaving the section keeps the record lists and the cover
             // textures, so coming back is instant: the wall is painted from
             // cache on the first frame rather than re-decoded cover by cover.
             // The seller listings are dropped (the Sellers tab re-reads them
             // on the next visit).
-            self.seller_listings = Vec::new();
-            self.seller_hay = Vec::new();
-            self.seller_genres = HashMap::new();
-            self.seller_listings_for = None;
+            self.drop_seller_listings();
         }
         if changed && util::startup_done() {
             util::mark(&format!(
@@ -2108,6 +2093,7 @@ impl App {
         }
         self.poll_missing();
         self.row_sources.take_envelopes(&mut self.rows);
+        self.poll_seller_meta();
         self.poll_covers(ctx);
         self.poll_thumbs(ctx);
         self.poll_vinyl_covers(ctx);

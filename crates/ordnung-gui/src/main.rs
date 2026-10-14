@@ -1387,6 +1387,9 @@ struct App {
     /// is mined from the release-detail cache plus the user's own shelves; a
     /// listing missing here has unknown tags and drops out of a genre filter.
     seller_genres: HashMap<u64, Vec<String>>,
+    /// The current seller's listings and genre tags being read off the UI
+    /// thread, named by seller (see `ensure_seller_listings`).
+    seller_listings_rx: Option<(String, Receiver<(Vec<SellerListing>, HashMap<u64, Vec<String>>)>)>,
     /// The crate of liked songs (see `liked`), from the `liked_songs`
     /// table, newest like first; reloaded with the catalog.
     liked: Vec<SongPin>,
@@ -1511,6 +1514,9 @@ struct App {
     /// (see `Catalog::wantlist_offers`), reloaded with the vinyl lists so a
     /// sweep or a wantlist edit refreshes it. See [`watch`].
     wantlist_watch: Vec<(String, SellerListing)>,
+    /// The sellers, shipping floors and watch being read off the UI thread
+    /// after a catalog change (see `reload`); `poll_seller_meta` lands them.
+    seller_meta_rx: Option<Receiver<(Vec<SellerShop>, Vec<(String, f64, String)>, Vec<(String, SellerListing)>)>>,
     /// Whether the wantlist watch window is open. Session state, toggled by
     /// the wantlist tab's "In stock" button.
     show_watch: bool,

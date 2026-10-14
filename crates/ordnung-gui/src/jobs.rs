@@ -60,9 +60,11 @@ impl App {
                     finished = true;
                     reload = true;
                     // A finished job may have been a seller sweep; the listing
-                    // cache loads lazily, so just mark it stale and let the
-                    // Sellers tab re-read on its next frame.
+                    // cache loads lazily, so just mark it stale (a read in
+                    // flight too) and let the Sellers tab re-read on its next
+                    // frame.
                     self.seller_listings_for = None;
+                    self.seller_listings_rx = None;
                     self.tracklist_entries_for = None;
                 }
                 Ok(JobMsg::Failed(s)) => {
