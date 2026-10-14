@@ -156,16 +156,38 @@ impl App {
             .and_then(|c| c.list_liked_songs())
             .unwrap_or_default();
         self.liked_keys = self.liked.iter().map(liked_key).collect();
-        self.library_index_dirty = true;
     }
 
-    /// Bring the library index up to date. One pass over the tracks
-    /// table, taken the first time a view asks after a reload; every
-    /// view that says FILE calls this before it draws.
+    /// Start the library index over after a catalog change: one pass over
+    /// the tracks table, run off the UI thread (it took a frame or more of
+    /// the first Liked or crate visit after every change). Until it lands,
+    /// a view that asks builds it in place.
+    pub(crate) fn rebuild_library_index(&mut self) {
+        self.library_index_dirty = true;
+        self.library_index_rx = Some(util::read_off_thread(
+            &self.db_path,
+            &self.egui_ctx,
+            |c| c.library_index(),
+        ));
+    }
+
+    /// Bring the library index up to date: land the off-thread rebuild,
+    /// or build it here when a view asks before it has landed. Every view
+    /// that says FILE calls this before it draws.
     pub(crate) fn ensure_library_index(&mut self) {
+        if let Some(rx) = &self.library_index_rx {
+            if let Ok(index) = rx.try_recv() {
+                self.library_index = index;
+                self.library_index_dirty = false;
+                self.library_index_rx = None;
+            }
+        }
         if !self.library_index_dirty {
             return;
         }
+        // Built here instead; the thread's copy, of the same catalog, is
+        // let go.
+        self.library_index_rx = None;
         self.library_index = Catalog::open(&self.db_path)
             .and_then(|c| c.library_index())
             .unwrap_or_default();

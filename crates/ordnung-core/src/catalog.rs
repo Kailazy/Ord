@@ -4530,12 +4530,19 @@ impl Catalog {
     /// set's order: the track a pin was put in with, else the one the
     /// library index says is that song; a song no file is, is left out.
     /// `query` narrows like the other listings. The tag view's table.
-    pub fn list_crate_tracks(&self, crate_id: Id, query: Option<&str>) -> Result<Vec<Track>> {
+    /// `index` is the caller's [`Self::library_index`], built once per
+    /// library change rather than per listing (it is a pass over every
+    /// track).
+    pub fn list_crate_tracks(
+        &self,
+        crate_id: Id,
+        query: Option<&str>,
+        index: &crate::library_index::LibraryIndex,
+    ) -> Result<Vec<Track>> {
         let pins = self.list_crate_songs(crate_id)?;
         if pins.is_empty() {
             return Ok(Vec::new());
         }
-        let index = self.library_index()?;
         let terms = search_terms(query.unwrap_or(""));
         let mut seen = std::collections::HashSet::new();
         let mut out = Vec::new();
@@ -7227,11 +7234,12 @@ mod tests {
             ],
         )
         .unwrap();
-        let tracks = cat.list_crate_tracks(dub, None).unwrap();
+        let index = cat.library_index().unwrap();
+        let tracks = cat.list_crate_tracks(dub, None, &index).unwrap();
         assert_eq!(tracks.iter().map(|t| t.id).collect::<Vec<_>>(), [miura, untitled]);
-        let narrowed = cat.list_crate_tracks(dub, Some("legov")).unwrap();
+        let narrowed = cat.list_crate_tracks(dub, Some("legov"), &index).unwrap();
         assert_eq!(narrowed.iter().map(|t| t.id).collect::<Vec<_>>(), [untitled]);
-        assert!(cat.list_crate_tracks(999, None).unwrap().is_empty());
+        assert!(cat.list_crate_tracks(999, None, &index).unwrap().is_empty());
     }
 
     #[test]

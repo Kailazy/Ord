@@ -175,6 +175,7 @@ impl App {
             liked_keys: HashSet::new(),
             library_index: LibraryIndex::default(),
             library_index_dirty: true,
+            library_index_rx: None,
             liked_to_get_only: false,
             crate_sets: Vec::new(),
             song_tags: HashMap::new(),
@@ -688,6 +689,10 @@ impl App {
             // now stale; each refills on its next use.
             self.row_sources.invalidate();
             self.vinyl_loaded = false;
+            // The library by song, for every view that marks which songs
+            // are files here: a pass over the tracks, so it rebuilds off
+            // the UI thread and lands when a view next asks.
+            self.rebuild_library_index();
             // Rows are about to be rebuilt from the catalog, so any waveform
             // bytes a (re)analysis rewrote are now stale in the smoothing cache
             // — and its key can't see a change that kept the envelope's length.
@@ -719,12 +724,18 @@ impl App {
         let loaded = if matches!(self.view, LibraryView::Usb(..)) {
             Ok(self.usb_rows())
         } else {
+            // A tag's rows are the library tracks its songs resolve to,
+            // through the one index (`library_index`) every song view asks.
+            if matches!(self.view, LibraryView::CrateSet(_)) {
+                self.ensure_library_index();
+            }
             load_rows(
                 &self.db_path,
                 &self.filter,
                 &self.view,
                 &mut self.row_sources,
                 &self.egui_ctx,
+                &self.library_index,
             )
         };
         if changed {

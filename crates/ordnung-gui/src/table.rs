@@ -2890,15 +2890,9 @@ impl RowSources {
             // frame for most of a second. Rows draw without an inline
             // waveform until they land.
             let stamps: HashMap<Id, i64> = need.iter().map(|id| (*id, fresh[id].stamp)).collect();
-            let (tx, rx) = mpsc::channel();
-            let (db, ctx) = (db.to_path_buf(), ctx.clone());
-            std::thread::spawn(move || {
-                if let Ok(env) = Catalog::open(&db).and_then(|c| c.analysis_envelopes(&need)) {
-                    let _ = tx.send((stamps, env));
-                    ctx.request_repaint();
-                }
-            });
-            self.envelopes_rx = Some(rx);
+            self.envelopes_rx = Some(util::read_off_thread(db, ctx, move |c| {
+                c.analysis_envelopes(&need).map(|env| (stamps, env))
+            }));
         }
         util::mark_early(&format!(
             "rows: sources refreshed ({} analyses, {} envelopes pending)",
@@ -2943,6 +2937,7 @@ pub(crate) fn load_rows(
     view: &LibraryView,
     sources: &mut RowSources,
     ctx: &egui::Context,
+    index: &LibraryIndex,
 ) -> Result<Vec<TrackRow>, String> {
     let catalog = Catalog::open(db).map_err(|e| e.to_string())?;
     if sources.stale {
@@ -2983,7 +2978,7 @@ pub(crate) fn load_rows(
         LibraryView::RecentlyAdded => catalog.list_recently_added(q),
         // A tag's Tracks layout is the library table over the files that
         // carry it (a crate's layouts don't use rows; the listing is small).
-        LibraryView::CrateSet(id) => catalog.list_crate_tracks(*id, q),
+        LibraryView::CrateSet(id) => catalog.list_crate_tracks(*id, q, index),
         // The Duplicates, Missing, Vinyl and USB views render from their own
         // caches (`dup_groups` / `missing_list` / `vinyl` / `usb_tracks`), not
         // the flat track table.

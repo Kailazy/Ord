@@ -1,6 +1,26 @@
 //! Split out of `main.rs`; part of the GUI `App`.
 use super::*;
 
+/// Run a catalog read on its own thread. `read` gets a fresh connection;
+/// its result lands on the returned receiver, and the UI is repainted so
+/// the frame that can show it comes at once. A failed read sends nothing:
+/// the receiver disconnects and the caller keeps what it had.
+pub(crate) fn read_off_thread<T: Send + 'static>(
+    db: &Path,
+    ctx: &egui::Context,
+    read: impl FnOnce(&Catalog) -> ordnung_core::Result<T> + Send + 'static,
+) -> mpsc::Receiver<T> {
+    let (tx, rx) = mpsc::channel();
+    let (db, ctx) = (db.to_path_buf(), ctx.clone());
+    thread::spawn(move || {
+        if let Ok(v) = Catalog::open(&db).and_then(|c| read(&c)) {
+            let _ = tx.send(v);
+        }
+        ctx.request_repaint();
+    });
+    rx
+}
+
 /// One line of an exported track-list text file.
 pub(crate) struct TrackListEntry {
     pub artist: String,
