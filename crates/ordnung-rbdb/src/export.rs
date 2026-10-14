@@ -416,6 +416,9 @@ struct ExistingTrack {
     genre: Option<String>,
     label: Option<String>,
     key: Option<String>,
+    composer: Option<String>,
+    remixer: Option<String>,
+    original_artist: Option<String>,
     /// The stick's artwork entry for this row (id, pdb path), kept verbatim.
     artwork: Option<(u32, String)>,
 }
@@ -473,6 +476,9 @@ fn read_existing(dest_root: &Path) -> (Vec<ExistingTrack>, Vec<PlaylistRow>) {
             genre: t.genre.clone(),
             label: t.label.clone(),
             key: t.key.clone(),
+            composer: t.composer.clone(),
+            remixer: t.remixer.clone(),
+            original_artist: t.original_artist.clone(),
             artwork: t
                 .artwork_path
                 .clone()
@@ -850,6 +856,9 @@ fn export_impl(
             genre_id: genres.get(t.tags.genre.as_deref()),
             album_id: albums.get(t.tags.album.as_deref()),
             artist_id: artists.get(t.tags.artist.as_deref()),
+            composer_id: artists.get(t.tags.composer.as_deref()),
+            remixer_id: artists.get(t.tags.remixer.as_deref()),
+            original_artist_id: artists.get(t.tags.original_artist.as_deref()),
             disc_number: t.tags.disc_number.unwrap_or(0),
             year: t.tags.year.unwrap_or(0),
             sample_depth: if transcode.is_some() {
@@ -923,6 +932,9 @@ fn export_impl(
         row.genre_id = genres.get(e.genre.as_deref());
         row.label_id = labels.get(e.label.as_deref());
         row.key_id = keys.get(e.key.as_deref());
+        row.composer_id = artists.get(e.composer.as_deref());
+        row.remixer_id = artists.get(e.remixer.as_deref());
+        row.original_artist_id = artists.get(e.original_artist.as_deref());
         row.artwork_id = match &e.artwork {
             Some((id, path)) => {
                 if !carried_art.iter().any(|(a, _)| a == id) {

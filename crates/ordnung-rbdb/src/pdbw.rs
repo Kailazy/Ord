@@ -114,6 +114,10 @@ pub(crate) struct TrackRow {
     pub genre_id: u32,
     pub album_id: u32,
     pub artist_id: u32,
+    /// Credits besides the main artist, interned into the same artists table.
+    pub composer_id: u32,
+    pub remixer_id: u32,
+    pub original_artist_id: u32,
     pub disc_number: u16,
     pub year: u16,
     pub sample_depth: u16,
@@ -171,16 +175,16 @@ fn track_row(t: &TrackRow, index_shift: u16) -> Vec<u8> {
     u16le(&mut r, index_shift);
     u32le(&mut r, 0x000C_0700); // contentLink (constant in rekordbox 7 exports)
     u32le(&mut r, t.sample_rate_hz);
-    u32le(&mut r, 0); // composer artist id
+    u32le(&mut r, t.composer_id);
     u32le(&mut r, t.file_size);
     u32le(&mut r, t.master_content_id);
     u16le(&mut r, 0x2FDB); // constant in every golden row
     u16le(&mut r, 0x8F45); // constant in every golden row
     u32le(&mut r, t.artwork_id);
     u32le(&mut r, t.key_id);
-    u32le(&mut r, 0); // original-artist id
+    u32le(&mut r, t.original_artist_id);
     u32le(&mut r, t.label_id);
-    u32le(&mut r, 0); // remixer id
+    u32le(&mut r, t.remixer_id);
     u32le(&mut r, t.bitrate_kbps);
     u32le(&mut r, t.track_number);
     u32le(&mut r, t.tempo_centi_bpm);

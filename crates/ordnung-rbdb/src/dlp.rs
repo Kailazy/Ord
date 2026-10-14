@@ -333,7 +333,7 @@ fn build_library(
         let mut content = conn
             .prepare(
                 "INSERT INTO content VALUES (?1, ?2, ?3, NULL, ?4, ?5, ?6, ?7, \
-                 ?8, 0, 0, 0, 0, ?9, ?10, ?11, ?12, 0, ?28, \
+                 ?8, ?29, ?30, ?31, 0, ?9, ?10, ?11, ?12, 0, ?28, \
                  ?13, ?14, ?15, NULL, ?16, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, \
                  0, 1, 1, NULL, ?25, ?26, ?27, 41, 788224, 0, NULL, 1, 1)",
             )
@@ -369,6 +369,9 @@ fn build_library(
                     tr.master_content_id as i64,
                     tr.analyze_path,
                     zero_null(tr.artwork_id),
+                    zero_null(tr.remixer_id),
+                    zero_null(tr.original_artist_id),
+                    zero_null(tr.composer_id),
                 ])
                 .map_err(err)?;
         }
