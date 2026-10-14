@@ -74,6 +74,24 @@ pub(crate) fn dsql_isrc(s: &str) -> Vec<u8> {
     v
 }
 
+/// Append an encoded DeviceSQLString to a row and return its row-relative
+/// offset. The long forms (0x40 ASCII, 0x90 UTF-16) start on a four-byte
+/// boundary of the row with zero bytes filling the gap, exactly as rekordbox
+/// lays them out (every one of 189 long strings in the track rows of two
+/// rekordbox 7 sticks, 2026-10-13; a UTF-16 artist name sits at 12, not 10).
+/// A short string packs straight after whatever precedes it. Packing long
+/// strings unaligned has been tied to a CDJ-2000NXS freeze (E-8709).
+pub(crate) fn push_dsql(row: &mut Vec<u8>, enc: &[u8]) -> u16 {
+    if enc.first().is_some_and(|b| b & 1 == 0) {
+        while row.len() % 4 != 0 {
+            row.push(0);
+        }
+    }
+    let at = row.len() as u16;
+    row.extend_from_slice(enc);
+    at
+}
+
 // ---------------------------------------------------------------------------
 // Input shape
 // ---------------------------------------------------------------------------
@@ -207,14 +225,10 @@ fn track_row(t: &TrackRow, index_shift: u16) -> Vec<u8> {
         dsql_string(&t.filename),   // 19
         dsql_string(&t.file_path),  // 20
     ];
-    let mut off = 0x88u16;
-    for s in &strings {
-        u16le(&mut r, off);
-        off += s.len() as u16;
-    }
-    debug_assert_eq!(r.len(), 0x88);
-    for s in &strings {
-        r.extend_from_slice(s);
+    r.resize(0x88, 0); // the offset table, filled in as each string lands
+    for (i, s) in strings.iter().enumerate() {
+        let at = push_dsql(&mut r, s);
+        r[0x5E + 2 * i..0x60 + 2 * i].copy_from_slice(&at.to_le_bytes());
     }
     r
 }
@@ -226,14 +240,15 @@ fn genre_row(id: u32, name: &str) -> Vec<u8> {
 }
 
 fn artist_row(id: u32, name: &str, index_shift: u16) -> Vec<u8> {
-    // subtype 0x60: the name offset always fits a u8 (header is 10 bytes).
+    // subtype 0x60: the name offset fits a u8 (10, or 12 for a long name).
     let mut r = Vec::new();
     r.extend_from_slice(&0x0060u16.to_le_bytes());
     r.extend_from_slice(&index_shift.to_le_bytes());
     r.extend_from_slice(&id.to_le_bytes());
     r.push(0x03);
-    r.push(0x0A); // name offset
-    r.extend_from_slice(&dsql_string(name));
+    r.push(0); // name offset, patched once the string has landed
+    let at = push_dsql(&mut r, &dsql_string(name));
+    r[9] = at as u8;
     r
 }
 
@@ -246,8 +261,9 @@ fn album_row(id: u32, name: &str, index_shift: u16) -> Vec<u8> {
     r.extend_from_slice(&id.to_le_bytes());
     r.extend_from_slice(&0u32.to_le_bytes());
     r.push(0x03);
-    r.push(0x16); // name offset
-    r.extend_from_slice(&dsql_string(name));
+    r.push(0); // name offset (22, or 24 for a long name), patched below
+    let at = push_dsql(&mut r, &dsql_string(name));
+    r[0x15] = at as u8;
     r
 }
 
@@ -743,5 +759,35 @@ mod tests {
         assert_eq!(u16::from_le_bytes([r[0x5E], r[0x5F]]), 0x88);
         assert_eq!(&r[0x00..0x02], &[0x24, 0x00]);
         assert_eq!(&r[0x04..0x08], &0x000C_0700u32.to_le_bytes());
+    }
+
+    #[test]
+    fn long_strings_start_on_a_four_byte_row_boundary() {
+        // Slot 17 (title) goes UTF-16 after a run of short strings that ends
+        // on an odd offset; rekordbox pads it up to the next multiple of four.
+        let r = track_row(
+            &TrackRow {
+                id: 1,
+                title: "Café Del Mar".into(),
+                filename: "t.mp3".into(),
+                file_path: "/Contents/t.mp3".into(),
+                ..Default::default()
+            },
+            0,
+        );
+        let at = |slot: usize| u16::from_le_bytes([r[0x5E + 2 * slot], r[0x5F + 2 * slot]]) as usize;
+        let (comment_at, title_at) = (at(16), at(17));
+        assert_eq!(r[title_at], 0x90);
+        assert_eq!(title_at % 4, 0, "UTF-16 title at {title_at:#x} is not 4-aligned");
+        assert_eq!(r[comment_at], 0x03, "empty comment right before it");
+        assert!(r[comment_at + 1..title_at].iter().all(|&b| b == 0), "gap is zero-filled");
+        // Short strings pack straight on: the empty slot 18, then the filename.
+        assert_eq!(at(18), title_at + dsql_string("Café Del Mar").len());
+        assert_eq!(at(19), at(18) + 1);
+        // Artists and albums: a long name moves two bytes down the row.
+        assert_eq!(artist_row(1, "Pärt", 0)[9], 12);
+        assert_eq!(artist_row(1, "Part", 0)[9], 10);
+        assert_eq!(album_row(1, "Berghain Fünfzehn", 0)[0x15], 24);
+        assert_eq!(album_row(1, "Berghain", 0)[0x15], 22);
     }
 }

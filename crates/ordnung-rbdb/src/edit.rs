@@ -365,13 +365,13 @@ fn encode_track_row(r: &TrackRowEdit) -> Vec<u8> {
     let mut out = r.header.to_vec();
     out[0x38..0x3C].copy_from_slice(&r.tempo_centi_bpm.to_le_bytes());
     for (i, s) in r.strings.iter().enumerate() {
-        let off = out.len() as u16;
-        out[0x5E + 2 * i..0x60 + 2 * i].copy_from_slice(&off.to_le_bytes());
-        if i == 0 && !s.is_empty() {
-            out.extend_from_slice(&pdbw::dsql_isrc(s));
+        let enc = if i == 0 && !s.is_empty() {
+            pdbw::dsql_isrc(s)
         } else {
-            out.extend_from_slice(&pdbw::dsql_string(s));
-        }
+            pdbw::dsql_string(s)
+        };
+        let off = pdbw::push_dsql(&mut out, &enc);
+        out[0x5E + 2 * i..0x60 + 2 * i].copy_from_slice(&off.to_le_bytes());
     }
     pdbw::pad4(out)
 }
