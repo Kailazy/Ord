@@ -1,6 +1,6 @@
 ---
 name: release
-description: Semantic versioning contract and the exact release procedure for Ordnung — bump the workspace version, tag, and let CI publish the macOS DMG. Use when cutting a release, bumping the version, or deciding whether a change is a patch/minor/major bump. Also read when pushing feature commits, since every verified change ships as a release.
+description: Semantic versioning contract and the exact release procedure for Ordnung — bump the workspace version, tag, and let CI publish the macOS DMG. Use when cutting a release, bumping the version, or deciding whether a change is a patch/minor/major bump. Also read at the end of a session that changed code, since a session's code changes ship as one release.
 ---
 
 # Ordnung releases (semver + procedure)
@@ -77,8 +77,11 @@ gets a new patch version.
 
 ## When to release
 
-Every verified, pushed change ships as a release — after the feature commit
-lands (per CLAUDE.md's commit rule), immediately follow with the bump + tag
-above. A rapid series of follow-up fixes to the same feature may roll into
-one release at the end of the series instead of one per commit; use judgment,
-but never leave `main` ahead of the latest tag at the end of a work session.
+Once per working session, not once per commit (Kai, 2026-10-13: a CI
+release build for every merged commit is not wanted). Commits land on `main`
+as they are verified; when the session's code changes are done, or when Kai
+asks, roll them into one bump + tag as above, the highest-ranking change
+deciding the bump. A session that changed only docs, skills, tests or suite
+baselines needs no release. A session that changed code should not end with
+those changes untagged, so the installed app and the dev DMG keep matching
+`main`.
