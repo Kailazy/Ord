@@ -1080,52 +1080,78 @@ fn export_impl(
         .map(|t| t.row.analyze_path.as_str())
         .chain(carried.iter().map(|r| r.analyze_path.as_str()))
         .collect();
-    for (i, tr) in resolved.iter().enumerate() {
-        check(cancel)?;
-        progress(ExportProgress {
-            stage: ExportStage::WritingAnalysis,
-            done: i,
-            total,
-            detail: tr.row.filename.clone(),
-        });
-        if let Some(old) = tr
-            .old_anlz_path
-            .as_deref()
-            .filter(|o| !live.contains(o))
-        {
-            let old_dat = dest_root.join(old.trim_start_matches('/'));
-            for kind in ["DAT", "EXT", "2EX"] {
-                let _ = std::fs::remove_file(old_dat.with_extension(kind));
-            }
-            if let Some(d) = old_dat.parent() {
-                let _ = std::fs::remove_dir(d); // only an emptied directory goes
-            }
+    // Decoding a track for its detailed waveforms (PWV3/5/6/7: rekordbox
+    // stores linear per-column band peaks at 150 col/s, which the catalog's
+    // 20 bins/s cache can't reconstruct) is the export's CPU cost, and none
+    // of it touches the stick. The decodes run on every core while this
+    // thread writes each track's three files as they come out; the channel
+    // is bounded so only a few finished results wait in memory. On decode
+    // failure the coarse cached data still renders something.
+    // ponytail: capped at 8 workers (~100 MB of decoded audio each); size by free memory if it ever matters
+    let workers = std::thread::available_parallelism().map_or(2, |n| n.get()).clamp(1, 8);
+    let queue = std::sync::Mutex::new(resolved.iter().enumerate());
+    let (tx, rx) = std::sync::mpsc::sync_channel::<(usize, [Vec<u8>; 3])>(workers);
+    std::thread::scope(|s| -> Result<()> {
+        for _ in 0..workers {
+            let (queue, tx) = (&queue, tx.clone());
+            s.spawn(move || loop {
+                if cancel.load(Ordering::Relaxed) {
+                    break;
+                }
+                let next = queue.lock().unwrap_or_else(|e| e.into_inner()).next();
+                let Some((i, tr)) = next else { break };
+                let scroll = ordnung_core::analysis::decode_mono(&tr.source)
+                    .map(|a| ordnung_core::analysis::waveform::scroll_bands(&a.samples, a.sample_rate))
+                    .unwrap_or_default();
+                let inp = anlz::AnlzInput {
+                    usb_path: &tr.usb_path,
+                    beats: &tr.beats,
+                    duration_ms: tr.duration_ms,
+                    preview: &tr.preview,
+                    bands: &tr.bands,
+                    scroll: &scroll,
+                    cues: &tr.cues,
+                };
+                let files = [anlz::build_dat(&inp), anlz::build_ext(&inp), anlz::build_2ex(&inp)];
+                if tx.send((i, files)).is_err() {
+                    break; // the writer stopped (error or cancel); nothing left to do
+                }
+            });
         }
-        let dat = dest_root.join(tr.row.analyze_path.trim_start_matches('/'));
-        let dir = dat.parent().unwrap_or(&anlz_root).to_path_buf();
-        std::fs::create_dir_all(&dir).map_err(io_err(dir.clone()))?;
-        // Decode the audio for the detailed waveforms (PWV3/5/6/7): rekordbox
-        // stores linear per-column band peaks at 150 col/s, and the catalog's
-        // 20 bins/sec analysis cache can't reconstruct that beat-level pulse.
-        // On decode failure the coarse cached data still renders something.
-        let scroll = ordnung_core::analysis::decode_mono(&tr.source)
-            .map(|a| ordnung_core::analysis::waveform::scroll_bands(&a.samples, a.sample_rate))
-            .unwrap_or_default();
-        let inp = anlz::AnlzInput {
-            usb_path: &tr.usb_path,
-            beats: &tr.beats,
-            duration_ms: tr.duration_ms,
-            preview: &tr.preview,
-            bands: &tr.bands,
-            scroll: &scroll,
-            cues: &tr.cues,
-        };
-        write_synced(&dat, &anlz::build_dat(&inp)).map_err(io_err(dat.clone()))?;
-        let ext = dat.with_extension("EXT");
-        write_synced(&ext, &anlz::build_ext(&inp)).map_err(io_err(ext))?;
-        let ex2 = dat.with_extension("2EX");
-        write_synced(&ex2, &anlz::build_2ex(&inp)).map_err(io_err(ex2))?;
-    }
+        drop(tx);
+        for (done, (i, [dat_bytes, ext_bytes, ex2_bytes])) in rx.iter().enumerate() {
+            check(cancel)?;
+            let tr = &resolved[i];
+            progress(ExportProgress {
+                stage: ExportStage::WritingAnalysis,
+                done,
+                total,
+                detail: tr.row.filename.clone(),
+            });
+            if let Some(old) = tr
+                .old_anlz_path
+                .as_deref()
+                .filter(|o| !live.contains(o))
+            {
+                let old_dat = dest_root.join(old.trim_start_matches('/'));
+                for kind in ["DAT", "EXT", "2EX"] {
+                    let _ = std::fs::remove_file(old_dat.with_extension(kind));
+                }
+                if let Some(d) = old_dat.parent() {
+                    let _ = std::fs::remove_dir(d); // only an emptied directory goes
+                }
+            }
+            let dat = dest_root.join(tr.row.analyze_path.trim_start_matches('/'));
+            let dir = dat.parent().unwrap_or(&anlz_root).to_path_buf();
+            std::fs::create_dir_all(&dir).map_err(io_err(dir.clone()))?;
+            write_synced(&dat, &dat_bytes).map_err(io_err(dat.clone()))?;
+            let ext = dat.with_extension("EXT");
+            write_synced(&ext, &ext_bytes).map_err(io_err(ext))?;
+            let ex2 = dat.with_extension("2EX");
+            write_synced(&ex2, &ex2_bytes).map_err(io_err(ex2))?;
+        }
+        Ok(())
+    })?;
 
     // ---- playlists --------------------------------------------------------
     check(cancel)?;
