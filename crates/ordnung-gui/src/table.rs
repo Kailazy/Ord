@@ -2758,6 +2758,12 @@ pub(crate) struct RowSources {
     /// Envelopes being read off the UI thread, keyed by the stamp each was
     /// requested at; [`RowSources::take_envelopes`] lands them.
     envelopes_rx: Option<mpsc::Receiver<(HashMap<Id, i64>, HashMap<Id, (Vec<u8>, Vec<u8>)>)>>,
+    /// The rows built for each unfiltered listing, by view. Building them
+    /// (formatting every column, keying every tag) was most of a view
+    /// switch, and a switch back to a view shows the rows it had, so they
+    /// are kept until the catalog changes; only the Added column, which
+    /// reads relative to now, is re-stamped on the way out.
+    rows: HashMap<LibraryView, Vec<TrackRow>>,
 }
 
 /// One track's analysis as the table needs it: the scalar fields, plus the
@@ -2782,6 +2788,7 @@ impl Default for RowSources {
             added_at: HashMap::new(),
             analyses: HashMap::new(),
             envelopes_rx: None,
+            rows: HashMap::new(),
         }
     }
 }
@@ -2792,6 +2799,7 @@ impl RowSources {
         self.stale = true;
         self.library = None;
         self.playlist = None;
+        self.rows.clear();
     }
 
     /// Drop the held playlist listing so the next load re-reads it. For
@@ -2799,6 +2807,7 @@ impl RowSources {
     /// `App::reload_after_playlist_edit`).
     pub(crate) fn forget_playlist(&mut self) {
         self.playlist = None;
+        self.rows.retain(|view, _| !matches!(view, LibraryView::Playlist(_)));
     }
 
     /// The whole Library, unfiltered, reading it on the first call after a
@@ -2915,8 +2924,10 @@ impl RowSources {
                 a.waveform_bands = Arc::new(waveform_bands);
             }
         }
-        for r in rows.iter_mut() {
-            if let Some(a) = self.analyses.get(&r.id) {
+        // The rows on screen and the ones held for the other views alike.
+        let Self { analyses, rows: held, .. } = self;
+        for r in rows.iter_mut().chain(held.values_mut().flatten()) {
+            if let Some(a) = analyses.get(&r.id) {
                 r.waveform = a.waveform.clone();
                 r.waveform_bands = a.waveform_bands.clone();
             }
@@ -2943,6 +2954,24 @@ pub(crate) fn load_rows(
     } else {
         Some(filter.trim())
     };
+    // `added_at` is formatted relative to now so the Added column reads
+    // "today / 3d ago".
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
+    // An unfiltered listing's rows are kept per view (see `RowSources::rows`).
+    if q.is_none() {
+        if let Some(rows) = sources.rows.get(view) {
+            return Ok(rows
+                .iter()
+                .map(|r| TrackRow {
+                    added: fmt_added(r.added_at, now),
+                    ..r.clone()
+                })
+                .collect());
+        }
+    }
     // The Library and the viewed playlist are held unfiltered and narrowed
     // in memory: a search keystroke used to re-query the catalog and decode
     // the whole listing again, which is why the filter box needed a
@@ -2971,12 +3000,6 @@ pub(crate) fn load_rows(
         analyses,
         ..
     } = &*sources;
-    // `added_at` is formatted relative to now so the Added column reads
-    // "today / 3d ago".
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs() as i64)
-        .unwrap_or(0);
     // The user's tags per song, for the Tags column: the tag sets and
     // which song keys are in them (see `crates`), read once per listing.
     // The tags are keyed on the record a track is matched to (see
@@ -3106,6 +3129,16 @@ pub(crate) fn load_rows(
             quality_src,
             quality_sort,
         });
+    }
+    // The time-based listing ages out on its own, so only the stable ones
+    // are kept.
+    if q.is_none()
+        && matches!(
+            view,
+            LibraryView::Library | LibraryView::Playlist(_) | LibraryView::CrateSet(_)
+        )
+    {
+        sources.rows.insert(view.clone(), rows.clone());
     }
     Ok(rows)
 }

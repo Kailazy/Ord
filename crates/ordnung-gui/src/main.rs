@@ -165,6 +165,7 @@ fn load_app_icon() -> Option<egui::IconData> {
 }
 
 /// One catalog track flattened for display.
+#[derive(Clone)]
 struct TrackRow {
     id: Id,
     artist: String,
