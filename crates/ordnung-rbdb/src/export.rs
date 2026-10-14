@@ -844,9 +844,14 @@ fn export_impl(
             // catalog keeps a separate label field, so fall back to publisher
             // or most tracks lose their label on the player.
             label_id: labels.get(t.tags.label.as_deref().or(t.tags.publisher.as_deref())),
-            bitrate_kbps: match out_rate {
-                Some(rate) => rate * 32 / 1000, // 16-bit stereo PCM
-                None => props.and_then(|p| p.bitrate_kbps).unwrap_or(0),
+            bitrate_kbps: match (out_rate, props) {
+                (Some(rate), _) => rate * 32 / 1000, // 16-bit stereo PCM
+                // PCM: rekordbox truncates (24-bit 44.1 kHz stereo is 2116,
+                // not the rounded 2117 the scanner keeps).
+                (None, Some(p)) if matches!(t.format, Format::Aiff | Format::Wav) => {
+                    p.sample_rate_hz * u32::from(p.bit_depth.unwrap_or(16)) * u32::from(p.channels.max(1)) / 1000
+                }
+                (None, p) => p.and_then(|p| p.bitrate_kbps).unwrap_or(0),
             },
             track_number: t.tags.track_number.unwrap_or(0) as u32,
             tempo_centi_bpm: analysis

@@ -343,7 +343,9 @@ fn build_library(
                 .execute(rusqlite::params![
                     tr.id as i64,
                     tr.title,
-                    tr.title.to_lowercase(),
+                    // rekordbox 7 leaves titleForSearch empty on every row of
+                    // its exports (94 of 94 reference tracks); nothing reads it.
+                    "",
                     tr.tempo_centi_bpm as i64,
                     tr.duration_s as i64,
                     tr.track_number as i64,
@@ -355,7 +357,7 @@ fn build_library(
                     zero_null(tr.key_id),
                     tr.comment,
                     tr.rating as i64,
-                    zero_null(tr.year as u32),
+                    tr.year as i64, // rekordbox writes 0, not NULL, for no year
                     tr.date_added,
                     tr.file_path,
                     tr.filename,
