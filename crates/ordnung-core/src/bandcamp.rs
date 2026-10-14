@@ -35,6 +35,8 @@ pub struct Album {
     /// (shirts, bags) is left out: the question is whether the record can be
     /// bought.
     pub offers: Vec<Offer>,
+    /// Track titles in page order, as the page names them.
+    pub tracks: Vec<String>,
 }
 
 /// One format an album page sells.
@@ -171,6 +173,25 @@ fn agrees(hit: &SearchHit, names: &[&str], title: &str) -> bool {
     })
 }
 
+/// Whether a page's tracklist is the release's: at least half of `want`
+/// (the release's track titles) appear among `got`, a title counting when
+/// one is the other or extends it by a word (`Brain Gray` is `Brain Gray
+/// (ft. Galcher Lustwerk)`). Says nothing when either side is empty.
+pub fn tracks_agree(got: &[String], want: &[String]) -> Option<bool> {
+    let fold = |v: &[String]| -> Vec<String> {
+        v.iter().map(|t| fold_name(t)).filter(|t| !t.is_empty()).collect()
+    };
+    let (got, want) = (fold(got), fold(want));
+    if got.is_empty() || want.is_empty() {
+        return None;
+    }
+    let same = |a: &str, b: &str| {
+        a == b || a.starts_with(&format!("{b} ")) || b.starts_with(&format!("{a} "))
+    };
+    let found = want.iter().filter(|w| got.iter().any(|g| same(g, w))).count();
+    Some(found * 2 >= want.len())
+}
+
 /// The search hit that is this release, if any. Among several that agree
 /// (the album on the artist's account, again on a label's, again as someone
 /// else's re-upload) the one on an account in `official` wins, then one whose
@@ -262,33 +283,60 @@ impl Client {
     }
 
     /// The Bandcamp page of a release, found by its artists, title and
-    /// labels, and read. `artists` and `labels` as the release credits them;
-    /// the first artist (the first label, on a compilation) and the title
-    /// make the search. `official` supplies the Bandcamp hosts the artists'
-    /// and labels' own profiles link to, asked only when two pages agree (see
-    /// [`pick`]). Two requests; `Ok(None)` when Bandcamp doesn't have it.
+    /// labels, read, and corroborated by its tracklist. `artists` and
+    /// `labels` as the release credits them; the first artist (the first
+    /// label, on a compilation) and the title, less a trailing `EP`/`LP`,
+    /// make the search, the lead alone when that finds nothing. The hit
+    /// [`pick`] agrees with is read first, then other albums by a credited
+    /// artist; a page is this release when its tracks match `tracks` (see
+    /// [`tracks_agree`]), or when the title matched and neither side lists
+    /// tracks. `official` supplies the Bandcamp hosts the artists' and
+    /// labels' own profiles link to, asked only when two pages agree.
+    /// `Ok(None)` when Bandcamp doesn't have it.
     pub fn find_album(
         &self,
         artists: &[String],
         labels: &[String],
         title: &str,
+        tracks: &[String],
         official: impl FnOnce() -> Vec<String>,
     ) -> Result<Option<Album>> {
+        // ponytail: at most this many pages read per lookup.
+        const PAGES: usize = 4;
         let lead = artists
             .iter()
             .map(|a| a.trim())
             .find(|a| !a.is_empty() && !fold_name(a).starts_with("various"))
             .or_else(|| labels.iter().map(|l| l.trim()).find(|l| !l.is_empty()));
+        let short = title_key(title);
         let query = match lead {
-            Some(lead) => format!("{lead} {title}"),
-            None => title.to_string(),
+            Some(lead) => format!("{lead} {short}"),
+            None => short.clone(),
         };
-        let hits = self.search_albums(query.trim())?;
+        let mut hits = self.search_albums(query.trim())?;
+        if hits.is_empty() && !tracks.is_empty() {
+            if let Some(lead) = lead {
+                hits = self.search_albums(lead)?;
+            }
+        }
         let names: Vec<&str> = artists.iter().chain(labels).map(String::as_str).collect();
-        let Some(hit) = pick(&hits, &names, title, official) else {
-            return Ok(None);
-        };
-        self.fetch_album(&hit.url)
+        let picked = pick(&hits, &names, title, official);
+        let folded: Vec<String> = names.iter().map(|n| fold_name(n)).collect();
+        let credited = |h: &SearchHit| folded.iter().any(|n| *n == fold_name(&h.artist));
+        let candidates = picked
+            .into_iter()
+            .chain(hits.iter().filter(|h| Some(*h) != picked && credited(h)))
+            .take(PAGES);
+        for hit in candidates {
+            let Some(album) = self.fetch_album(&hit.url)? else { continue };
+            match tracks_agree(&album.tracks, tracks) {
+                Some(true) => return Ok(Some(album)),
+                Some(false) => continue,
+                None if Some(hit) == picked => return Ok(Some(album)),
+                None => continue,
+            }
+        }
+        Ok(None)
     }
 }
 
@@ -386,11 +434,19 @@ pub fn parse_album_page(html: &str) -> Option<Album> {
         .collect();
     // Digital first, then the page's own order.
     offers.sort_by_key(|o| o.medium != Medium::Digital);
+    let tracks = ld
+        .pointer("/track/itemListElement")
+        .and_then(|v| v.as_array())
+        .into_iter()
+        .flatten()
+        .filter_map(|e| e.pointer("/item/name")?.as_str().map(str::to_string))
+        .collect();
     Some(Album {
         url,
         title,
         artist,
         offers,
+        tracks,
     })
 }
 
@@ -506,8 +562,11 @@ mod tests {
    "offers":{"@type":"Offer","url":"https://batutimedance.bandcamp.com/album/opal#p757234295-buy","priceCurrency":"GBP","price":40.0,"availability":"InStock"}},
   {"@id":"https://batutimedance.bandcamp.com/album/opal#p294430682","name":"Marble Vinyl","musicReleaseFormat":"VinylFormat",
    "offers":{"@type":"Offer","url":"https://batutimedance.bandcamp.com/album/opal#p294430682-buy","priceCurrency":"GBP","price":21.99,"availability":"SoldOut"}},
-  {"@id":"https://batutimedance.bandcamp.com/track/solace"}
- ]}
+  {"@id":"https://batutimedance.bandcamp.com/track/solace"}],
+ "track":{"@type":"ItemList","itemListElement":[
+  {"@type":"ListItem","position":1,"item":{"@type":"MusicRecording","name":"Opal"}},
+  {"@type":"ListItem","position":2,"item":{"@type":"MusicRecording","name":"Solace (ft. Someone)"}}
+ ]}}
 </script></head><body>
 <script data-tralbum="{&quot;packages&quot;:[{&quot;id&quot;:3146011051,&quot;title&quot;:&quot;Black Vinyl&quot;,&quot;quantity_available&quot;:4},{&quot;id&quot;:294430682,&quot;quantity_available&quot;:0},{&quot;id&quot;:757234295,&quot;quantity_available&quot;:null}]}"></script>
 </body></html>"#;
@@ -530,6 +589,23 @@ mod tests {
         // Only the black one can be bought.
         assert_eq!(a.cheapest(Medium::Vinyl).map(|o| o.name.as_str()), Some("Black Vinyl"));
         assert!(a.has(Medium::Vinyl) && !a.has(Medium::Cd));
+    }
+
+    #[test]
+    fn album_page_reads_track_names() {
+        let a = parse_album_page(PAGE).unwrap();
+        assert_eq!(a.tracks, ["Opal", "Solace (ft. Someone)"]);
+    }
+
+    #[test]
+    fn tracks_agree_on_half_and_past_feat_credits() {
+        let s = |v: &[&str]| v.iter().map(|t| t.to_string()).collect::<Vec<_>>();
+        let page = s(&["Brain Gray (ft. Galcher Lustwerk)", "Black Car", "High Rise (ft. Morgan Louis)", "Mat"]);
+        assert_eq!(tracks_agree(&page, &s(&["Brain Gray", "Black Car", "High Rise", "Mat"])), Some(true));
+        assert_eq!(tracks_agree(&page, &s(&["Brain Gray", "Nope", "Nah", "Mat"])), Some(true));
+        assert_eq!(tracks_agree(&page, &s(&["Brain Gray", "Nope", "Nah", "Neither"])), Some(false));
+        assert_eq!(tracks_agree(&page, &[]), None);
+        assert_eq!(tracks_agree(&[], &page), None);
     }
 
     #[test]

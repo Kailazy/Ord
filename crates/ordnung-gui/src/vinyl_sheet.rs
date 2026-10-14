@@ -236,6 +236,8 @@ struct BandcampAsk {
     artists: Vec<String>,
     labels: Vec<String>,
     title: String,
+    /// Track titles, to corroborate a Bandcamp page by its tracklist.
+    tracks: Vec<String>,
     /// The primary artist and label on Discogs, whose profile links name
     /// their Bandcamp accounts.
     artist_id: Option<u64>,
@@ -254,6 +256,7 @@ impl BandcampAsk {
             artists,
             labels: d.label.iter().filter(|l| !l.trim().is_empty()).cloned().collect(),
             title: d.title.clone(),
+            tracks: d.tracklist.iter().map(|t| t.title.clone()).collect(),
             artist_id: d.artist_ids.first().copied(),
             label_id: d.label_ids.first().copied(),
         }
@@ -1010,7 +1013,7 @@ impl App {
     }
 
     /// Look the open record up on Bandcamp, off the UI thread: a site search
-    /// and one album page, plus a Discogs request or two for the artist's and
+    /// and a few album pages, plus a Discogs request or two for the artist's and
     /// label's own links only when two Bandcamp pages claim the record.
     fn spawn_sheet_bandcamp(&mut self, release_id: u64, ask: BandcampAsk) {
         if let Some(s) = self.vinyl_sheet.as_mut() {
@@ -1037,7 +1040,7 @@ impl App {
                 bandcamp::bandcamp_hosts(&urls)
             };
             let album = bandcamp::Client::new(UA)
-                .find_album(&ask.artists, &ask.labels, &ask.title, official)
+                .find_album(&ask.artists, &ask.labels, &ask.title, &ask.tracks, official)
                 .ok()
                 .flatten();
             let _ = tx.send((release_id, album));
