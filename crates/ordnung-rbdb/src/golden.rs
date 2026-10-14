@@ -244,7 +244,7 @@ const ROW_STRINGS: [(&str, Option<&str>); 21] = [
     ("release_date", None),
     ("mix_name", None),
     ("unknown13", None),
-    ("analyze_path", Some("follows the per-export id")),
+    ("analyze_path", Some("hashed from the audio path, which differs: Ord keeps /Contents flat")),
     ("analyze_date", Some("stamped with the export date")),
     ("comment", None),
     ("title", None),

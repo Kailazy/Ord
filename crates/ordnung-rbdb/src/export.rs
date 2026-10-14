@@ -8,7 +8,7 @@
 //! /PIONEER/rekordbox/export.pdb           DeviceSQL database   (pdbw)
 //! /PIONEER/rekordbox/exportExt.pdb        My Tag skeleton      (pdbw)
 //! /PIONEER/rekordbox/exportLibrary.db     Device Library Plus  (dlp)
-//! /PIONEER/USBANLZ/Pnnn/<8-hex>/ANLZ0000.{DAT,EXT,2EX}         (anlz)
+//! /PIONEER/USBANLZ/Pnnn/<8-hex>/ANLZ0000.{DAT,EXT,2EX}         (anlz; dir hashed from the audio path)
 //! /PIONEER/Artwork/nnnnn/{a,b}N[_m].jpg   cover art 80/240 px  (artwork)
 //! ```
 //!
@@ -213,6 +213,10 @@ struct ExportTrack {
     bands: Vec<u8>,
     cues: Vec<Cue>,
     copy_needed: bool,
+    /// The analysis file the stick already lists for this track (a merge
+    /// re-selecting a track it holds); its files go once the new ones are in
+    /// a different place.
+    old_anlz_path: Option<String>,
     /// Conversion the player needs on the way onto the stick (AIFF spec and
     /// output rate). `None` = the file is copied byte-for-byte.
     transcode: Option<(ConvertSpec, Option<u32>)>,
@@ -502,13 +506,43 @@ fn file_type_from_ext(name: &str) -> u16 {
     }
 }
 
-/// The ANLZ path a fresh export would give track `id` (P-dir + 8-hex).
+/// The ANLZ path older Ord exports gave track `id` (P-dir + 8-hex), kept only
+/// for a carried row whose stick lists no analysis file at all.
 fn default_anlz_path(id: u32) -> String {
     format!(
         "/PIONEER/USBANLZ/P{:03}/{:08X}/ANLZ0000.DAT",
         (id - 1) / 256,
         id
     )
+}
+
+/// The `USBANLZ` directory rekordbox derives from a track's audio path: a
+/// hash over the path's UTF-16 units folded to 0x30D43 buckets, with seven
+/// of its bits picked out as the `Pxxx` shard. Every directory on two
+/// rekordbox 7 sticks follows it (703 of 703 tracks, 2026-10-13), and
+/// CDJ-3000 firmware computes the same directory itself instead of trusting
+/// the row, so an export that puts the files anywhere else loses its
+/// waveforms there.
+fn anlz_dir(usb_path: &str) -> String {
+    let hash = usb_path
+        .encode_utf16()
+        .fold(0u32, |h, c| {
+            h.wrapping_mul(0x34F5_501D)
+                .wrapping_add(u32::from(c).wrapping_mul(0x93B6))
+        })
+        % 0x0003_0D43;
+    let shard = [0u32, 2, 6, 7, 9, 13, 16]
+        .iter()
+        .enumerate()
+        .fold(0u32, |s, (i, bit)| s | ((hash >> bit) & 1) << i);
+    format!("P{shard:03X}/{hash:08X}")
+}
+
+/// `("Pxxx/HHHHHHHH", n)` of `/PIONEER/USBANLZ/Pxxx/HHHHHHHH/ANLZnnnn.DAT`.
+fn split_anlz_path(p: &str) -> Option<(String, u32)> {
+    let (dir, file) = p.strip_prefix("/PIONEER/USBANLZ/")?.rsplit_once('/')?;
+    let n = file.strip_prefix("ANLZ")?.strip_suffix(".DAT")?.parse().ok()?;
+    Some((dir.to_string(), n))
 }
 
 /// Export `tracks` (in the given order) and `playlists` onto `dest_root`.
@@ -793,7 +827,6 @@ fn export_impl(
             .map(|c| covers.intern(c.bytes()))
             .unwrap_or(0);
 
-        let anlz_dir = format!("P{:03}/{:08X}", (id - 1) / 256, id);
         let row = TrackRow {
             id,
             sample_rate_hz: out_rate.unwrap_or_else(|| props.map(|p| p.sample_rate_hz).unwrap_or(0)),
@@ -829,7 +862,7 @@ fn export_impl(
             rating: t.tags.rating.unwrap_or(0).min(5),
             isrc: t.tags.isrc.clone().unwrap_or_default(),
             date_added: date.clone(),
-            analyze_path: format!("/PIONEER/USBANLZ/{anlz_dir}/ANLZ0000.DAT"),
+            analyze_path: String::new(), // assigned once every row is known, below
             analyze_date: date.clone(),
             comment: clamp(t.tags.comment.as_deref().unwrap_or(""), 500),
             title: clamp(
@@ -862,6 +895,12 @@ fn export_impl(
             bands: analysis.map(|a| a.waveform_bands.clone()).unwrap_or_default(),
             cues: t.cues.clone(),
             copy_needed,
+            old_anlz_path: reuse_id.and_then(|id| {
+                existing_tracks
+                    .iter()
+                    .find(|e| e.id == id)
+                    .map(|e| e.row.analyze_path.clone())
+            }),
             transcode,
             expected_bytes,
         });
@@ -899,6 +938,25 @@ fn export_impl(
         carried.push(row);
     }
     carried_art.sort_by_key(|(id, _)| *id);
+
+    // ---- analysis directories ---------------------------------------------
+    // rekordbox derives each track's USBANLZ directory from its audio path
+    // (`anlz_dir`); two paths that hash alike share the directory and the
+    // second takes ANLZ0001 (the 609-track golden stick holds two such pairs).
+    // Carried rows keep the files they have; new rows claim around them.
+    let mut claimed: HashMap<String, u32> = HashMap::new();
+    for row in &carried {
+        if let Some((dir, n)) = split_anlz_path(&row.analyze_path) {
+            let e = claimed.entry(dir).or_insert(0);
+            *e = (*e).max(n + 1);
+        }
+    }
+    for tr in &mut resolved {
+        let dir = anlz_dir(&tr.usb_path);
+        let n = claimed.entry(dir.clone()).or_insert(0);
+        tr.row.analyze_path = format!("/PIONEER/USBANLZ/{dir}/ANLZ{n:04}.DAT");
+        *n += 1;
+    }
 
     if resolved.is_empty() && carried.is_empty() && !allow_empty {
         return Err(ExportError::NoTracks);
@@ -1002,6 +1060,13 @@ fn export_impl(
     }
 
     // ---- ANLZ files -------------------------------------------------------
+    // Every analysis file the finished stick lists; a re-selected track whose
+    // files move (an older Ord export placed them by id) loses the old set.
+    let live: HashSet<&str> = resolved
+        .iter()
+        .map(|t| t.row.analyze_path.as_str())
+        .chain(carried.iter().map(|r| r.analyze_path.as_str()))
+        .collect();
     for (i, tr) in resolved.iter().enumerate() {
         check(cancel)?;
         progress(ExportProgress {
@@ -1010,9 +1075,21 @@ fn export_impl(
             total,
             detail: tr.row.filename.clone(),
         });
-        let dir = anlz_root
-            .join(format!("P{:03}", (tr.row.id - 1) / 256))
-            .join(format!("{:08X}", tr.row.id));
+        if let Some(old) = tr
+            .old_anlz_path
+            .as_deref()
+            .filter(|o| !live.contains(o))
+        {
+            let old_dat = dest_root.join(old.trim_start_matches('/'));
+            for kind in ["DAT", "EXT", "2EX"] {
+                let _ = std::fs::remove_file(old_dat.with_extension(kind));
+            }
+            if let Some(d) = old_dat.parent() {
+                let _ = std::fs::remove_dir(d); // only an emptied directory goes
+            }
+        }
+        let dat = dest_root.join(tr.row.analyze_path.trim_start_matches('/'));
+        let dir = dat.parent().unwrap_or(&anlz_root).to_path_buf();
         std::fs::create_dir_all(&dir).map_err(io_err(dir.clone()))?;
         // Decode the audio for the detailed waveforms (PWV3/5/6/7): rekordbox
         // stores linear per-column band peaks at 150 col/s, and the catalog's
@@ -1030,11 +1107,10 @@ fn export_impl(
             scroll: &scroll,
             cues: &tr.cues,
         };
-        let dat = dir.join("ANLZ0000.DAT");
-        write_synced(&dat, &anlz::build_dat(&inp)).map_err(io_err(dat))?;
-        let ext = dir.join("ANLZ0000.EXT");
+        write_synced(&dat, &anlz::build_dat(&inp)).map_err(io_err(dat.clone()))?;
+        let ext = dat.with_extension("EXT");
         write_synced(&ext, &anlz::build_ext(&inp)).map_err(io_err(ext))?;
-        let ex2 = dir.join("ANLZ0000.2EX");
+        let ex2 = dat.with_extension("2EX");
         write_synced(&ex2, &anlz::build_2ex(&inp)).map_err(io_err(ex2))?;
     }
 
