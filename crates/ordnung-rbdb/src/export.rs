@@ -551,25 +551,21 @@ fn split_anlz_path(p: &str) -> Option<(String, u32)> {
     Some((dir.to_string(), n))
 }
 
-/// Export `tracks` (in the given order) and `playlists` onto `dest_root`.
-///
-/// Re-read the databases the export just wrote and confirm the stick is
-/// internally consistent, so a subtle writer bug surfaces here as a loud
-/// failure instead of a stick that looks exported but won't load on a player.
-/// Checks: `export.pdb` re-parses; every track row's `analyze_path` names an
-/// ANLZ file that exists on the stick; every playlist entry points at a track
-/// the database actually contains; and the number of tracks/playlists read
-/// back matches what was written. Returns the offending detail on failure.
+/// Parse the `export.pdb` about to be placed and confirm the stick it
+/// describes is internally consistent, so a subtle writer bug surfaces as a
+/// loud failure before the database lands instead of a stick that looks
+/// exported but won't load on a player. Checks: the bytes re-parse; every
+/// track row's `analyze_path` names an ANLZ file that exists on the stick;
+/// every playlist entry points at a track the database actually contains; and
+/// the number of tracks/playlists read back matches what was written. Returns
+/// the offending detail on failure.
 fn validate_export(
     dest_root: &Path,
+    pdb: &[u8],
     expected_tracks: usize,
     expected_playlists: usize,
 ) -> std::result::Result<(), String> {
-    let pdb = dest_root
-        .join("PIONEER")
-        .join("rekordbox")
-        .join("export.pdb");
-    let export = crate::pdb::read_export(&pdb).map_err(|e| format!("export.pdb: {e}"))?;
+    let export = crate::pdb::read_export_bytes(pdb).map_err(|e| format!("export.pdb: {e}"))?;
 
     if export.tracks.len() != expected_tracks {
         return Err(format!(
@@ -1253,6 +1249,15 @@ fn export_impl(
         created_date: date,
     };
 
+    // ---- validate before placing ------------------------------------------
+    // Parse the database about to land and confirm the stick it describes is
+    // consistent, so a writer bug fails the export loudly while the stick
+    // still holds its previous, complete databases (or none) rather than a
+    // set no player will load.
+    let pdb_bytes = pdbw::build_export_pdb(&tables);
+    validate_export(dest_root, &pdb_bytes, tables.tracks.len(), tables.playlists.len())
+        .map_err(ExportError::Validation)?;
+
     // ---- databases --------------------------------------------------------
     // The DLP is built first (on local disk, then placed) and the pdbs after,
     // so `export.pdb` — the file a player reads first and treats as the whole
@@ -1271,21 +1276,12 @@ fn export_impl(
     let ext_pdb = rb_dir.join("exportExt.pdb");
     write_atomic(&ext_pdb, &pdbw::build_export_ext_pdb()).map_err(io_err(ext_pdb))?;
     let pdb = rb_dir.join("export.pdb");
-    write_atomic(&pdb, &pdbw::build_export_pdb(&tables)).map_err(io_err(pdb))?;
+    write_atomic(&pdb, &pdb_bytes).map_err(io_err(pdb))?;
 
     // Make the renames durable: without a directory fsync a rename isn't
     // persisted on FAT until the dir entry flushes, so a power loss right after
     // export could leave the directory pointing at the old files.
     sync_dir(&rb_dir);
-
-    // ---- validate what we wrote -------------------------------------------
-    // Re-read the databases and confirm the stick is internally consistent
-    // before reporting success. A writer bug surfaces here as a loud failure,
-    // not a stick that looks done but won't load. This runs after the atomic
-    // placement, so a failure still leaves a complete (if wrong) database
-    // rather than a half-written one — but the caller learns not to trust it.
-    validate_export(dest_root, tables.tracks.len(), tables.playlists.len())
-        .map_err(ExportError::Validation)?;
 
     progress(ExportProgress {
         stage: ExportStage::WritingDatabase,
@@ -1443,7 +1439,7 @@ mod tests {
         // Give the referenced ANLZ file so only the dangling entry is wrong.
         std::fs::write(anlz.join("ANLZ0000.DAT"), b"PMAI").unwrap();
 
-        let err = validate_export(&dir, 1, 1).unwrap_err();
+        let err = validate_export(&dir, &crate::pdbw::build_export_pdb(&tables), 1, 1).unwrap_err();
         assert!(err.contains("track id 99"), "got: {err}");
         let _ = std::fs::remove_dir_all(&dir);
     }
