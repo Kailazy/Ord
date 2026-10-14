@@ -32,7 +32,7 @@
     -webkit-font-smoothing: antialiased;
   }
   a { color: inherit; }
-  button { font: inherit; color: inherit; }
+  button, input, textarea { font: inherit; color: inherit; }
   :focus-visible { outline: 2px solid var(--accent-hover); outline-offset: 2px; }
   .wrap { max-width: 1120px; margin: 0 auto; padding: 0 24px; }
 
@@ -155,6 +155,8 @@
   .play .ic-play { display: none; }
   .play.paused .ic-play { display: block; }
   .play.paused .ic-pause { display: none; }
+  .play.sm { width: 24px; height: 24px; }
+  .play.sm svg { width: 10px; height: 10px; }
   .now { min-width: 0; line-height: 1.25; }
   .now b { display: block; font-weight: 620; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .now span { color: var(--muted); font-size: 0.9rem; }
@@ -168,11 +170,8 @@
   .band .text { padding: 0 4px; }
   .cuts h2 { margin: 0 0 6px; font-size: 1.35rem; font-weight: 620; letter-spacing: -0.02em; }
   .cuts p { margin: 0; color: var(--muted); font-size: 1rem; max-width: 520px; }
-  .split { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; align-items: center; margin-bottom: 110px; }
-  .split .text { padding: 0 8px; }
-  .split p { max-width: none; }
 
-  /* Tour: the text scrolls, the screenshot stays put and swaps with the step. */
+  /* Tour: the text scrolls, the stage stays put and shows that feature, live. */
   .tour { display: grid; grid-template-columns: 1fr 1.3fr; gap: 56px; align-items: start; margin-bottom: 60px; }
   .steps { padding: 10vh 0; }
   .step { min-height: 52vh; display: flex; flex-direction: column; justify-content: center; padding: 24px 0; opacity: .4; transition: opacity .3s; }
@@ -180,14 +179,113 @@
   .step h2 { font-size: 1.75rem; margin-bottom: 10px; }
   .step p { font-size: 1.08rem; max-width: 44ch; }
   .shots { position: sticky; top: max(80px, 14vh); }
-  .stack { position: relative; aspect-ratio: 4 / 3; }
-  .stack .shot { position: absolute; inset: 0; height: 100%; object-fit: cover; object-position: top left; opacity: 0; pointer-events: none; transition: opacity .45s ease; }
-  .stack .shot.active { opacity: 1; pointer-events: auto; }
-  .dots { display: flex; justify-content: center; gap: 2px; margin-top: 12px; }
+  .stage { position: relative; aspect-ratio: 4 / 3; border: 1px solid var(--line); border-radius: 14px; background: var(--card); overflow: hidden; font-size: 13px; line-height: 1.35; }
+  .demo { position: absolute; inset: 0; display: flex; flex-direction: column; opacity: 0; pointer-events: none; transition: opacity .45s ease; }
+  .demo.active { opacity: 1; pointer-events: auto; }
+  .stage-foot { display: flex; align-items: center; justify-content: space-between; margin-top: 10px; }
+  .real { font-size: .85rem; color: var(--muted); text-decoration: none; }
+  .real:hover { color: var(--text); }
+  .dots { display: flex; gap: 2px; }
   .dots button { width: 22px; height: 22px; border: 0; background: none; padding: 0; cursor: pointer; display: grid; place-items: center; }
   .dots button::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: #3a3a3b; transition: background .2s, transform .2s; }
   .dots button:hover::before { background: var(--muted); }
   .dots button.active::before { background: var(--text); transform: scale(1.3); }
+
+  /* App-like pieces the demos are built from. */
+  .d-top { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--line); flex: none; }
+  .d-top.wrapz { flex-wrap: wrap; gap: 6px; }
+  .d-top .s { white-space: nowrap; }
+  .d-body { flex: 1; min-height: 0; overflow: auto; }
+  .d-hint { flex: none; padding: 7px 12px; border-top: 1px solid var(--line); color: #7a7a7a; font-size: 11.5px; }
+  .s { color: var(--muted); font-size: 12px; }
+  b { font-weight: 600; }
+  .ab { display: inline-flex; align-items: center; gap: 5px; height: 26px; padding: 0 10px; border-radius: 6px; border: 1px solid #343436; background: #262627; color: var(--text); font-size: 12px; font-weight: 500; cursor: pointer; white-space: nowrap; text-decoration: none; }
+  .ab:hover { background: #2e2e30; }
+  .ab.pri { background: #4a86e8; border-color: #4a86e8; color: #fff; }
+  .ab.pri:hover { background: #629cf5; }
+  .ab.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .ab.chk.on { background: #2c4678; border-color: #3b5c99; }
+  .ab:disabled { opacity: .45; cursor: default; }
+  .ai { height: 26px; padding: 0 10px; border-radius: 6px; border: 1px solid #343436; background: #1f1f20; color: var(--text); font-size: 12px; min-width: 0; }
+  .ai::placeholder { color: #6a6a6a; }
+  .seg { display: inline-flex; background: #1f1f20; border: 1px solid #343436; border-radius: 6px; padding: 2px; flex: none; }
+  .seg button { border: 0; background: none; color: var(--muted); padding: 2px 9px; border-radius: 4px; font-size: 12px; cursor: pointer; }
+  .seg button.on { background: var(--accent); color: #fff; }
+  .tr { display: flex; align-items: center; gap: 10px; padding: 5px 12px; border-bottom: 1px solid #222223; min-height: 38px; }
+  .tr .t { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tr .t .s { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .col { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .st { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: var(--muted); white-space: nowrap; }
+  .st.ok { color: #30d158; }
+  .st.ok::before { content: "✓"; }
+  .kc { display: inline-block; min-width: 30px; padding: 2px 5px; border-radius: 4px; text-align: center; font-weight: 600; font-size: 11px; color: #111; background: var(--k); transition: opacity .2s; cursor: default; }
+  .kc.dim { opacity: .15; }
+  .pop { animation: pop .25s ease-out; }
+  @keyframes pop { from { transform: scale(.6); opacity: 0; } }
+  .spin { width: 12px; height: 12px; border: 2px solid #444; border-top-color: var(--accent-hover); border-radius: 50%; animation: spin .8s linear infinite; display: inline-block; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .fill { animation: fill 1.4s ease-out; }
+  @keyframes fill { from { background: rgba(74,134,232,.3); } }
+  .heart { border: 0; background: none; color: #555; font-size: 16px; line-height: 1; cursor: pointer; padding: 2px 5px; flex: none; }
+  .heart:hover { color: #999; }
+  .heart.on { color: #ff375f; }
+  .cv { position: relative; flex: none; display: block; width: 40px; aspect-ratio: 1; border-radius: 3px; overflow: hidden; background: linear-gradient(135deg, var(--a), var(--b)); box-shadow: inset 0 0 0 1px rgba(255,255,255,.07); }
+  .cv.m1::before { content: ""; position: absolute; inset: 14%; border-radius: 50%; background: radial-gradient(circle, var(--b) 0 11%, #161617 12% 100%); }
+  .cv.m2::before { content: ""; position: absolute; left: 0; right: 0; top: 42%; height: 16%; background: rgba(0,0,0,.45); }
+  .cv.m0::before { content: ""; position: absolute; left: 18%; top: 18%; width: 30%; height: 30%; background: rgba(255,255,255,.5); }
+  .cv.blank { background: #232324; border: 1px dashed #3a3a3b; box-shadow: none; }
+  .cv.blank::before { display: none; }
+  .cv.sm { width: 24px; }
+  .cv.has::after { content: ""; position: absolute; right: 5px; bottom: 5px; width: 9px; height: 9px; border-radius: 50%; background: #30d158; box-shadow: 0 0 0 2px #1b1b1c; }
+  .d-body.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 12px; padding: 12px; align-content: start; }
+  .rc { background: none; border: 0; padding: 0; text-align: left; display: flex; flex-direction: column; gap: 1px; color: inherit; font-size: 12px; min-width: 0; }
+  button.rc { cursor: pointer; }
+  button.rc:hover .cv { filter: brightness(1.15); }
+  .rc .cv { width: 100%; border-radius: 6px; margin-bottom: 5px; }
+  .rc .t, .rc .s { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .rc .t { font-weight: 500; }
+  .rc .pr { color: var(--text); }
+  .pop-list { margin: 0 12px 8px; border: 1px solid var(--accent); border-radius: 8px; background: #202021; overflow: hidden; }
+  .pop-list .s { padding: 6px 12px 2px; }
+  .pop-list button.tr { width: 100%; background: none; border: 0; border-top: 1px solid #2a2a2b; text-align: left; cursor: pointer; }
+  .pop-list button.tr:hover { background: #262627; }
+  .wv { width: 70px; height: 22px; flex: none; }
+  .d-body.map { position: relative; overflow: hidden; }
+  .mt { position: absolute; width: 30px; margin: -15px 0 0 -15px; transition: left .9s cubic-bezier(.2,.7,.2,1), top .9s cubic-bezier(.2,.7,.2,1); z-index: 1; }
+  .mt .cv { width: 30px; border-radius: 4px; box-shadow: 0 0 0 2px #e0a030; }
+  .mt:hover { z-index: 3; }
+  .mt:hover::after { content: attr(data-n); position: absolute; left: 50%; top: 100%; transform: translateX(-50%); margin-top: 5px; white-space: nowrap; background: #111; padding: 3px 7px; border-radius: 5px; font-size: 11px; border: 1px solid var(--line); }
+  .mg { position: absolute; width: var(--r); height: var(--r); margin: calc(var(--r) / -2) 0 0 calc(var(--r) / -2); border-radius: 50%; background: radial-gradient(circle, hsl(var(--h) 50% 45% / .38), transparent 70%); transition: left .9s cubic-bezier(.2,.7,.2,1), top .9s cubic-bezier(.2,.7,.2,1), width .9s, height .9s, margin .9s; }
+  .mg b { position: absolute; left: 50%; top: 12%; transform: translate(-50%, -50%); white-space: nowrap; font-size: 12px; text-shadow: 0 1px 3px #000, 0 0 8px #000; z-index: 2; }
+  .d-body.walk { display: flex; align-items: center; overflow-x: auto; padding: 16px; }
+  .dc { flex: none; width: 172px; display: flex; flex-direction: column; gap: 2px; padding: 12px; border: 1px solid var(--line); border-radius: 10px; background: #202021; }
+  .dc .cv.big { width: 64px; margin-bottom: 6px; }
+  .dc b, .dc .s { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .threads { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 8px; }
+  .threads .ab { height: 22px; padding: 0 7px; font-size: 11px; }
+  .dc:not(:last-child) .ab { opacity: .4; pointer-events: none; }
+  .dline { flex: none; width: 76px; height: 1px; background: #4a4a4c; position: relative; }
+  .dline span { position: absolute; left: 50%; top: -6px; transform: translate(-50%, -100%); white-space: nowrap; font-size: 10px; color: var(--muted); background: var(--card); padding: 0 4px; }
+  .sh-head { display: flex; gap: 14px; padding: 14px 12px 12px; border-bottom: 1px solid var(--line); }
+  .cv.xl { width: 96px; border-radius: 6px; }
+  .sh-meta { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+  .sh-title { font-size: 15px; }
+  .sh-btns { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .sh-sellers { padding: 8px 0; }
+  .sh-sellers > .s { padding: 4px 12px; }
+  .tr .t { position: relative; }
+  .prog { position: absolute; left: 0; bottom: 0; height: 2px; background: var(--accent-hover); animation: prog 30s linear; }
+  @keyframes prog { from { width: 0; } to { width: 100%; } }
+  .grp { padding: 8px 12px 4px; font-size: 11px; }
+  .d-body.tl { display: flex; flex-direction: column; }
+  .ta { height: 78px; flex: none; resize: none; border: 0; border-radius: 0; border-bottom: 1px solid var(--line); background: #161617; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; line-height: 1.5; padding: 7px 12px; }
+  .line { width: 160px; flex: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 11px; }
+  .addf { display: flex; gap: 6px; margin-left: auto; }
+  .addf .ai { width: 110px; }
+  .radio { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-top: 1px solid var(--line); background: #161617; flex: none; }
+  .radio .t { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .live { width: 8px; height: 8px; border-radius: 50%; background: #ff375f; animation: blink 1.4s infinite; flex: none; }
+  @keyframes blink { 50% { opacity: .3; } }
 
   footer { padding: 40px 0 70px; text-align: center; color: #6a6a6a; font-size: 0.85rem; }
   footer a { color: var(--muted); text-decoration: none; }
@@ -204,17 +302,22 @@
     .loop { grid-column: 1 / -1; margin: 4px 0 0; }
     .hint, .bpm { display: none; }
     .cuts { padding-top: 80px; }
-    .band, .split { margin-bottom: 72px; }
-    .split { grid-template-columns: 1fr; gap: 18px; }
+    .band { margin-bottom: 72px; }
     .tour { grid-template-columns: 1fr; gap: 0; }
     .shots { order: -1; top: var(--bar-h); z-index: 2; background: var(--bg); padding: 10px 0; }
+    .stage { aspect-ratio: 1 / 1; }
     .steps { padding: 4vh 0; }
     .step { min-height: 40vh; }
     .step h2 { font-size: 1.45rem; }
+    .col, .find { display: none; }
+    .line { width: 96px; }
+    .d-body.grid { grid-template-columns: repeat(auto-fill, minmax(78px, 1fr)); gap: 8px; }
+    .cv.xl { width: 72px; }
   }
   @media (prefers-reduced-motion: reduce) {
     html { scroll-behavior: auto; }
-    .bar, .step, .stack .shot, .dots button::before, .gate summary::before { transition: none; }
+    .bar, .step, .demo, .mt, .mg, .dots button::before, .gate summary::before { transition: none; }
+    .pop, .fill { animation: none; }
   }
 </style>
 </head>
@@ -296,69 +399,55 @@
       </div>
     </div>
 
-    <div class="split">
-      <img class="shot" src="screens/automatch.jpg" loading="lazy" alt="Settings, Discogs tab: Automatic matching with 'Match new imports automatically' ticked and the preferred pressing rule." />
-      <div class="text">
-        <h2>Metadata from Discogs, filled in for you</h2>
-        <p>Turn on automatic matching and every file you add is looked up on Discogs as it lands: the release gets linked, the cover art comes down, and empty tags like album, label, genre and year are filled from the record. Pick which pressing wins, and re-pick any track by hand with "Find Discogs release".</p>
-      </div>
-    </div>
-
     <div class="tour">
       <div class="steps">
-        <div class="step">
+        <div class="step" data-demo="automatch" data-shot="screens/automatch.jpg" data-alt="Settings, Discogs tab: Automatic matching with 'Match new imports automatically' ticked and the preferred pressing rule.">
+          <h2>Metadata from Discogs, filled in for you</h2>
+          <p>Turn on automatic matching and every file you add is looked up on Discogs as it lands: the release gets linked, the cover art comes down, and empty tags like album, label, genre and year are filled from the record. Pick which pressing wins, and re-pick any track by hand with "Find Discogs release".</p>
+        </div>
+        <div class="step" data-demo="keys" data-shot="screens/keys.jpg" data-alt="Table columns with BPM and colour-coded Camelot key chips.">
           <h2>BPM and key, analyzed for you</h2>
           <p>Every file gets a beatgrid, a Camelot key and a waveform the moment it lands. Harmonic neighbours share a colour.</p>
         </div>
-        <div class="step">
+        <div class="step" data-demo="shelf" data-shot="screens/shelf.jpg" data-alt="The vinyl collection as a grid of record covers with current prices.">
           <h2>Every record you own</h2>
           <p>Your Discogs collection and wantlist as a shelf, with what each record goes for today and which ones you already have as files.</p>
         </div>
-        <div class="step">
+        <div class="step" data-demo="map" data-shot="screens/map.jpg" data-alt="The record map: hundreds of record covers clustered into labelled genre clouds.">
           <h2>A map of your taste</h2>
           <p>Collection, wantlist and everything you ever dug, laid out as one web and clustered by genre or by artist.</p>
         </div>
-        <div class="step">
+        <div class="step" data-demo="dig" data-shot="screens/dig.jpg" data-alt="The dig window: three records joined by style and label threads.">
           <h2>Dig</h2>
           <p>Start on a record and follow a thread, its style, its label, its artist, to the next one. Discogs, as a walk.</p>
         </div>
-        <div class="step">
+        <div class="step" data-demo="sheet" data-shot="screens/sheet.jpg" data-alt="A record sheet: cover, tracklist with play buttons, lowest price, and buttons for Discogs, label, collection, wantlist and dig.">
           <h2>One record, everything about it</h2>
           <p>Tracklist, playback, the lowest price and your sellers' copies, with the label and Discogs one click away.</p>
         </div>
-        <div class="step">
+        <div class="step" data-demo="search" data-shot="screens/search.jpg" data-alt="Search results from Discogs in a dropdown under the search bar, with add-to-collection and wantlist buttons.">
           <h2>Search all of Discogs</h2>
           <p>The same search bar covers your library and the whole Discogs catalog. Add a record to your collection or wantlist right there.</p>
         </div>
-        <div class="step">
+        <div class="step" data-demo="tracklists" data-shot="screens/tracklists.jpg" data-alt="The tracklists window: a pasted mix tracklist with each line matched to a record.">
           <h2>Tracklists that find their records</h2>
           <p>Paste a mix tracklist and every line gets matched to the record it came from, ready to like, buy or dig.</p>
         </div>
-        <div class="step">
+        <div class="step" data-demo="market" data-shot="screens/market.jpg" data-alt="The market: record covers from saved sellers' inventories with condition and price.">
           <h2>Your sellers, one crate</h2>
           <p>Save the shops you trust and browse their inventories together, with the condition and the price under every record.</p>
         </div>
+        <div class="step" data-demo="liked" data-shot="screens/liked.jpg" data-alt="The liked songs crate: songs with their records, marked as file or still to get.">
+          <h2>Liked songs, wherever you heard them</h2>
+          <p>Heart a song on a record, in a tracklist or on the radio. The crate keeps track of what you have as a file and what is still to get.</p>
+        </div>
       </div>
       <div class="shots">
-        <div class="stack">
-          <img class="shot" src="screens/keys.jpg" loading="lazy" alt="Table columns with BPM and colour-coded Camelot key chips." />
-          <img class="shot" src="screens/shelf.jpg" loading="lazy" alt="The vinyl collection as a grid of record covers with current prices." />
-          <img class="shot" src="screens/map.jpg" loading="lazy" alt="The record map: hundreds of record covers clustered into labelled genre clouds." />
-          <img class="shot" src="screens/dig.jpg" loading="lazy" alt="The dig window: three records joined by style and label threads." />
-          <img class="shot" src="screens/sheet.jpg" loading="lazy" alt="A record sheet: cover, tracklist with play buttons, lowest price, and buttons for Discogs, label, collection, wantlist and dig." />
-          <img class="shot" src="screens/search.jpg" loading="lazy" alt="Search results from Discogs in a dropdown under the search bar, with add-to-collection and wantlist buttons." />
-          <img class="shot" src="screens/tracklists.jpg" loading="lazy" alt="The tracklists window: a pasted mix tracklist with each line matched to a record." />
-          <img class="shot" src="screens/market.jpg" loading="lazy" alt="The market: record covers from saved sellers' inventories with condition and price." />
+        <div class="stage" id="stage"></div>
+        <div class="stage-foot">
+          <div class="dots" id="dots"></div>
+          <a class="real" id="real" href="screens/automatch.jpg">See it in the app</a>
         </div>
-        <div class="dots" id="dots"></div>
-      </div>
-    </div>
-
-    <div class="band">
-      <img class="shot" src="screens/liked.jpg" width="1600" height="786" loading="lazy" alt="The liked songs crate: songs with their records, marked as file or still to get." />
-      <div class="text">
-        <h2>Liked songs, wherever you heard them</h2>
-        <p>Heart a song on a record, in a tracklist or on the radio. The crate keeps track of what you have as a file and what is still to get.</p>
       </div>
     </div>
 
@@ -386,6 +475,7 @@
   const $ = (s, el = document) => el.querySelector(s);
   const $$ = (s, el = document) => [...el.querySelectorAll(s)];
   const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const wait = ms => new Promise(r => setTimeout(r, ms));
 
   // Download starts normally; the dialog repeats the first-launch steps so
   // nobody is surprised by the Gatekeeper warning.
@@ -395,9 +485,8 @@
 
   // Any screenshot opens full size.
   const zoom = $('#zoom'), zoomImg = $('img', zoom);
-  $$('.shot').forEach(img => img.addEventListener('click', () => {
-    zoomImg.src = img.src; zoomImg.alt = img.alt; zoom.showModal();
-  }));
+  const openZoom = (src, alt) => { zoomImg.src = src; zoomImg.alt = alt; zoom.showModal(); };
+  $$('.shot').forEach(img => img.addEventListener('click', () => openZoom(img.src, img.alt)));
   zoom.addEventListener('click', e => { if (e.target === zoom) zoom.close(); });
 
   // Download bar once the hero's own buttons are gone.
@@ -405,8 +494,392 @@
   new IntersectionObserver(([e]) => bar.classList.toggle('show', !e.isIntersecting),
     { rootMargin: '-56px 0px 0px 0px' }).observe($('.hero .cta'));
 
-  // Tour: the step crossing the middle of the viewport owns the screenshot.
-  const steps = $$('.step'), shots = $$('.stack .shot'), dots = $('#dots');
+  // ---------------------------------------------------------------------
+  // A small catalog the feature demos share: records with tracks, drawn with
+  // generated sleeves. Prices and shops are made up for the demo.
+  const RECS = [
+    { id: 1, artist: 'Barker', title: 'Debiasing', label: 'Ostgut Ton', year: 2018, genre: 'Techno', styles: ['Techno', 'Ambient'], price: 18, sale: 4, file: true, coll: true, want: false, hue: [210, 250], tracks: [['Cascade Effect', '6:57', '9B', 136.01], ['Maladaptive', '5:52', '11A', 128], ["Look How Hard I've Tried", '6:14', '6A', 130]] },
+    { id: 2, artist: 'Barker', title: 'Utility', label: 'Ostgut Ton', year: 2019, genre: 'Techno', styles: ['Techno', 'Ambient'], price: 24, sale: 7, file: true, coll: false, want: true, hue: [200, 160], tracks: [['Models Of Wellbeing', '6:03', '7A', 145], ['Paradise Engineering', '6:30', '8A', 132], ['Hedonic Treadmill', '7:11', '5A', 128]] },
+    { id: 3, artist: 'Aurora Halal', title: 'Liquiddity', label: 'Mutual Dreaming', year: 2014, genre: 'Techno', styles: ['Techno'], price: 14.5, sale: 3, file: true, coll: true, want: false, hue: [190, 230], tracks: [['Eternal Blue (Wata Igarashi Crossing Remix)', '7:41', '5A', 128], ['Liquiddity', '6:20', '8A', 126]] },
+    { id: 4, artist: 'Andy Stott', title: 'Faith In Strangers', label: 'Modern Love', year: 2014, genre: 'Dub Techno', styles: ['Dub Techno', 'Experimental'], price: 26, sale: 9, file: true, coll: true, want: false, hue: [20, 40], tracks: [['Made Your Point', '6:05', '3A', 113], ['Violence', '5:48', '2A', 120], ['How It Was', '4:52', '10A', 118]] },
+    { id: 5, artist: 'Baby Ford', title: 'Basking In The Brakelights', label: 'Trelik', year: 2008, genre: 'Minimal', styles: ['Minimal', 'Tech House'], price: 12, sale: 5, file: true, coll: true, want: false, hue: [330, 20], tracks: [['All That Nothing', '7:03', '3A', 128.01], ['Twisted', '6:40', '7A', 127]] },
+    { id: 6, artist: 'Shed', title: 'Shedding The Past', label: 'Ostgut Ton', year: 2008, genre: 'Techno', styles: ['Techno', 'Dub Techno'], price: 28, sale: 2, file: false, coll: false, want: true, hue: [40, 60], tracks: [['Sweep Dreams', '6:12', '6A', 127], ['Flat Axe', '5:58', '1A', 130], ['ITHAW', '7:04', '9A', 126]] },
+    { id: 7, artist: 'Shed', title: 'The Traveller', label: 'Ostgut Ton', year: 2010, genre: 'Techno', styles: ['Techno', 'Dub Techno'], price: 22, sale: 6, file: false, coll: true, want: false, hue: [30, 10], tracks: [['Keep Time', '6:20', '8A', 128], ['Leave Things', '7:02', '4A', 124]] },
+    { id: 8, artist: 'Ken Ishii', title: 'Jelly Tones', label: 'R&S Records', year: 1995, genre: 'Techno', styles: ['Techno', 'IDM'], price: 20, sale: 11, file: true, coll: true, want: false, hue: [280, 320], tracks: [['Extra', '5:34', '12A', 132], ['Ethos 9', '6:49', '8B', 130], ['Cocoa Mousse', '5:20', '2B', 128]] },
+    { id: 9, artist: 'XDB', title: 'Frocks', label: 'Sistrum Recordings', year: 2013, genre: 'House', styles: ['Deep House', 'Dub Techno'], price: 11, sale: 8, file: false, coll: false, want: true, hue: [120, 160], tracks: [['Frocks (P.Scott Mix)', '7:30', '4B', 124], ['Frocks', '7:15', '4A', 124]] },
+    { id: 10, artist: 'Aleksi Perälä', title: 'Spectrum 1', label: 'Clone Basement Series', year: 2012, genre: 'Electro', styles: ['Electro', 'IDM'], price: 15, sale: 4, file: true, coll: true, want: false, hue: [60, 90], tracks: [['FI3AC2030010', '5:33', '12A', 133.33], ['FI3AC2030020', '6:07', '11B', 131]] },
+    { id: 11, artist: 'Stefan Vincent', title: "Elephant's Foot EP", label: 'Dynamic Reflection', year: 2014, genre: 'Techno', styles: ['Techno'], price: 9.5, sale: 6, file: false, coll: false, want: true, hue: [0, 20], tracks: [['Aro', '6:41', '10A', 130], ["Elephant's Foot", '6:50', '9A', 131]] },
+    { id: 12, artist: 'Benjamin Wild', title: 'Kronberg', label: 'MICRO', year: 2022, genre: 'Minimal', styles: ['Minimal', 'Dub Techno'], price: 13, sale: 3, file: true, coll: true, want: false, hue: [170, 200], tracks: [['Kronberg 4', '5:56', '8B', 126.1], ['Kronberg 1', '6:02', '8A', 126]] },
+    { id: 13, artist: 'Basic Channel', title: 'Phylyps Trak', label: 'Basic Channel', year: 1993, genre: 'Dub Techno', styles: ['Dub Techno'], price: 32, sale: 5, file: true, coll: true, want: false, hue: [220, 230], tracks: [['Phylyps Trak', '10:12', '4A', 124], ['Phylyps Trak (Bass)', '9:58', '4A', 124]] },
+    { id: 14, artist: 'Rhythm & Sound', title: 'See Mi Yah', label: 'Burial Mix', year: 2005, genre: 'Dub', styles: ['Dub', 'Dub Techno'], price: 21, sale: 7, file: false, coll: true, want: false, hue: [90, 120], tracks: [['See Mi Yah (feat. Willi Williams)', '6:25', '1A', 110], ['Version', '6:20', '1A', 110]] },
+    { id: 15, artist: 'Maurizio', title: 'M4', label: 'Maurizio', year: 1995, genre: 'Dub Techno', styles: ['Dub Techno', 'House'], price: 38, sale: 2, file: false, coll: false, want: true, hue: [240, 220], tracks: [['M4', '10:20', '3A', 124], ['M4.5', '9:50', '3A', 124]] },
+    { id: 16, artist: "Achterbahn D'Amour", title: 'Trance Me Up', label: 'Acid Test', year: 2013, genre: 'House', styles: ['Acid House'], price: 17, sale: 5, file: true, coll: true, want: false, hue: [300, 340], tracks: [['Trance Me Up (Skudge Remix)', '5:19', '6A', 128], ['Trance Me Up', '6:44', '6B', 125]] },
+    { id: 17, artist: 'Shed', title: 'The Killer', label: '50 Weapons', year: 2012, genre: 'Techno', styles: ['Techno'], price: 16, sale: 6, file: false, coll: false, want: false, hue: [15, 45], tracks: [['I Come By Night', '6:40', '2A', 129], ['Silent Witness', '5:30', '5A', 131]] },
+  ];
+  RECS.forEach(r => r.tracks = r.tracks.map(([t, dur, key, bpm], i) => ({ t, dur, key, bpm, i, rec: r, id: r.id + ':' + i })));
+  const SELLERS = [
+    { name: 'Plattenbau Records', items: [[6, 'VG+', 28], [1, 'NM', 19], [13, 'VG+', 30], [15, 'VG', 36]] },
+    { name: 'Deep Cuts', items: [[6, 'NM', 31], [9, 'VG+', 11], [11, 'NM', 9.5], [3, 'VG+', 15]] },
+    { name: 'Wax Orbit', items: [[2, 'NM', 24], [7, 'VG+', 22], [14, 'VG', 21]] },
+    { name: 'Kellerkind', items: [[16, 'VG+', 17], [12, 'NM', 13], [10, 'VG+', 15], [8, 'VG', 20]] },
+  ].map(s => ({ ...s, on: true, items: s.items.map(([rec, cond, price]) => ({ rec, cond, price })) }));
+
+  const byId = id => RECS.find(r => r.id === id);
+  const trackById = id => { const [r, i] = id.split(':'); return byId(+r).tracks[+i]; };
+  const euro = p => '€' + p.toFixed(2);
+  const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const cover = (r, cls = '') => `<span class="cv m${r.id % 3} ${cls}" style="--a:hsl(${r.hue[0]} 45% 36%);--b:hsl(${r.hue[1]} 55% 58%)"></span>`;
+  // The app's Camelot colouring: hue by wheel position, lighter for major (B).
+  const keyColor = k => {
+    const n = parseInt(k), h = (n - 1) / 12 * 360, s = .6, v = k.endsWith('B') ? .92 : .74;
+    const f = (q, t = (q + h / 60) % 6) => Math.round(255 * (v - v * s * Math.max(Math.min(t, 4 - t, 1), 0)));
+    return `rgb(${f(5)},${f(3)},${f(1)})`;
+  };
+  const keyChip = k => `<span class="kc" data-k="${k}" style="--k:${keyColor(k)}">${k}</span>`;
+  const compatible = (a, b) => { const na = parseInt(a), nb = parseInt(b), d = Math.abs(na - nb); return na === nb || (a.slice(-1) === b.slice(-1) && (d === 1 || d === 11)); };
+
+  // Liked songs are shared: a heart in the sheet, a tracklist or the radio
+  // lands in the Liked crate.
+  const liked = new Map();
+  ['6:0', '13:0', '1:0', '9:0'].forEach(id => liked.set(id, trackById(id)));
+  const heart = t => `<button class="heart ${liked.has(t.id) ? 'on' : ''}" data-like="${t.id}" aria-label="Like">♥</button>`;
+  let renderLiked = () => {};
+  document.addEventListener('click', e => {
+    const b = e.target.closest('[data-like]');
+    if (!b) return;
+    const id = b.dataset.like;
+    liked.has(id) ? liked.delete(id) : liked.set(id, trackById(id));
+    $$(`[data-like="${id}"]`).forEach(x => x.classList.toggle('on', liked.has(id)));
+    renderLiked();
+  });
+
+  const stage = $('#stage');
+  const DEMOS = {};
+  const demo = (key, html) => { const d = document.createElement('div'); d.className = 'demo'; d.dataset.demo = key; d.innerHTML = html; stage.appendChild(d); return d; };
+  const segment = (seg, on) => $$('button', seg).forEach(b => b.classList.toggle('on', b === on));
+  let goStep = () => {}, digFrom = () => {}, goSheet = () => {};
+
+  // Automatch: a file lands, gets looked up, its tags fill in.
+  {
+    const d = demo('automatch', `
+      <div class="d-top"><button class="ab pri" id="am-add">Add songs…</button><span class="s" id="am-n"></span><span class="s col" style="margin-left:auto;flex:none">Match new imports automatically ✓</span></div>
+      <div class="d-body" id="am-rows"></div>
+      <div class="d-hint">Each file is looked up on Discogs as it lands. Find Discogs release re-picks the pressing by hand.</div>`);
+    const rows = $('#am-rows', d), queue = [[3, 0, 'aif'], [4, 0, 'mp3'], [13, 0, 'flac'], [16, 0, 'mp3'], [2, 0, 'aif']];
+    let q = 0, busy = false;
+    const rowHtml = (tr, matched) => {
+      const r = tr.rec;
+      return matched
+        ? `${cover(r)}<div class="t"><b>${esc(tr.t)}</b><div class="s">${esc(r.artist)}</div></div><div class="col">${esc(r.title)}</div><div class="col s press">${esc(r.label)} · ${r.year}</div><span class="st ok">Matched</span><button class="ab find">Find Discogs release</button>`
+        : `<span class="cv blank"></span><div class="t"><b>${esc(r.artist)} - ${esc(tr.t)}.${tr.ext}</b><div class="s">${esc(r.artist)}</div></div><div class="col s">—</div><div class="col s">—</div><span class="st"><i class="spin"></i> Looking up on Discogs…</span>`;
+    };
+    const add = (tr, matched) => { const el = document.createElement('div'); el.className = 'tr'; el.dataset.id = tr.id; el.innerHTML = rowHtml(tr, matched); rows.appendChild(el); return el; };
+    const count = () => $('#am-n', d).textContent = rows.children.length + ' tracks';
+    const seed = () => { rows.innerHTML = ''; [[1, 0], [5, 0], [8, 0]].forEach(([r, i]) => add(byId(r).tracks[i], true)); count(); };
+    async function addSong() {
+      if (busy) return;
+      busy = true;
+      if (rows.children.length >= 7) seed();
+      const [r, i, ext] = queue[q++ % queue.length], tr = { ...byId(r).tracks[i], ext };
+      const el = add(tr, false);
+      count();
+      el.scrollIntoView({ block: 'nearest' });
+      await wait(1400);
+      el.innerHTML = rowHtml(tr, true);
+      el.classList.add('fill');
+      busy = false;
+    }
+    rows.addEventListener('click', e => {
+      const b = e.target.closest('.find');
+      if (!b) return;
+      $$('.pop-list', d).forEach(p => p.remove());
+      const el = b.closest('.tr'), r = trackById(el.dataset.id).rec;
+      const cands = [[r.year, '12″'], [r.year + 6, '12″, repress'], [r.year, 'File, FLAC']];
+      const p = document.createElement('div');
+      p.className = 'pop-list';
+      p.innerHTML = `<div class="s">Pressings on Discogs</div>` + cands.map((c, i) => `<button class="tr" data-i="${i}">${cover(r)}<div class="t"><b>${esc(r.title)}</b><div class="s">${c[0]} · ${c[1]} · ${esc(r.label)}</div></div></button>`).join('');
+      el.after(p);
+      p.addEventListener('click', ev => { const c = ev.target.closest('[data-i]'); if (!c) return; const [y, f] = cands[+c.dataset.i]; $('.press', el).textContent = `${r.label} · ${y} · ${f}`; $('.press', el).classList.add('fill'); p.remove(); });
+    });
+    seed();
+    $('#am-add', d).onclick = addSong;
+    DEMOS.automatch = { show: addSong };
+  }
+
+  // Keys: tracks get a waveform, a BPM and a Camelot key; hover shows neighbours.
+  {
+    const list = [[1, 0], [3, 0], [4, 0], [5, 0], [8, 0], [13, 0], [16, 0], [6, 0]].map(([r, i]) => byId(r).tracks[i]);
+    const d = demo('keys', `
+      <div class="d-top"><button class="ab pri" id="k-run">Analyze</button><span class="s">${list.length} tracks</span></div>
+      <div class="d-body" id="k-rows"></div>
+      <div class="d-hint">Hover a key: the chips that mix with it stay lit.</div>`);
+    const rows = $('#k-rows', d);
+    rows.innerHTML = list.map(t => `<div class="tr" data-id="${t.id}"><canvas class="wv" width="140" height="44"></canvas><div class="t"><b>${esc(t.t)}</b><div class="s">${esc(t.rec.artist)}</div></div><span class="bpm s">—</span><span class="kslot"><span class="s">—</span></span></div>`).join('');
+    const drawWave = (cv, t) => {
+      const c = cv.getContext('2d'), W = cv.width, H = cv.height, m = H / 2;
+      let s = t.rec.id * 7919 + t.i * 31;
+      const rnd = () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; };
+      c.clearRect(0, 0, W, H);
+      for (let x = 0; x < W; x += 2) {
+        const a = (0.25 + 0.6 * rnd()) * ((x % 14) < 2 ? 1 : 0.55) * m;
+        c.fillStyle = '#0032ff'; c.fillRect(x, m - a, 2, a * 2);
+        c.fillStyle = '#cf9c2a'; c.fillRect(x, m - a * .8, 2, a * 1.6);
+        c.fillStyle = '#e6f1ff'; c.fillRect(x, m - a * .35, 2, a * .7);
+      }
+    };
+    let ran = false, running = false;
+    async function run() {
+      if (running) return;
+      running = true;
+      $$('.tr', rows).forEach(el => { $('.wv', el).getContext('2d').clearRect(0, 0, 140, 44); $('.bpm', el).textContent = '—'; $('.bpm', el).classList.add('s'); $('.kslot', el).innerHTML = '<span class="s">—</span>'; });
+      for (const el of $$('.tr', rows)) {
+        const t = trackById(el.dataset.id);
+        drawWave($('.wv', el), t);
+        await wait(120);
+        $('.bpm', el).textContent = t.bpm.toFixed(2);
+        $('.bpm', el).classList.remove('s');
+        await wait(120);
+        $('.kslot', el).innerHTML = keyChip(t.key);
+        $('.kc', el).classList.add('pop');
+        await wait(160);
+      }
+      running = false; ran = true;
+    }
+    rows.addEventListener('mouseover', e => { const k = e.target.closest('.kc'); if (k) $$('.kc', rows).forEach(c => c.classList.toggle('dim', !compatible(k.dataset.k, c.dataset.k))); });
+    rows.addEventListener('mouseout', e => { if (e.target.closest('.kc')) $$('.kc', rows).forEach(c => c.classList.remove('dim')); });
+    $('#k-run', d).onclick = run;
+    DEMOS.keys = { show: () => { if (!ran) run(); } };
+  }
+
+  // Shelf: collection and wantlist as covers with today's price.
+  {
+    const d = demo('shelf', `
+      <div class="d-top"><div class="seg" id="sh-seg"><button class="on" data-m="coll">Collection</button><button data-m="want">Wantlist</button></div><button class="ab chk" id="sh-file">Have as file</button><span class="s" id="sh-n" style="margin-left:auto"></span></div>
+      <div class="d-body grid" id="sh-grid"></div>
+      <div class="d-hint">Your Discogs shelf with today's lowest price under each record. Green dot: you have it as a file. Click a record to open its sheet.</div>`);
+    let mode = 'coll', onlyFile = false;
+    function render(tick) {
+      const list = RECS.filter(r => (mode === 'coll' ? r.coll : r.want) && (!onlyFile || r.file));
+      $('#sh-grid', d).innerHTML = list.map(r => `<button class="rc" data-id="${r.id}">${cover(r, r.file ? 'has' : '')}<span class="t">${esc(r.artist)}</span><span class="s">${esc(r.title)}</span><span class="pr s">${tick ? '…' : euro(r.price)}</span></button>`).join('');
+      $('#sh-n', d).textContent = `${list.length} records · ${euro(list.reduce((a, r) => a + r.price, 0))}`;
+      if (tick) list.forEach((r, i) => setTimeout(() => { const el = $(`.rc[data-id="${r.id}"] .pr`, d); if (el) { el.textContent = euro(r.price); el.classList.add('fill'); } }, 300 + i * 90));
+    }
+    $('#sh-seg', d).addEventListener('click', e => { const b = e.target.closest('[data-m]'); if (!b) return; mode = b.dataset.m; segment(e.currentTarget, b); render(); });
+    $('#sh-file', d).onclick = e => { onlyFile = !onlyFile; e.currentTarget.classList.toggle('on', onlyFile); render(); };
+    $('#sh-grid', d).addEventListener('click', e => { const b = e.target.closest('.rc'); if (b) goSheet(byId(+b.dataset.id)); });
+    render(false);
+    DEMOS.shelf = { show: () => render(true), render };
+  }
+
+  // Map: every record as a tile, clustered by genre or by artist.
+  {
+    const d = demo('map', `
+      <div class="d-top"><div class="seg" id="mp-seg"><button class="on" data-m="genre">By genre</button><button data-m="artist">By artist</button></div><span class="s" style="margin-left:auto">${RECS.length} records</span></div>
+      <div class="d-body map" id="mp"></div>
+      <div class="d-hint">Collection, wantlist and everything you dug, as one web. Switch the clustering and watch it regroup. Hover a cover for its name.</div>`);
+    const box = $('#mp', d), glows = document.createElement('div');
+    box.innerHTML = RECS.map(r => `<span class="mt" data-id="${r.id}" data-n="${esc(r.artist)} – ${esc(r.title)}">${cover(r)}</span>`).join('');
+    box.prepend(glows);
+    let mode = 'genre';
+    function layout() {
+      const W = box.clientWidth, H = box.clientHeight;
+      if (!W) return;
+      const groups = {};
+      RECS.forEach(r => (groups[r[mode]] ??= []).push(r));
+      const keys = Object.keys(groups).sort((a, b) => groups[b].length - groups[a].length), k = keys.length;
+      glows.innerHTML = '';
+      keys.forEach((g, gi) => {
+        const n = groups[g].length, th = gi / k * Math.PI * 2 - Math.PI / 2, rad = n >= 3 ? 0.24 : 0.34;
+        const cx = W * (0.5 + rad * Math.cos(th)), cy = Math.max(H * 0.24, H * (0.5 + rad * Math.sin(th))), spread = 12 + Math.sqrt(n) * 15;
+        groups[g].forEach((r, i) => {
+          const a = i / n * Math.PI * 2 + gi, rr = n === 1 ? 0 : spread * (0.55 + 0.45 * ((r.id * 37) % 10) / 10);
+          const el = $(`.mt[data-id="${r.id}"]`, box);
+          el.style.left = (cx + rr * Math.cos(a)) + 'px';
+          el.style.top = (cy + rr * Math.sin(a)) + 'px';
+        });
+        glows.insertAdjacentHTML('beforeend', `<span class="mg" style="left:${cx}px;top:${cy}px;--r:${spread * 2.8 + 30}px;--h:${(gi * 67) % 360}"><b>${esc(g)}</b></span>`);
+      });
+    }
+    $('#mp-seg', d).addEventListener('click', e => { const b = e.target.closest('[data-m]'); if (!b) return; mode = b.dataset.m; segment(e.currentTarget, b); layout(); });
+    new ResizeObserver(layout).observe(box);
+    DEMOS.map = { show: layout };
+  }
+
+  // Dig: start on a record, follow a thread to the next one.
+  {
+    const d = demo('dig', `
+      <div class="d-top"><span class="s">Start on a record, follow a thread</span><button class="ab" id="dg-reset" style="margin-left:auto">Start over</button></div>
+      <div class="d-body walk" id="dg"></div>
+      <div class="d-hint">Click a thread on the last record: Ord walks Discogs to the next record that shares it.</div>`);
+    const walk = $('#dg', d);
+    let visited = [];
+    const card = r => `<div class="dc" data-id="${r.id}">${cover(r, 'big')}<b>${esc(r.artist)}</b><span class="s">${esc(r.title)}</span><span class="s">${esc(r.label)} · ${r.year}</span><div class="threads">${r.styles.map(s => `<button class="ab" data-th="style" data-v="${esc(s)}">${esc(s)}</button>`).join('')}<button class="ab" data-th="label" data-v="${esc(r.label)}">${esc(r.label)}</button><button class="ab" data-th="artist" data-v="${esc(r.artist)}">${esc(r.artist)}</button></div></div>`;
+    const start = r => { visited = [r]; walk.innerHTML = card(r); walk.scrollTo({ left: 0 }); };
+    walk.addEventListener('click', e => {
+      const b = e.target.closest('[data-th]');
+      if (!b || !b.closest('.dc:last-child')) return;
+      const th = b.dataset.th, v = b.dataset.v;
+      const pool = RECS.filter(r => !visited.includes(r) && (th === 'style' ? r.styles.includes(v) : r[th] === v));
+      if (!pool.length) { b.disabled = true; b.textContent += ' · no more'; return; }
+      const r = pool[Math.floor(Math.random() * pool.length)];
+      visited.push(r);
+      walk.insertAdjacentHTML('beforeend', `<div class="dline"><span>${th}: ${esc(v)}</span></div>` + card(r));
+      walk.scrollTo({ left: walk.scrollWidth, behavior: reduced ? 'auto' : 'smooth' });
+    });
+    $('#dg-reset', d).onclick = () => start(byId(6));
+    start(byId(6));
+    digFrom = start;
+    DEMOS.dig = {};
+  }
+
+  // Sheet: one record, with playback, hearts, price, sellers and buttons.
+  {
+    const d = demo('sheet', `<div class="d-body" id="sheet"></div><div class="d-hint">Play a track, heart it (it lands in Liked songs), or dig from here.</div>`);
+    const host = $('#sheet', d);
+    let cur = byId(6), playing = null;
+    const copies = r => SELLERS.flatMap(s => s.items.filter(it => it.rec === r.id).map(it => ({ ...it, shop: s.name })));
+    const POS = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'];
+    function render() {
+      const r = cur, cs = copies(r), low = Math.min(r.price, ...cs.map(i => i.price));
+      const dg = encodeURIComponent(r.artist + ' ' + r.title);
+      host.innerHTML = `
+        <div class="sh-head">${cover(r, 'xl')}<div class="sh-meta"><b class="sh-title">${esc(r.title)}</b><div>${esc(r.artist)}</div><div class="s">${esc(r.label)} · ${r.year} · 12″ · ${esc(r.styles.join(', '))}</div><div class="s">Lowest <b>${euro(low)}</b> · ${r.sale} for sale</div>
+          <div class="sh-btns"><a class="ab" target="_blank" rel="noopener" href="https://www.discogs.com/search/?q=${dg}&type=release">Discogs</a><a class="ab" target="_blank" rel="noopener" href="https://www.discogs.com/search/?q=${encodeURIComponent(r.label)}&type=label">Label</a><button class="ab ${r.coll ? 'on' : ''}" data-act="coll">${r.coll ? 'In collection ✓' : 'Collection'}</button><button class="ab ${r.want ? 'on' : ''}" data-act="want">${r.want ? 'On wantlist ✓' : 'Wantlist'}</button><button class="ab" data-act="dig">Dig</button></div></div></div>
+        <div class="sh-tracks">${r.tracks.map((t, i) => `<div class="tr"><button class="play sm ${playing === t.id ? '' : 'paused'}" data-play="${t.id}" aria-label="Play"><svg class="ic-pause" viewBox="0 0 16 16"><rect x="2.5" y="2" width="4" height="12" rx="1"/><rect x="9.5" y="2" width="4" height="12" rx="1"/></svg><svg class="ic-play" viewBox="0 0 16 16"><path d="M4 2.5v11a.6.6 0 0 0 .9.5l9-5.5a.6.6 0 0 0 0-1l-9-5.5a.6.6 0 0 0-.9.5z"/></svg></button><span class="s">${POS[i]}</span><div class="t">${esc(t.t)}${playing === t.id ? '<i class="prog"></i>' : ''}</div><span class="s">${t.dur}</span>${keyChip(t.key)}${heart(t)}</div>`).join('')}</div>
+        <div class="sh-sellers"><div class="s">Your sellers' copies</div>${cs.map(i => `<div class="tr"><span class="t">${esc(i.shop)}</span><span class="s">${i.cond}</span><b>${euro(i.price)}</b></div>`).join('') || '<div class="tr s">None of your sellers has a copy right now.</div>'}</div>`;
+    }
+    host.addEventListener('click', e => {
+      const p = e.target.closest('[data-play]');
+      if (p) { playing = playing === p.dataset.play ? null : p.dataset.play; render(); return; }
+      const a = e.target.closest('[data-act]');
+      if (!a) return;
+      if (a.dataset.act === 'dig') { digFrom(cur); goStep('dig'); return; }
+      cur[a.dataset.act] = !cur[a.dataset.act];
+      render();
+      DEMOS.shelf.render(false);
+    });
+    goSheet = r => { cur = r; playing = null; render(); goStep('sheet'); };
+    render();
+    DEMOS.sheet = {};
+  }
+
+  // Search: one bar over the library and over Discogs.
+  {
+    const d = demo('search', `
+      <div class="d-top"><input class="ai" id="se-q" placeholder="Search songs and records" autocomplete="off" style="flex:1"><div class="seg" id="se-seg"><button class="on" data-m="lib">Library</button><button data-m="dg">Discogs</button></div></div>
+      <div class="d-body" id="se-res"></div>
+      <div class="d-hint">One search bar for your files and all of Discogs. Add a record to your collection or wantlist right from the results.</div>`);
+    const q = $('#se-q', d), res = $('#se-res', d);
+    let mode = 'lib', typed = false;
+    function render() {
+      const s = q.value.trim().toLowerCase(), hit = x => !s || x.toLowerCase().includes(s);
+      if (mode === 'lib') {
+        const ts = RECS.filter(r => r.file).flatMap(r => r.tracks).filter(t => hit(t.t) || hit(t.rec.artist));
+        res.innerHTML = `<div class="s grp">In your library · ${ts.length} songs</div>` + ts.map(t => `<div class="tr">${cover(t.rec)}<div class="t"><b>${esc(t.t)}</b><div class="s">${esc(t.rec.artist)} · ${esc(t.rec.title)}</div></div><span class="s">${t.bpm.toFixed(0)}</span>${keyChip(t.key)}</div>`).join('');
+      } else {
+        const rs = RECS.filter(r => hit(r.title) || hit(r.artist) || hit(r.label));
+        res.innerHTML = `<div class="s grp">On Discogs · ${rs.length} releases</div>` + rs.map(r => `<div class="tr" data-id="${r.id}">${cover(r)}<div class="t"><b>${esc(r.artist)} – ${esc(r.title)}</b><div class="s">${esc(r.label)} · ${r.year} · from ${euro(r.price)}</div></div><button class="ab ${r.coll ? 'on' : ''}" data-act="coll">${r.coll ? '✓ Collection' : '+ Collection'}</button><button class="ab ${r.want ? 'on' : ''}" data-act="want">${r.want ? '✓ Wantlist' : '♡ Wantlist'}</button></div>`).join('');
+      }
+    }
+    q.addEventListener('input', render);
+    $('#se-seg', d).addEventListener('click', e => { const b = e.target.closest('[data-m]'); if (!b) return; mode = b.dataset.m; segment(e.currentTarget, b); render(); });
+    res.addEventListener('click', e => { const b = e.target.closest('[data-act]'); if (!b) return; const r = byId(+b.closest('.tr').dataset.id); r[b.dataset.act] = !r[b.dataset.act]; render(); DEMOS.shelf.render(false); });
+    render();
+    DEMOS.search = { show: async () => {
+      if (typed) return;
+      typed = true;
+      q.value = '';
+      for (const ch of 'shed') { q.value += ch; render(); await wait(140); }
+      await wait(900);
+      mode = 'dg'; segment($('#se-seg', d), $('[data-m="dg"]', d)); render();
+    } };
+  }
+
+  // Tracklists: paste a mix tracklist, every line finds its record.
+  {
+    const d = demo('tracklists', `
+      <div class="d-top"><button class="ab pri" id="tl-run">Match</button><button class="ab" id="tl-clear">Clear</button><span class="s" id="tl-n" style="margin-left:auto"></span></div>
+      <div class="d-body tl"><textarea class="ai ta" id="tl-text" spellcheck="false" aria-label="Tracklist"></textarea><div id="tl-rows"></div></div>
+      <div class="d-hint">Paste a tracklist from a mix. Every line finds the record it came from, ready to like, buy or dig.</div>`);
+    const ta = $('#tl-text', d), rows = $('#tl-rows', d);
+    ta.value = ['01. Shed - Sweep Dreams', '02. Basic Channel - Phylyps Trak', '03. Ken Ishii - Extra', '04. Unknown Artist - Untitled (white label)', '05. XDB - Frocks (P.Scott Mix)', '06. Rhythm & Sound - See Mi Yah'].join('\n');
+    const find = line => {
+      const l = line.replace(/^\s*\d+[.)]?\s*/, '').toLowerCase();
+      return RECS.flatMap(r => r.tracks).find(t => l.includes(t.t.toLowerCase().replace(/\s*\(.*\)$/, '')));
+    };
+    let busy = false, ran = false;
+    async function run() {
+      if (busy) return;
+      busy = true; ran = true;
+      const lines = ta.value.split('\n').map(s => s.trim()).filter(Boolean);
+      rows.innerHTML = lines.map(l => `<div class="tr"><span class="s line">${esc(l)}</span><span class="st"><i class="spin"></i></span></div>`).join('');
+      let n = 0;
+      for (const [i, l] of lines.entries()) {
+        await wait(380);
+        const el = rows.children[i], t = find(l);
+        if (!t) { el.innerHTML = `<span class="s line">${esc(l)}</span><span class="st s">No match</span>`; continue; }
+        n++;
+        el.innerHTML = `<span class="s line">${esc(l)}</span>${cover(t.rec)}<div class="t"><b>${esc(t.rec.artist)} – ${esc(t.rec.title)}</b><div class="s">${esc(t.rec.label)} · ${t.rec.year}${t.rec.file ? ' · you have the file' : ''}</div></div>${heart(t)}<a class="ab" target="_blank" rel="noopener" href="https://www.discogs.com/sell/list?q=${encodeURIComponent(t.rec.artist + ' ' + t.rec.title)}">Buy</a><button class="ab" data-dig="${t.rec.id}">Dig</button>`;
+        el.classList.add('fill');
+      }
+      $('#tl-n', d).textContent = `${n} of ${lines.length} matched`;
+      busy = false;
+    }
+    rows.addEventListener('click', e => { const b = e.target.closest('[data-dig]'); if (b) { digFrom(byId(+b.dataset.dig)); goStep('dig'); } });
+    $('#tl-run', d).onclick = run;
+    $('#tl-clear', d).onclick = () => { ta.value = ''; rows.innerHTML = ''; $('#tl-n', d).textContent = ''; ta.focus(); };
+    DEMOS.tracklists = { show: () => { if (!ran) run(); } };
+  }
+
+  // Market: saved sellers' inventories as one crate.
+  {
+    const d = demo('market', `
+      <div class="d-top wrapz" id="mk-sellers"></div>
+      <div class="d-body grid" id="mk-grid"></div>
+      <div class="d-hint">Your saved sellers' inventories in one crate, condition and price under every record. Untick a shop to drop its copies.</div>`);
+    function render() {
+      $('#mk-sellers', d).innerHTML = SELLERS.map((s, i) => `<button class="ab chk ${s.on ? 'on' : ''}" data-i="${i}">${s.on ? '✓ ' : ''}${esc(s.name)} <span class="s">${s.items.length}</span></button>`).join('') + `<form class="addf"><input class="ai" placeholder="Add seller" aria-label="Add seller"><button class="ab">Add</button></form>`;
+      const items = SELLERS.filter(s => s.on).flatMap(s => s.items.map(it => ({ ...it, shop: s.name }))).sort((a, b) => a.price - b.price);
+      $('#mk-grid', d).innerHTML = items.map(it => { const r = byId(it.rec); return `<div class="rc">${cover(r)}<span class="t">${esc(r.artist)}</span><span class="s">${esc(r.title)}</span><span class="pr">${it.cond} · ${euro(it.price)}</span><span class="s">${esc(it.shop)}</span></div>`; }).join('') || '<div class="s" style="padding:12px">No sellers ticked.</div>';
+    }
+    d.addEventListener('click', e => { const b = e.target.closest('[data-i]'); if (b) { SELLERS[+b.dataset.i].on = !SELLERS[+b.dataset.i].on; render(); } });
+    d.addEventListener('submit', e => {
+      e.preventDefault();
+      const name = $('input', e.target).value.trim();
+      if (!name) return;
+      const pick = () => RECS[Math.floor(Math.random() * RECS.length)].id;
+      SELLERS.push({ name, on: true, items: [{ rec: pick(), cond: 'VG+', price: 10 + Math.floor(Math.random() * 20) }, { rec: pick(), cond: 'NM', price: 12 + Math.floor(Math.random() * 25) }] });
+      render();
+    });
+    render();
+    DEMOS.market = {};
+  }
+
+  // Liked: the crate of hearted songs, with the radio as one more source.
+  {
+    const d = demo('liked', `
+      <div class="d-top"><div class="seg" id="lk-seg"><button class="on" data-m="all">All</button><button data-m="get">To get</button></div><span class="s" id="lk-n" style="margin-left:auto"></span></div>
+      <div class="d-body" id="lk-rows"></div>
+      <div class="radio" id="lk-radio"></div>
+      <div class="d-hint">Heart a song on a record, in a tracklist or on the radio. The crate knows what you have as a file and what is still to get.</div>`);
+    const RADIO = [[8, 1], [7, 0], [15, 0], [2, 1], [14, 1], [17, 0]].map(([r, i]) => byId(r).tracks[i]);
+    let mode = 'all', ri = 0;
+    renderLiked = () => {
+      const all = [...liked.values()], ts = all.filter(t => mode === 'all' || !t.rec.file);
+      $('#lk-rows', d).innerHTML = ts.map(t => `<div class="tr">${heart(t)}<div class="t"><b>${esc(t.t)}</b><div class="s">${esc(t.rec.artist)}</div></div>${cover(t.rec, 'sm')}<div class="t s">${esc(t.rec.title)}<div>${esc(t.rec.label)} · ${t.rec.year}</div></div><span class="st ${t.rec.file ? 'ok' : ''}">${t.rec.file ? 'file' : 'to get'}</span></div>`).join('') || '<div class="s" style="padding:14px">Nothing here yet. Heart something.</div>';
+      $('#lk-n', d).textContent = `${all.length} liked · ${all.filter(t => !t.rec.file).length} to get`;
+    };
+    const radio = () => { const t = RADIO[ri % RADIO.length]; $('#lk-radio', d).innerHTML = `<span class="live"></span><span class="s">On the radio now</span><b class="t">${esc(t.rec.artist)} – ${esc(t.t)}</b>${heart(t)}`; };
+    $('#lk-seg', d).addEventListener('click', e => { const b = e.target.closest('[data-m]'); if (!b) return; mode = b.dataset.m; segment(e.currentTarget, b); renderLiked(); });
+    setInterval(() => { ri++; radio(); }, 7000);
+    radio();
+    renderLiked();
+    DEMOS.liked = {};
+  }
+
+  // Tour: the step crossing the middle of the viewport owns the stage.
+  const steps = $$('.step'), dots = $('#dots'), real = $('#real');
+  const demoEls = steps.map(s => $(`.demo[data-demo="${s.dataset.demo}"]`));
   const dotEls = steps.map((s, i) => {
     const b = document.createElement('button');
     b.type = 'button';
@@ -415,7 +888,15 @@
     dots.appendChild(b);
     return b;
   });
-  const activate = i => [steps, shots, dotEls].forEach(list => list.forEach((el, k) => el.classList.toggle('active', k === i)));
+  let cur = 0;
+  const activate = i => {
+    cur = i;
+    [steps, demoEls, dotEls].forEach(list => list.forEach((el, k) => el.classList.toggle('active', k === i)));
+    real.href = steps[i].dataset.shot;
+    DEMOS[steps[i].dataset.demo]?.show?.();
+  };
+  goStep = key => steps[steps.findIndex(s => s.dataset.demo === key)].scrollIntoView({ behavior: reduced ? 'auto' : 'smooth', block: 'center' });
+  real.addEventListener('click', e => { e.preventDefault(); openZoom(steps[cur].dataset.shot, steps[cur].dataset.alt); });
   const mid = new IntersectionObserver(es => es.forEach(e => e.isIntersecting && activate(steps.indexOf(e.target))),
     { rootMargin: '-45% 0px -45% 0px' });
   steps.forEach(s => mid.observe(s));
