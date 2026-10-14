@@ -2939,11 +2939,6 @@ pub(crate) fn load_rows(
     ctx: &egui::Context,
     index: &LibraryIndex,
 ) -> Result<Vec<TrackRow>, String> {
-    let catalog = Catalog::open(db).map_err(|e| e.to_string())?;
-    if sources.stale {
-        util::mark_early("rows: catalog opened");
-    }
-    sources.ensure_fresh(&catalog, db, ctx)?;
     let q = if filter.trim().is_empty() {
         None
     } else {
@@ -2955,7 +2950,8 @@ pub(crate) fn load_rows(
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs() as i64)
         .unwrap_or(0);
-    // An unfiltered listing's rows are kept per view (see `RowSources::rows`).
+    // An unfiltered listing's rows are kept per view (see `RowSources::rows`);
+    // a hit touches no catalog at all (a change empties the cache first).
     if q.is_none() {
         if let Some(rows) = sources.rows.get(view) {
             return Ok(rows
@@ -2967,6 +2963,11 @@ pub(crate) fn load_rows(
                 .collect());
         }
     }
+    let catalog = Catalog::open(db).map_err(|e| e.to_string())?;
+    if sources.stale {
+        util::mark_early("rows: catalog opened");
+    }
+    sources.ensure_fresh(&catalog, db, ctx)?;
     // The Library and the viewed playlist are held unfiltered and narrowed
     // in memory: a search keystroke used to re-query the catalog and decode
     // the whole listing again, which is why the filter box needed a
