@@ -36,6 +36,10 @@
   :focus-visible { outline: 2px solid var(--accent-hover); outline-offset: 2px; }
   .wrap { max-width: 1120px; margin: 0 auto; padding: 0 24px; }
 
+  /* The app icon's O and bar, huge and out of focus, fixed behind the page. */
+  .backdrop { position: fixed; inset: 0; z-index: -1; overflow: hidden; pointer-events: none; }
+  .backdrop svg { position: absolute; left: 50%; top: 50%; width: 170vmin; height: 170vmin; transform: translate(-50%, -50%); filter: blur(70px); opacity: .3; }
+
   .btn {
     display: inline-block;
     padding: 13px 26px;
@@ -215,6 +219,10 @@
 </style>
 </head>
 <body>
+
+<div class="backdrop" aria-hidden="true">
+  <svg viewBox="0 0 1024 1024" fill="#93a6bf"><path d="M512 192A320 320 0 1 0 512 832A320 320 0 1 0 512 192ZM512 292A220 220 0 1 1 512 732A220 220 0 1 1 512 292Z" fill-rule="evenodd"/><rect x="402" y="490" width="220" height="44" rx="22"/></svg>
+</div>
 
 <header class="bar" id="bar">
   <div class="wrap">
