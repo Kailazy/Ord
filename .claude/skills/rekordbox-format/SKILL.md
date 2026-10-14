@@ -38,6 +38,11 @@ as authoritative and validate every byte against a real rekordbox-produced expor
 
 - USB must be **FAT32 with Master Boot Record** for broad CDJ compatibility.
 - Track rows in `export.pdb` reference their ANLZ file path; keep them consistent.
+- The ANLZ directory is **a hash of the audio path** (`export::anlz_dir`, docs
+  §5): CDJ-3000 firmware derives it itself and ignores files elsewhere. A
+  second track hashing to the same directory takes `ANLZ0001.*`.
+- Long (0x40) and UTF-16 (0x90) DeviceSQL strings start on a 4-byte boundary
+  of their row (`pdbw::push_dsql`, docs §2.4); unaligned ones froze a CDJ-2000NXS.
 
 ## export.pdb (DeviceSQL) essentials
 

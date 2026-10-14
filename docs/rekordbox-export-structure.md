@@ -141,6 +141,15 @@ First byte = kind:
 Verified across all 609 rows: title/filename/file_path use short form until
 length forces 0x40, and 0x90 whenever non-ASCII appears anywhere.
 
+**Placement (2026-10-13):** a long string (0x40 or 0x90) starts on a
+**four-byte boundary of its row**, zero bytes filling the gap; a short string
+packs straight after whatever precedes it. Every long string in the track
+rows of both golden sticks sits at a multiple of four (189 of 189, none
+unaligned), a UTF-16 artist name is at row offset 12 instead of 10 and a
+UTF-16 album name at 24 instead of 22. No UTF-16 string carries a
+terminator. Packing long strings unaligned has been tied to a CDJ-2000NXS
+freeze (E-8709, rbxport issue #321). `pdbw::push_dsql` writes this form.
+
 ### 2.5 Track row (type 0)
 
 Fixed 0x88-byte header, then packed strings. All 21 string-offset u16s at
@@ -208,11 +217,12 @@ order.
 - **key (5):** `u32 id, u32 id2 (== id), string name`. Names are **literal
   Camelot strings** ("8A", "12B"…); 24 keys interned in first-seen order.
 - **artist (2):** `u16 subtype (0x60, or 0x64 when the name offset exceeds
-  0xFF), u16 index_shift, u32 id, u8 0x03, u8 ofs_name (0x0a)`; subtype 0x64
-  inserts `u16 ofs_name_far` at 0x0a and the name follows. Name offset is
-  relative to row start.
+  0xFF), u16 index_shift, u32 id, u8 0x03, u8 ofs_name (0x0a, or 0x0c for a
+  long/UTF-16 name, see §2.4)`; subtype 0x64 inserts `u16 ofs_name_far` at
+  0x0a and the name follows. Name offset is relative to row start.
 - **album (3):** `u16 0x80, u16 index_shift, u32 0, u32 artist_id, u32 id,
-  u32 0, u8 0x03, u8 ofs_name (0x16), string name`.
+  u32 0, u8 0x03, u8 ofs_name (0x16, or 0x18 for a long/UTF-16 name), string
+  name`.
 - **color (6):** `u32 0, u8 id2 (== id), u16 id, u8 0, string name`. Exactly 8
   rows always: Pink Red Orange Yellow Green Aqua Blue Purple (ids 1–8).
 - **artwork (13):** `u32 id, string path` — path is the small
@@ -326,12 +336,19 @@ is the compatible choice.
 
 ## 5. ANLZ files
 
-Per track dir `/PIONEER/USBANLZ/P###/<8-hex>/`. P-dirs 000–125 and the 8-hex
-names are **random allocations from rekordbox's master library** (no
-derivable mapping from track id or masterContentId; ~5 tracks/P-dir here).
-The pdb row stores the literal path, so a writer may use any scheme. When
-two identical audio files exist, rekordbox reuses the dir and names the
-second set `ANLZ0001.*` (observed twice in 609).
+Per track dir `/PIONEER/USBANLZ/P###/<8-hex>/`. The directory is **a hash
+of the track's audio path** (resolved 2026-10-13, after rbxport's
+disassembly of CDJ-3000 firmware 3.20; the earlier reading of "random
+allocations" was wrong): over the path's UTF-16 code units,
+`h = h * 0x34F5501D + c * 0x93B6 (mod 2^32)`, then `h %= 0x30D43`; the shard
+is bits `[0, 2, 6, 7, 9, 13, 16]` of `h` packed into seven bits; the dir is
+`P{shard:03X}/{h:08X}`. It reproduces every directory on both golden sticks
+(94 of 94 and 609 of 609). CDJ-3000 firmware computes the directory itself
+rather than trusting the row's `analyze_path`, so files placed anywhere else
+show no waveforms there. When two paths hash alike, rekordbox shares the
+directory and names the second set `ANLZ0001.*`, with the row pointing at it
+(two such pairs in 609, different audio in each). `export::anlz_dir` writes
+this scheme.
 
 All values **big-endian**. File = `PMAI` header + tagged sections:
 `u32 fourcc, u32 len_header, u32 len_tag` (len_tag = total section size;
@@ -378,7 +395,12 @@ downmix: `41 × rms` on ffmpeg's `-ac 1` mix, `65 × rms` (full height at RMS
 0.477) on Ordnung's `decode_mono`, calibrated to equal mean height over 86
 matched tracks. A mastered techno track averages 18–21, a quiet MP3 8.
 Peak-based heights come out ~1.7× too tall and pin every loud track to a
-flat block.
+flat block. **Range (2026-10-13):** rekordbox never draws above 25 or below
+2 here — on both golden sticks (703 files) no file tops 25 and 668 bottom
+out at exactly 2 — while `PWV3`/`PWV5` reach 31 in every file. Nexus
+firmware reads a zero preview column (`PWAV` or `PWV2`) as an unfinished
+analysis and rebuilds the preview over the stick's; `PWV2` never holds a 0
+either (floor 1).
 
 **PWV2** (0x14): `u32 len 100, u32 0x00010000`, then 100 bytes whose **four
 low bits** are the height (0–15) and whose **high nibble is always zero** —
@@ -426,7 +448,15 @@ track mean ≈7 on techno, ≈2.5 on a quiet MP3). The linear normalized peak is
 
 **PWV5** (0x18): `u32 2, u32 num (same 150/s), u32 0x00960305`, then u16be
 per column: bits 15–13 red, 12–10 green, 9–7 blue, 6–2 height, 1–0 zero
-(DS). Color scrolling waveform.
+(DS). Color scrolling waveform. The height is `PWV3`'s (equal on 81–84% of
+the columns of both golden sticks). The colour is **normalised**: the
+strongest channel is 7 in 85% of columns and never below 4, and green has a
+ceiling spike at 5 (3% of columns above it), so it is red/blue scaled to 7
+and green to 5 of the loudest band, not the band's plain top bits. The
+XDJ-AZ and CDJ-3000 draw the bits without normalising, so plain bits render
+dim. `num` is `ceil(duration × 150)`, one above the floor on 85 of 94
+reference tracks (the rest MP3s whose decoded length differs by ~54
+columns).
 
 **PWV4** (0x18): `u32 6, u32 1200, u32 0`, then 1200 × 6 bytes (color
 preview; internal byte semantics undocumented — copy or approximate;
