@@ -18,9 +18,10 @@
     --muted: #8a8a8a;
     --accent: #406eb4;
     --accent-hover: #5a96dc;
+    --bar-h: 56px;
   }
   * { box-sizing: border-box; }
-  html { scroll-behavior: smooth; }
+  html { scroll-behavior: smooth; scroll-padding-top: calc(var(--bar-h) + 16px); }
   body {
     margin: 0;
     background: var(--bg);
@@ -31,55 +32,84 @@
     -webkit-font-smoothing: antialiased;
   }
   a { color: inherit; }
+  button { font: inherit; color: inherit; }
+  :focus-visible { outline: 2px solid var(--accent-hover); outline-offset: 2px; }
   .wrap { max-width: 1120px; margin: 0 auto; padding: 0 24px; }
 
-  /* Hero */
-  .hero { padding: 96px 0 40px; text-align: center; }
-  .hero h1 { margin: 0 0 26px; font-size: 3.4rem; font-weight: 650; letter-spacing: -0.035em; line-height: 1.05; }
-  .hero h1 .d { position: relative; display: inline-block; }
-  .hero h1 .by { position: absolute; left: 0; bottom: 0; transform: translateY(100%); font-size: 0.72rem; font-weight: 400; letter-spacing: 0.02em; line-height: 1; white-space: nowrap; color: var(--muted); }
-  .hero p { margin: 0 auto 30px; max-width: 560px; font-size: 1.2rem; color: var(--muted); }
-  .cta { display: inline-flex; gap: 18px; align-items: center; }
   .btn {
+    display: inline-block;
     padding: 13px 26px;
+    border: 0;
     border-radius: 10px;
     background: var(--accent);
     color: #fff;
     font-weight: 600;
     text-decoration: none;
     font-size: 1.02rem;
+    cursor: pointer;
   }
   .btn:hover { background: var(--accent-hover); }
   .gh { color: var(--muted); font-size: 0.95rem; text-decoration: none; }
   .gh:hover { color: var(--text); }
+
+  /* Download bar: slides in once the hero's buttons scroll away. */
+  .bar {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 10;
+    height: var(--bar-h);
+    background: rgba(20,20,20,.82);
+    -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
+    border-bottom: 1px solid var(--line);
+    transform: translateY(-100%);
+    transition: transform .25s ease;
+  }
+  .bar.show { transform: none; }
+  .bar .wrap { height: 100%; display: flex; align-items: center; gap: 22px; }
+  .bar .mark { font-weight: 650; letter-spacing: -0.02em; font-size: 1.15rem; text-decoration: none; margin-right: auto; }
+  .bar .btn { padding: 8px 16px; font-size: 0.92rem; border-radius: 8px; }
+
+  /* Hero */
+  .hero { padding: 96px 0 0; text-align: center; }
+  .hero h1 { margin: 0 0 26px; font-size: 3.6rem; font-weight: 650; letter-spacing: -0.035em; line-height: 1.05; }
+  .hero h1 .d { position: relative; display: inline-block; }
+  .hero h1 .by { position: absolute; left: 0; bottom: 0; transform: translateY(100%); font-size: 0.72rem; font-weight: 400; letter-spacing: 0.02em; line-height: 1; white-space: nowrap; color: var(--muted); }
+  .hero p { margin: 0 auto 30px; max-width: 560px; font-size: 1.2rem; color: var(--muted); }
+  .cta { display: inline-flex; gap: 18px; align-items: center; }
   .fine { margin-top: 14px; font-size: 0.82rem; color: #6a6a6a; }
 
   /* First-launch guide: the build isn't notarized, so macOS blocks it once. */
   .gate {
     margin: 24px auto 0;
     max-width: 560px;
-    padding: 18px 22px;
     border: 1px solid var(--line);
     border-radius: 14px;
     background: var(--card);
     text-align: left;
   }
-  .gate h2 { margin: 0 0 6px; font-size: 1rem; font-weight: 620; }
-  .gate p { margin: 0 0 10px; font-size: 0.92rem; color: var(--muted); max-width: none; }
-  .gate ol { margin: 0; padding-left: 20px; font-size: 0.92rem; }
-  .gate li { margin: 4px 0; }
-  .gate b { color: var(--text); font-weight: 600; }
+  .gate summary { padding: 14px 22px; cursor: pointer; font-size: 0.98rem; font-weight: 620; list-style: none; display: flex; align-items: center; gap: 10px; }
+  .gate summary::-webkit-details-marker { display: none; }
+  .gate summary::before { content: ""; width: 7px; height: 7px; border-right: 1.5px solid var(--muted); border-bottom: 1.5px solid var(--muted); transform: rotate(-45deg); flex: none; transition: transform .15s; }
+  .gate[open] summary::before { transform: rotate(45deg); }
+  .gate-body { padding: 0 22px 16px; }
+  .gate-body p, .gate-copy p { margin: 0 0 10px; font-size: 0.92rem; color: var(--muted); max-width: none; }
+  .gate-body ol, .gate-copy ol { margin: 0; padding-left: 20px; font-size: 0.92rem; }
+  .gate-body li, .gate-copy li { margin: 4px 0; }
+  .gate-body b, .gate-copy b { color: var(--text); font-weight: 600; }
+
   dialog {
-    border: 0;
-    padding: 0;
+    border: 0; padding: 0;
     background: transparent;
     color: var(--text);
     max-width: calc(100vw - 32px);
   }
-  dialog::backdrop { background: rgba(0,0,0,.6); }
-  dialog .gate { margin: 0; border-color: var(--accent); }
+  dialog::backdrop { background: rgba(0,0,0,.7); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); }
+  dialog .gate-copy { max-width: 560px; padding: 18px 22px; border: 1px solid var(--accent); border-radius: 14px; background: var(--card); text-align: left; }
+  dialog .gate-copy h2 { margin: 0 0 6px; font-size: 1rem; font-weight: 620; }
   dialog form { margin: 16px 0 0; text-align: center; }
-  dialog .btn { border: 0; cursor: pointer; font: inherit; font-weight: 600; }
+  dialog.zoom { max-width: min(96vw, 1400px); }
+  dialog.zoom img { display: block; max-width: 100%; max-height: calc(100vh - 110px); width: auto; height: auto; margin: 0 auto; border-radius: 12px; border: 1px solid var(--line); }
+  dialog.zoom form { margin-top: 12px; }
+  dialog.zoom button { background: none; border: 1px solid var(--line); border-radius: 8px; padding: 6px 14px; color: var(--muted); cursor: pointer; }
+  dialog.zoom button:hover { color: var(--text); }
 
   /* Shots */
   .shot {
@@ -89,22 +119,71 @@
     border-radius: 14px;
     border: 1px solid var(--line);
     background: var(--card);
+    cursor: zoom-in;
   }
-  .hero-shot { margin: 56px auto 0; max-width: 1120px; }
-  .hero-shot .shot { border-radius: 18px; box-shadow: 0 40px 120px rgba(0,0,0,.6); }
 
-  /* Feature cuts */
-  .cuts { padding: 120px 0 80px; }
-  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; }
-  .cut { display: flex; flex-direction: column; gap: 18px; }
-  .cut.wide { grid-column: 1 / -1; }
-  .cut h2 { margin: 0 0 4px; font-size: 1.35rem; font-weight: 620; letter-spacing: -0.02em; }
-  .cut p { margin: 0; color: var(--muted); font-size: 1rem; max-width: 520px; }
-  .cut .text { padding: 0 4px; }
-  .cut:not(.wide) .shot { aspect-ratio: 4 / 3; object-fit: cover; object-position: top left; }
-  .cut.feature { grid-column: 1 / -1; display: grid; grid-template-columns: 1fr 1fr; gap: 40px; align-items: center; padding: 12px 0; }
-  .cut.feature .text { padding: 0 8px; }
-  .cut.feature p { max-width: none; }
+  /* The app window: hero shot with a live player strip docked under it. */
+  .window { max-width: 1120px; margin: 56px auto 0; padding: 0 24px; text-align: left; }
+  .window-in { border-radius: 18px; border: 1px solid var(--line); overflow: hidden; box-shadow: 0 40px 120px rgba(0,0,0,.6); background: var(--card); }
+  .window-in .shot { border: 0; border-radius: 0; }
+  .deck { border-top: 1px solid var(--line); background: #1a1a1b; outline-offset: -2px; }
+  .pads { display: grid; grid-template-columns: repeat(8, 1fr) auto; gap: 6px; padding: 12px 14px 10px; }
+  .pad {
+    height: 36px; padding: 0 8px;
+    border: 0; border-radius: 6px;
+    background: #262627; color: var(--muted);
+    font-weight: 600; font-size: 0.9rem;
+    display: flex; align-items: center; justify-content: space-between; gap: 6px;
+    cursor: pointer;
+  }
+  .pad:hover { background: #2e2e30; }
+  .pad span { font-weight: 500; font-size: 0.8rem; font-variant-numeric: tabular-nums; }
+  .pad.set { background: var(--pad); color: #111; }
+  .pad.set:hover { filter: brightness(1.1); }
+  .loop { height: 36px; padding: 0 14px; margin-left: 10px; border: 1px solid #343436; border-radius: 6px; background: #262627; color: var(--text); font-weight: 600; font-size: 0.85rem; cursor: pointer; }
+  .loop:hover { background: #2e2e30; }
+  .loop.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+  #wave { display: block; width: 100%; height: 96px; background: #111; cursor: crosshair; }
+  .transport { display: flex; align-items: center; gap: 16px; padding: 12px 16px; }
+  .play { width: 38px; height: 38px; flex: none; border: 0; border-radius: 50%; background: var(--text); color: #111; display: grid; place-items: center; cursor: pointer; padding: 0; }
+  .play:hover { background: #fff; }
+  .play svg { width: 16px; height: 16px; fill: currentColor; }
+  .play .ic-play { display: none; }
+  .play.paused .ic-play { display: block; }
+  .play.paused .ic-pause { display: none; }
+  .now { min-width: 0; line-height: 1.25; }
+  .now b { display: block; font-weight: 620; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .now span { color: var(--muted); font-size: 0.9rem; }
+  .time, .bpm { color: var(--muted); font-size: 0.92rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .time b { color: var(--text); font-weight: 500; }
+  .hint { margin-left: auto; color: #6a6a6a; font-size: 0.85rem; text-align: right; }
+
+  /* Sections */
+  .cuts { padding: 120px 0 0; }
+  .band { display: flex; flex-direction: column; gap: 18px; margin-bottom: 110px; }
+  .band .text { padding: 0 4px; }
+  .cuts h2 { margin: 0 0 6px; font-size: 1.35rem; font-weight: 620; letter-spacing: -0.02em; }
+  .cuts p { margin: 0; color: var(--muted); font-size: 1rem; max-width: 520px; }
+  .split { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; align-items: center; margin-bottom: 110px; }
+  .split .text { padding: 0 8px; }
+  .split p { max-width: none; }
+
+  /* Tour: the text scrolls, the screenshot stays put and swaps with the step. */
+  .tour { display: grid; grid-template-columns: 1fr 1.3fr; gap: 56px; align-items: start; margin-bottom: 60px; }
+  .steps { padding: 10vh 0; }
+  .step { min-height: 52vh; display: flex; flex-direction: column; justify-content: center; padding: 24px 0; opacity: .4; transition: opacity .3s; }
+  .step.active { opacity: 1; }
+  .step h2 { font-size: 1.75rem; margin-bottom: 10px; }
+  .step p { font-size: 1.08rem; max-width: 44ch; }
+  .shots { position: sticky; top: max(80px, 14vh); }
+  .stack { position: relative; aspect-ratio: 4 / 3; }
+  .stack .shot { position: absolute; inset: 0; height: 100%; object-fit: cover; object-position: top left; opacity: 0; pointer-events: none; transition: opacity .45s ease; }
+  .stack .shot.active { opacity: 1; pointer-events: auto; }
+  .dots { display: flex; justify-content: center; gap: 2px; margin-top: 12px; }
+  .dots button { width: 22px; height: 22px; border: 0; background: none; padding: 0; cursor: pointer; display: grid; place-items: center; }
+  .dots button::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: #3a3a3b; transition: background .2s, transform .2s; }
+  .dots button:hover::before { background: var(--muted); }
+  .dots button.active::before { background: var(--text); transform: scale(1.3); }
 
   footer { padding: 40px 0 70px; text-align: center; color: #6a6a6a; font-size: 0.85rem; }
   footer a { color: var(--muted); text-decoration: none; }
@@ -113,42 +192,95 @@
   @media (max-width: 760px) {
     .hero { padding-top: 64px; }
     .hero h1 { font-size: 2.4rem; }
-    .grid { grid-template-columns: 1fr; gap: 40px; }
-    .cut.feature { grid-template-columns: 1fr; gap: 18px; }
+    .window { margin-top: 40px; padding: 0 16px; }
+    .wrap { padding: 0 16px; }
+    .pads { grid-template-columns: repeat(8, 1fr); gap: 4px; padding: 10px 10px 8px; }
+    .pad { padding: 0; justify-content: center; }
+    .pad span { display: none; }
+    .loop { grid-column: 1 / -1; margin: 4px 0 0; }
+    .hint, .bpm { display: none; }
     .cuts { padding-top: 80px; }
+    .band, .split { margin-bottom: 72px; }
+    .split { grid-template-columns: 1fr; gap: 18px; }
+    .tour { grid-template-columns: 1fr; gap: 0; }
+    .shots { order: -1; top: var(--bar-h); z-index: 2; background: var(--bg); padding: 10px 0; }
+    .steps { padding: 4vh 0; }
+    .step { min-height: 40vh; }
+    .step h2 { font-size: 1.45rem; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    html { scroll-behavior: auto; }
+    .bar, .step, .stack .shot, .dots button::before, .gate summary::before { transition: none; }
   }
 </style>
 </head>
 <body>
 
-<section class="hero">
+<header class="bar" id="bar">
+  <div class="wrap">
+    <a class="mark" href="#top">Ord</a>
+    <a class="gh" href="https://github.com/Kailazy/Ord">GitHub</a>
+    <a class="btn dl" href="https://github.com/Kailazy/Ord/releases/latest/download/Ord-macos-universal.dmg">Download for macOS</a>
+  </div>
+</header>
+
+<section class="hero" id="top">
   <div class="wrap">
     <h1>Or<span class="d">d<span class="by">by Kai Lazarov</span></span></h1>
     <p>A music library and a record shelf for DJs. Your files, your cues, your vinyl and all of Discogs, in one window.</p>
     <div class="cta">
-      <a class="btn" id="download" href="https://github.com/Kailazy/Ord/releases/latest/download/Ord-macos-universal.dmg">Download for macOS</a>
+      <a class="btn dl" href="https://github.com/Kailazy/Ord/releases/latest/download/Ord-macos-universal.dmg">Download for macOS</a>
       <a class="gh" href="https://github.com/Kailazy/Ord">GitHub</a>
     </div>
-    <div class="gate">
-      <h2>First launch: macOS will say it can't verify Ord</h2>
-      <p>Ord isn't notarized by Apple, so Gatekeeper blocks it once. Three clicks and it opens from then on.</p>
-      <ol>
-        <li>Double-click Ord. In the warning, click <b>Done</b>.</li>
-        <li>Open <b>System Settings → Privacy &amp; Security</b> and scroll down.</li>
-        <li>Click <b>Open Anyway</b> next to the Ord message, then confirm.</li>
-      </ol>
-    </div>
+    <details class="gate">
+      <summary>First launch: macOS will say it can't verify Ord</summary>
+      <div class="gate-body">
+        <p>Ord isn't notarized by Apple, so Gatekeeper blocks it once. Three clicks and it opens from then on.</p>
+        <ol>
+          <li>Double-click Ord. In the warning, click <b>Done</b>.</li>
+          <li>Open <b>System Settings → Privacy &amp; Security</b> and scroll down.</li>
+          <li>Click <b>Open Anyway</b> next to the Ord message, then confirm.</li>
+        </ol>
+      </div>
+    </details>
     <div class="fine">Free and open source. Apple silicon and Intel.</div>
-    <div class="hero-shot">
+  </div>
+
+  <div class="window">
+    <div class="window-in">
       <img class="shot" src="screens/hero.jpg" width="2400" height="1500" alt="The Ord library: a table of tracks with inline waveforms, cover art, BPM and Camelot key chips, and tags." />
+      <div class="deck" id="deck" tabindex="0" aria-label="A player strip to try: click the waveform to drop a hot cue, click a pad to jump to it">
+        <div class="pads" id="pads">
+          <button class="pad" type="button">A<span></span></button>
+          <button class="pad" type="button">B<span></span></button>
+          <button class="pad" type="button">C<span></span></button>
+          <button class="pad" type="button">D<span></span></button>
+          <button class="pad" type="button">E<span></span></button>
+          <button class="pad" type="button">F<span></span></button>
+          <button class="pad" type="button">G<span></span></button>
+          <button class="pad" type="button">H<span></span></button>
+          <button class="loop" id="loop" type="button" aria-pressed="false">Loop 4</button>
+        </div>
+        <canvas id="wave" aria-hidden="true"></canvas>
+        <div class="transport">
+          <button class="play" id="play" type="button" aria-label="Pause">
+            <svg class="ic-pause" viewBox="0 0 16 16"><rect x="2.5" y="2" width="4" height="12" rx="1"/><rect x="9.5" y="2" width="4" height="12" rx="1"/></svg>
+            <svg class="ic-play" viewBox="0 0 16 16"><path d="M4 2.5v11a.6.6 0 0 0 .9.5l9-5.5a.6.6 0 0 0 0-1l-9-5.5a.6.6 0 0 0-.9.5z"/></svg>
+          </button>
+          <div class="now"><b>Birmingham Screwdriver</b><span>Barker</span></div>
+          <span class="time"><b id="time">0:00</b> / 4:27</span>
+          <span class="bpm">127.0 BPM</span>
+          <span class="hint">Click the waveform to drop a cue, a pad to jump to it.<br />Keys 1 to 8 do the same.</span>
+        </div>
+      </div>
     </div>
   </div>
 </section>
 
 <section class="cuts">
-  <div class="wrap grid">
+  <div class="wrap">
 
-    <div class="cut wide">
+    <div class="band">
       <img class="shot" src="screens/cues.jpg" width="2400" height="338" loading="lazy" alt="The player strip: eight hot cue pads, a beat loop, memory cues and a zoomed waveform with cue marks." />
       <div class="text">
         <h2>Cues and loops, on the waveform</h2>
@@ -156,7 +288,7 @@
       </div>
     </div>
 
-    <div class="cut feature">
+    <div class="split">
       <img class="shot" src="screens/automatch.jpg" loading="lazy" alt="Settings, Discogs tab: Automatic matching with 'Match new imports automatically' ticked and the preferred pressing rule." />
       <div class="text">
         <h2>Metadata from Discogs, filled in for you</h2>
@@ -164,71 +296,57 @@
       </div>
     </div>
 
-    <div class="cut">
-      <img class="shot" src="screens/keys.jpg" loading="lazy" alt="Table columns with BPM and colour-coded Camelot key chips." />
-      <div class="text">
-        <h2>BPM and key, analyzed for you</h2>
-        <p>Every file gets a beatgrid, a Camelot key and a waveform the moment it lands. Harmonic neighbours share a colour.</p>
+    <div class="tour">
+      <div class="steps">
+        <div class="step">
+          <h2>BPM and key, analyzed for you</h2>
+          <p>Every file gets a beatgrid, a Camelot key and a waveform the moment it lands. Harmonic neighbours share a colour.</p>
+        </div>
+        <div class="step">
+          <h2>Every record you own</h2>
+          <p>Your Discogs collection and wantlist as a shelf, with what each record goes for today and which ones you already have as files.</p>
+        </div>
+        <div class="step">
+          <h2>A map of your taste</h2>
+          <p>Collection, wantlist and everything you ever dug, laid out as one web and clustered by genre or by artist.</p>
+        </div>
+        <div class="step">
+          <h2>Dig</h2>
+          <p>Start on a record and follow a thread, its style, its label, its artist, to the next one. Discogs, as a walk.</p>
+        </div>
+        <div class="step">
+          <h2>One record, everything about it</h2>
+          <p>Tracklist, playback, the lowest price and your sellers' copies, with the label and Discogs one click away.</p>
+        </div>
+        <div class="step">
+          <h2>Search all of Discogs</h2>
+          <p>The same search bar covers your library and the whole Discogs catalog. Add a record to your collection or wantlist right there.</p>
+        </div>
+        <div class="step">
+          <h2>Tracklists that find their records</h2>
+          <p>Paste a mix tracklist and every line gets matched to the record it came from, ready to like, buy or dig.</p>
+        </div>
+        <div class="step">
+          <h2>Your sellers, one crate</h2>
+          <p>Save the shops you trust and browse their inventories together, with the condition and the price under every record.</p>
+        </div>
+      </div>
+      <div class="shots">
+        <div class="stack">
+          <img class="shot" src="screens/keys.jpg" loading="lazy" alt="Table columns with BPM and colour-coded Camelot key chips." />
+          <img class="shot" src="screens/shelf.jpg" loading="lazy" alt="The vinyl collection as a grid of record covers with current prices." />
+          <img class="shot" src="screens/map.jpg" loading="lazy" alt="The record map: hundreds of record covers clustered into labelled genre clouds." />
+          <img class="shot" src="screens/dig.jpg" loading="lazy" alt="The dig window: three records joined by style and label threads." />
+          <img class="shot" src="screens/sheet.jpg" loading="lazy" alt="A record sheet: cover, tracklist with play buttons, lowest price, and buttons for Discogs, label, collection, wantlist and dig." />
+          <img class="shot" src="screens/search.jpg" loading="lazy" alt="Search results from Discogs in a dropdown under the search bar, with add-to-collection and wantlist buttons." />
+          <img class="shot" src="screens/tracklists.jpg" loading="lazy" alt="The tracklists window: a pasted mix tracklist with each line matched to a record." />
+          <img class="shot" src="screens/market.jpg" loading="lazy" alt="The market: record covers from saved sellers' inventories with condition and price." />
+        </div>
+        <div class="dots" id="dots"></div>
       </div>
     </div>
 
-    <div class="cut">
-      <img class="shot" src="screens/shelf.jpg" loading="lazy" alt="The vinyl collection as a grid of record covers with current prices." />
-      <div class="text">
-        <h2>Every record you own</h2>
-        <p>Your Discogs collection and wantlist as a shelf, with what each record goes for today and which ones you already have as files.</p>
-      </div>
-    </div>
-
-    <div class="cut">
-      <img class="shot" src="screens/map.jpg" loading="lazy" alt="The record map: hundreds of record covers clustered into labelled genre clouds." />
-      <div class="text">
-        <h2>A map of your taste</h2>
-        <p>Collection, wantlist and everything you ever dug, laid out as one web and clustered by genre or by artist.</p>
-      </div>
-    </div>
-
-    <div class="cut">
-      <img class="shot" src="screens/dig.jpg" loading="lazy" alt="The dig window: three records joined by style and label threads." />
-      <div class="text">
-        <h2>Dig</h2>
-        <p>Start on a record and follow a thread, its style, its label, its artist, to the next one. Discogs, as a walk.</p>
-      </div>
-    </div>
-
-    <div class="cut">
-      <img class="shot" src="screens/sheet.jpg" loading="lazy" alt="A record sheet: cover, tracklist with play buttons, lowest price, and buttons for Discogs, label, collection, wantlist and dig." />
-      <div class="text">
-        <h2>One record, everything about it</h2>
-        <p>Tracklist, playback, the lowest price and your sellers' copies, with the label and Discogs one click away.</p>
-      </div>
-    </div>
-
-    <div class="cut">
-      <img class="shot" src="screens/search.jpg" loading="lazy" alt="Search results from Discogs in a dropdown under the search bar, with add-to-collection and wantlist buttons." />
-      <div class="text">
-        <h2>Search all of Discogs</h2>
-        <p>The same search bar covers your library and the whole Discogs catalog. Add a record to your collection or wantlist right there.</p>
-      </div>
-    </div>
-
-    <div class="cut">
-      <img class="shot" src="screens/tracklists.jpg" loading="lazy" alt="The tracklists window: a pasted mix tracklist with each line matched to a record." />
-      <div class="text">
-        <h2>Tracklists that find their records</h2>
-        <p>Paste a mix tracklist and every line gets matched to the record it came from, ready to like, buy or dig.</p>
-      </div>
-    </div>
-
-    <div class="cut">
-      <img class="shot" src="screens/market.jpg" loading="lazy" alt="The market: record covers from saved sellers' inventories with condition and price." />
-      <div class="text">
-        <h2>Your sellers, one crate</h2>
-        <p>Save the shops you trust and browse their inventories together, with the condition and the price under every record.</p>
-      </div>
-    </div>
-
-    <div class="cut wide">
+    <div class="band">
       <img class="shot" src="screens/liked.jpg" width="1600" height="786" loading="lazy" alt="The liked songs crate: songs with their records, marked as file or still to get." />
       <div class="text">
         <h2>Liked songs, wherever you heard them</h2>
@@ -246,15 +364,174 @@
 </footer>
 
 <dialog id="gate-dialog">
-  <div class="gate"></div>
+  <div class="gate-copy"></div>
   <form method="dialog"><button class="btn">Got it</button></form>
 </dialog>
+
+<dialog id="zoom" class="zoom">
+  <img alt="" />
+  <form method="dialog"><button>Close</button></form>
+</dialog>
+
 <script>
-  // The download starts normally; the dialog repeats the first-launch steps
-  // so nobody is surprised by the Gatekeeper warning.
-  const dlg = document.getElementById('gate-dialog');
-  dlg.querySelector('.gate').innerHTML = document.querySelector('.hero .gate').innerHTML;
-  document.getElementById('download').addEventListener('click', () => dlg.showModal());
+(() => {
+  const $ = (s, el = document) => el.querySelector(s);
+  const $$ = (s, el = document) => [...el.querySelectorAll(s)];
+  const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  // Download starts normally; the dialog repeats the first-launch steps so
+  // nobody is surprised by the Gatekeeper warning.
+  const gate = $('#gate-dialog');
+  $('.gate-copy', gate).innerHTML = '<h2>' + $('.gate summary').textContent + '</h2>' + $('.gate-body').innerHTML;
+  $$('.dl').forEach(a => a.addEventListener('click', () => gate.showModal()));
+
+  // Any screenshot opens full size.
+  const zoom = $('#zoom'), zoomImg = $('img', zoom);
+  $$('.shot').forEach(img => img.addEventListener('click', () => {
+    zoomImg.src = img.src; zoomImg.alt = img.alt; zoom.showModal();
+  }));
+  zoom.addEventListener('click', e => { if (e.target === zoom) zoom.close(); });
+
+  // Download bar once the hero's own buttons are gone.
+  const bar = $('#bar');
+  new IntersectionObserver(([e]) => bar.classList.toggle('show', !e.isIntersecting),
+    { rootMargin: '-56px 0px 0px 0px' }).observe($('.hero .cta'));
+
+  // Tour: the step crossing the middle of the viewport owns the screenshot.
+  const steps = $$('.step'), shots = $$('.stack .shot'), dots = $('#dots');
+  const dotEls = steps.map((s, i) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.setAttribute('aria-label', $('h2', s).textContent);
+    b.addEventListener('click', () => s.scrollIntoView({ behavior: reduced ? 'auto' : 'smooth', block: 'center' }));
+    dots.appendChild(b);
+    return b;
+  });
+  const activate = i => [steps, shots, dotEls].forEach(list => list.forEach((el, k) => el.classList.toggle('active', k === i)));
+  const mid = new IntersectionObserver(es => es.forEach(e => e.isIntersecting && activate(steps.indexOf(e.target))),
+    { rootMargin: '-45% 0px -45% 0px' });
+  steps.forEach(s => mid.observe(s));
+  activate(0);
+
+  // The deck: a synthetic 127 BPM track drawn like the app's zoomed waveform.
+  const deck = $('#deck'), cv = $('#wave'), ctx = cv.getContext('2d');
+  const pads = $$('.pad'), loopBtn = $('#loop'), playBtn = $('#play'), timeEl = $('#time');
+  const BPM = 127, BEAT = 60 / BPM, BAR = BEAT * 4, LEN = 267, VIEW = 12, SR = 50;
+  const PADS = ['#ff0017', '#ff8c00', '#ffd60a', '#28e214', '#40c8e0', '#0a84ff', '#bf5af2', '#ff375f'];
+  const N = Math.ceil(LEN * SR), lo = new Float32Array(N), md = new Float32Array(N), hi = new Float32Array(N);
+  let seed = 7;
+  const rnd = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; };
+  const ENERGY = [0.5, 0.65, 0.8, 0.95, 0.6, 0.3, 0.85, 1, 0.7];   // one entry per 16 bars
+  for (let i = 0; i < N; i++) {
+    const t = i / SR, e = ENERGY[Math.floor(t / BAR / 16) % ENERGY.length];
+    const kick = e < 0.4 ? 0.15 : Math.exp(-((t % BEAT) / BEAT) * 10);
+    const hat = Math.exp(-(((t + BEAT / 2) % BEAT) / BEAT) * 14);
+    lo[i] = e * (0.22 + 0.78 * kick) + 0.05 * rnd();
+    md[i] = e * (0.32 + 0.12 * Math.sin(t * 1.7) + 0.25 * kick + 0.1 * rnd());
+    hi[i] = e * (0.08 + 0.3 * hat + 0.08 * rnd());
+  }
+
+  let pos = 60, playing = !reduced, visible = true, last = 0, raf = 0, loop = null;
+  const cues = Array(8).fill(null);
+  let nextSlot = 0;
+  const fmt = s => Math.floor(s / 60) + ':' + String(Math.floor(s % 60)).padStart(2, '0');
+
+  function draw() {
+    const W = cv.clientWidth, H = cv.clientHeight, m = H / 2, spp = VIEW / W, t0 = pos - VIEW / 2;
+    ctx.clearRect(0, 0, W, H);
+    if (loop != null) {
+      const a = (loop - t0) / spp, b = (loop + BAR - t0) / spp;
+      ctx.fillStyle = 'rgba(64,110,180,.3)'; ctx.fillRect(a, 0, b - a, H);
+    }
+    ctx.lineWidth = 1;
+    for (let b = Math.ceil(t0 / BEAT); b * BEAT < t0 + VIEW; b++) {
+      if (b < 0) continue;
+      const x = Math.round((b * BEAT - t0) / spp) + .5;
+      ctx.strokeStyle = b % 4 ? 'rgba(255,255,255,.16)' : 'rgba(255,120,40,.75)';
+      ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke();
+    }
+    const band = (arr, scale, color) => {
+      ctx.strokeStyle = color; ctx.beginPath();
+      for (let x = 0; x < W; x++) {
+        const t = t0 + x * spp;
+        if (t < 0 || t >= LEN) continue;
+        const a = arr[(t * SR) | 0] * scale * m;
+        ctx.moveTo(x + .5, m - a); ctx.lineTo(x + .5, m + a);
+      }
+      ctx.stroke();
+    };
+    band(lo, 0.95, '#0032ff'); band(md, 0.8, '#cf9c2a'); band(hi, 0.5, '#e6f1ff');
+    ctx.fillStyle = 'rgba(17,17,17,.62)'; ctx.fillRect(W / 2, 0, W / 2, H);   // not played yet
+    ctx.font = '600 11px -apple-system, BlinkMacSystemFont, Inter, sans-serif';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    cues.forEach((c, i) => {
+      if (c == null) return;
+      const x = Math.round((c - t0) / spp);
+      if (x < -20 || x > W + 20) return;
+      ctx.fillStyle = PADS[i];
+      ctx.fillRect(x - 1, 0, 2, H);
+      ctx.beginPath(); ctx.roundRect ? ctx.roundRect(x - 9, 2, 18, 16, 3) : ctx.rect(x - 9, 2, 18, 16); ctx.fill();
+      ctx.fillStyle = '#111'; ctx.fillText(String.fromCharCode(65 + i), x, 10.5);
+    });
+    ctx.fillStyle = '#ff5050'; ctx.fillRect(W / 2 - 1, 0, 2, H);
+    timeEl.textContent = fmt(pos);
+  }
+
+  function frame(now) {
+    raf = 0;
+    pos += Math.min(now - last, 100) / 1000;
+    last = now;
+    if (loop != null && pos >= loop + BAR) pos = loop + (pos - loop) % BAR;
+    if (pos >= LEN) pos = 0;
+    draw();
+    tick();
+  }
+  function tick() { if (playing && visible && !raf) raf = requestAnimationFrame(frame); }
+  function setPlaying(on) {
+    playing = on;
+    playBtn.classList.toggle('paused', !on);
+    playBtn.setAttribute('aria-label', on ? 'Pause' : 'Play');
+    last = performance.now();
+    on ? tick() : draw();
+  }
+  function setCue(i, t) {
+    cues[i] = t;
+    pads[i].classList.add('set');
+    pads[i].style.setProperty('--pad', PADS[i]);
+    $('span', pads[i]).textContent = fmt(t);
+    draw();
+  }
+  function pad(i) { cues[i] == null ? setCue(i, pos) : (pos = cues[i], draw()); }
+
+  cv.addEventListener('click', e => {
+    const r = cv.getBoundingClientRect();
+    const t = Math.min(LEN - 1, Math.max(0, pos - VIEW / 2 + (e.clientX - r.left) * VIEW / r.width));
+    let i = cues.indexOf(null);
+    if (i < 0) { i = nextSlot; nextSlot = (nextSlot + 1) % 8; }
+    setCue(i, t);
+    deck.focus({ preventScroll: true });
+  });
+  pads.forEach((b, i) => b.addEventListener('click', () => pad(i)));
+  loopBtn.addEventListener('click', () => {
+    loop = loop == null ? Math.floor(pos / BAR) * BAR : null;
+    loopBtn.classList.toggle('on', loop != null);
+    loopBtn.setAttribute('aria-pressed', String(loop != null));
+    draw();
+  });
+  playBtn.addEventListener('click', () => setPlaying(!playing));
+  deck.addEventListener('keydown', e => {
+    if (e.key >= '1' && e.key <= '8') { pad(+e.key - 1); e.preventDefault(); }
+    else if (e.key === ' ' && e.target === deck) { setPlaying(!playing); e.preventDefault(); }
+  });
+  new IntersectionObserver(([e]) => { visible = e.isIntersecting; last = performance.now(); tick(); }).observe(deck);
+  new ResizeObserver(() => {
+    const dpr = devicePixelRatio || 1;
+    cv.width = Math.round(cv.clientWidth * dpr); cv.height = Math.round(cv.clientHeight * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    draw();
+  }).observe(cv);
+  setPlaying(playing);
+})();
 </script>
 
 </body>
