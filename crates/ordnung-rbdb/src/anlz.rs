@@ -567,20 +567,31 @@ fn mono_col(inp: &AnlzInput, f0: f64, f1: f64) -> u8 {
     (whiteness(&b) << 5) | h
 }
 
+/// The heights rekordbox draws into `PWAV`'s five bits: 2 to 25, never the
+/// full 31 (703 of 703 files on two rekordbox 7 sticks, 2026-10-13: no file
+/// tops 25, and 668 bottom out at exactly 2, none lower). Nexus firmware
+/// reads a zero preview column as an unfinished analysis and rebuilds the
+/// preview from the audio over the stick's.
+const PWAV_HEIGHTS: std::ops::RangeInclusive<u8> = 2..=25;
+
 fn pwav(inp: &AnlzInput) -> Vec<u8> {
     let mut body = Vec::with_capacity(8 + 400);
     body.extend_from_slice(&be32(400));
     body.extend_from_slice(&be32(0x0001_0000));
     for i in 0..400 {
-        body.push(mono_col(inp, i as f64 / 400.0, (i + 1) as f64 / 400.0));
+        let col = mono_col(inp, i as f64 / 400.0, (i + 1) as f64 / 400.0);
+        let h = (col & 0x1F).clamp(*PWAV_HEIGHTS.start(), *PWAV_HEIGHTS.end());
+        body.push((col & 0xE0) | h);
     }
     section(b"PWAV", 0x14, &body)
 }
 
 /// Tiny preview (the CDJ-900-era list waveform): 100 columns whose **four**
-/// low bits are the height (0–15) and whose high nibble is always zero —
+/// low bits are the height (1–15) and whose high nibble is always zero —
 /// unlike `PWAV`, no whiteness bits. Golden rekordbox files never set bits
-/// 4–7 here; a byte above 15 is out of spec for the firmware that draws it.
+/// 4–7 here and never write a 0 (703 of 703 files bottom out at 1 or above);
+/// a byte above 15 is out of spec for the firmware that draws it, and a zero
+/// column reads as an unfinished preview.
 fn pwv2(inp: &AnlzInput) -> Vec<u8> {
     let mut body = Vec::with_capacity(8 + 100);
     body.extend_from_slice(&be32(100));
@@ -591,13 +602,16 @@ fn pwv2(inp: &AnlzInput) -> Vec<u8> {
             Some(rms) => pwv2_height(rms),
             None => fallback_height(inp, f0),
         };
-        body.push(h & 0x0F);
+        body.push((h & 0x0F).max(1));
     }
     section(b"PWV2", 0x14, &body)
 }
 
+/// Columns of a 150 col/s scrolling waveform: the last, partial 1/150 s of
+/// the track gets a column too (rekordbox's count is one above the floor on
+/// 85 of 94 reference tracks; the rest are MP3s whose decoded length differs).
 fn scroll_cols(duration_ms: u64) -> u32 {
-    ((duration_ms as u64 * SCROLL_PER_SEC as u64) / 1000).max(1) as u32
+    (duration_ms * SCROLL_PER_SEC as u64).div_ceil(1000).max(1) as u32
 }
 
 /// Big scrolling monochrome waveform: 1 byte/column at 150 col/s. Height is
@@ -613,15 +627,37 @@ fn pwv3(inp: &AnlzInput) -> Vec<u8> {
     body.extend_from_slice(&be32(0x0096_0000));
     for i in 0..n {
         let frac = i as f64 / n as f64;
-        body.push(match scroll_col(inp, frac) {
-            Some([l, m, h, amp, ..]) => {
-                let r = amp as f32 / 255.0;
-                (whiteness(&[l, m, h, 0]) << 5) | (r * r * 31.0).round().min(31.0) as u8
-            }
+        body.push(match scroll_col(inp, i as usize) {
+            Some([l, m, h, amp, ..]) => (whiteness(&[l, m, h, 0]) << 5) | detail_height(amp),
             None => mono_col(inp, frac, (i + 1) as f64 / n as f64),
         });
     }
     section(b"PWV3", 0x18, &body)
+}
+
+/// A scrolling column's five-bit height: the square of the column peak, × 31
+/// (`PWV3` fits three golden tracks to under 1 px; rekordbox's `PWV5` height
+/// equals its `PWV3` height on 81–84% of the columns of two golden sticks, so
+/// the one curve serves both).
+fn detail_height(amp: u8) -> u8 {
+    let r = amp as f32 / 255.0;
+    (r * r * 31.0).round().min(31.0) as u8
+}
+
+/// `PWV5`'s three-bit colour, normalised the way rekordbox writes it: the
+/// strongest band drawn at 7 and green scaled to a ceiling of 5. On two
+/// rekordbox 7 sticks the strongest channel is 7 in 85% of columns and never
+/// below 4, and green shows a spike at 5 with 3% of columns above it
+/// (2026-10-13). Players draw these bits as they are (the XDJ-AZ and CDJ-3000
+/// shift each channel into a byte without normalising), so the plain top bits
+/// of a linear band level came out dim.
+fn pwv5_colour(low: u8, mid: u8, high: u8) -> (u16, u16, u16) {
+    let strongest = u32::from(low.max(mid).max(high));
+    if strongest == 0 {
+        return (0, 0, 0);
+    }
+    let share = |v: u8, full: u32| ((u32::from(v) * full + strongest / 2) / strongest) as u16;
+    (share(low, 7), share(mid, 5), share(high, 7))
 }
 
 /// Color scrolling waveform: u16be per column — 3-bit R/G/B + 5-bit height.
@@ -634,17 +670,15 @@ fn pwv5(inp: &AnlzInput) -> Vec<u8> {
     body.extend_from_slice(&be32(0x0096_0305));
     for i in 0..n {
         let frac = i as f64 / n as f64;
-        let (low, mid, high, h) = if let Some([l, m, hb, amp, ..]) = scroll_col(inp, frac) {
-            ((l >> 4) as u16, (m >> 4) as u16, (hb >> 4) as u16, (amp >> 3) as u16)
-        } else {
-            let b = band_at(inp.bands, frac * inp.duration_ms as f64);
-            (
-                (b[0] >> 5) as u16,
-                (b[1] >> 5) as u16,
-                (b[2] >> 5) as u16,
-                (amp_at(inp.preview, frac) >> 3) as u16,
-            )
+        let (l, m, hb, amp) = match scroll_col(inp, i as usize) {
+            Some([l, m, hb, amp, ..]) => (l, m, hb, amp),
+            None => {
+                let b = band_at(inp.bands, frac * inp.duration_ms as f64);
+                (b[0], b[1], b[2], amp_at(inp.preview, frac))
+            }
         };
+        let (low, mid, high) = pwv5_colour(l, m, hb);
+        let h = detail_height(amp) as u16;
         body.extend_from_slice(&be16((low << 13) | (mid << 10) | (high << 7) | (h << 2)));
     }
     section(b"PWV5", 0x18, &body)
@@ -690,26 +724,37 @@ fn pwv4(inp: &AnlzInput) -> Vec<u8> {
     section(b"PWV4", 0x18, &body)
 }
 
-/// The scroll column `[low, mid, high, amp, peak, rms]` at a fraction of the
-/// track, when export-time audio decoding produced one.
-fn scroll_col(inp: &AnlzInput, frac: f64) -> Option<[u8; SCROLL_STRIDE]> {
+/// The scroll column `[low, mid, high, amp, peak, rms]` at column index `i`
+/// (the last one past the end), when export-time audio decoding produced
+/// any. Scroll columns and rekordbox's run at 150/s from the first sample,
+/// so an index maps straight across; scaling by fraction instead shifted
+/// every column by one as soon as the two counts differed, and cost `PWV3`
+/// its correlation (0.99 → 0.84 median) when the count gained its ceiling.
+fn scroll_col(inp: &AnlzInput, i: usize) -> Option<[u8; SCROLL_STRIDE]> {
     let cols = inp.scroll.len() / SCROLL_STRIDE;
     if cols == 0 {
         return None;
     }
-    let i = ((frac * cols as f64) as usize).min(cols - 1);
+    let i = i.min(cols - 1);
     Some(inp.scroll[i * SCROLL_STRIDE..(i + 1) * SCROLL_STRIDE].try_into().unwrap())
 }
 
+/// Columns rekordbox's three-band waveforms lag the mono peak by: its `PWV7`
+/// matched our bands better shifted one column later (48 of 94 reference
+/// tracks within shape and level, median r 0.912, against 41 and 0.883 when
+/// aligned), where `PWV3`/`PWV5` sit exactly on the peak columns.
+const BAND_LAG: usize = 1;
+
 /// One 3-band column `[low, mid, high]`, 0–127 — the scale the golden PWV7
-/// carries. Prefers the export-time scroll columns (real per-column band
-/// peaks). The cached fallback's band bytes are sqrt-companded for GUI
-/// drawing (`waveform::color_bands`) while rekordbox stores linear levels,
-/// so square them back or every loud track renders as a solid pinned block;
-/// with no band data at all, shape the amplitude preview so the waveform
-/// never comes out blank.
-fn band3_col(inp: &AnlzInput, frac: f64) -> [u8; 3] {
-    if let Some([l, m, h, ..]) = scroll_col(inp, frac) {
+/// carries — for scroll column `i`, or at the fraction `frac` of the track
+/// when no scroll columns exist. Prefers the export-time scroll columns (real
+/// per-column band peaks). The cached fallback's band bytes are
+/// sqrt-companded for GUI drawing (`waveform::color_bands`) while rekordbox
+/// stores linear levels, so square them back or every loud track renders as
+/// a solid pinned block; with no band data at all, shape the amplitude
+/// preview so the waveform never comes out blank.
+fn band3_col(inp: &AnlzInput, i: usize, frac: f64) -> [u8; 3] {
+    if let Some([l, m, h, ..]) = scroll_col(inp, i.saturating_sub(BAND_LAG)) {
         return [l, m, h];
     }
     let decompand = |v: u8| {
@@ -733,7 +778,7 @@ fn pwv7(inp: &AnlzInput) -> Vec<u8> {
     body.extend_from_slice(&be32(n));
     body.extend_from_slice(&be32(0x0096_0000));
     for i in 0..n {
-        body.extend_from_slice(&band3_col(inp, i as f64 / n as f64));
+        body.extend_from_slice(&band3_col(inp, i as usize, i as f64 / n as f64));
     }
     section(b"PWV7", 0x18, &body)
 }
@@ -753,12 +798,13 @@ fn pwv6(inp: &AnlzInput) -> Vec<u8> {
     body.extend_from_slice(&be32(3));
     body.extend_from_slice(&be32(N as u32));
     let steps = 8;
+    let cols = inp.scroll.len() / SCROLL_STRIDE;
     for i in 0..N {
         // Window mean of the detail columns this preview column spans.
         let mut col = [0f64; 3];
         for s in 0..steps {
             let f = (i as f64 + s as f64 / steps as f64) / N as f64;
-            let b = band3_col(inp, f);
+            let b = band3_col(inp, (f * cols as f64) as usize, f);
             for k in 0..3 {
                 col[k] += b[k] as f64 / steps as f64;
             }
