@@ -996,10 +996,6 @@ impl App {
         let playing = self.audio.as_ref().and_then(|a| a.current());
         let playing_camelot =
             playing.and_then(|id| self.rows.iter().find(|r| r.id == id).and_then(|r| r.camelot));
-        // The table's rect, so the tint spans every column.
-        let table_rect = Some(ui.available_rect_before_wrap());
-        /// The green of `tokens::color::GREEN`, faint enough to sit under text.
-        const MIXES_TINT: egui::Color32 = egui::Color32::from_rgba_premultiplied(10, 44, 18, 48);
         let selected_ordered: Vec<Id> = self
             .rows
             .iter()
@@ -1357,9 +1353,9 @@ impl App {
                         body.rows(ROW_H, self.rows.len(), |mut row| {
                             let idx = row.index();
                             let r = &self.rows[idx];
-                            // Harmonic cue: every row whose key mixes with the
-                            // playing song's (Camelot same / relative / ±1) gets a
-                            // green row tint, so the next track can be picked by
+                            // Harmonic cue: a key that mixes with the playing
+                            // song's (Camelot same / relative / ±1) lights its Key
+                            // cell green, so the next track can be picked by
                             // colour while the current one plays.
                             let mixes = matches!(
                                 (playing_camelot, r.camelot),
@@ -1403,25 +1399,6 @@ impl App {
                             // the 1-based row number is only drawn in playlist views,
                             // so the library gutter stays blank.
                             let (rect, _) = row.col(|ui| {
-                                if mixes {
-                                    // One fill across the whole row, painted from the
-                                    // first cell so every later cell draws over it.
-                                    // The cell's own painter clips to the cell, so
-                                    // paint on the layer, clipped to the table's rect
-                                    // (a half-scrolled row must not spill over the
-                                    // header).
-                                    let cell = ui.max_rect();
-                                    let span = table_rect.unwrap_or(cell);
-                                    let band = egui::Rect::from_min_max(
-                                        egui::pos2(span.left(), cell.top()),
-                                        egui::pos2(span.right(), cell.bottom()),
-                                    )
-                                    .intersect(span);
-                                    ui.ctx()
-                                        .layer_painter(ui.layer_id())
-                                        .with_clip_rect(band)
-                                        .rect_filled(band, 0.0, MIXES_TINT);
-                                }
                                 if draw_index {
                                     let r = ui.max_rect();
                                     ui.painter().text(
@@ -1680,19 +1657,26 @@ impl App {
                                 };
                                 row.col(|ui| {
                                     // The Key column's text takes its Camelot colour so
-                                    // harmonically-related keys read at a glance (no
-                                    // filled box: the row tint below carries the
-                                    // "mixes with the playing song" signal); every other
-                                    // column is a plain (non-interactive) label.
+                                    // harmonically-related keys read at a glance; while
+                                    // a song plays, a key that mixes with it fills its
+                                    // cell bright green instead. Every other column is
+                                    // a plain (non-interactive) label.
                                     if col == TableColumn::Key {
                                         if let Some(cam) = r.camelot {
                                             let rect = ui.max_rect();
+                                            let fg = if mixes {
+                                                let bg = crate::ui::tokens::color::GREEN;
+                                                ui.painter().rect_filled(rect, 0.0, bg);
+                                                chip_text_color(bg)
+                                            } else {
+                                                camelot_color(cam)
+                                            };
                                             ui.painter().text(
                                                 rect.center(),
                                                 egui::Align2::CENTER_CENTER,
                                                 text,
                                                 egui::TextStyle::Body.resolve(ui.style()),
-                                                camelot_color(cam),
+                                                fg,
                                             );
                                         } else {
                                             ui.add(egui::Label::new(
