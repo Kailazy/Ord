@@ -402,6 +402,7 @@ impl App {
             cue_rename: None,
             update_rx: None,
             update_available: None,
+            relaunch_bundle: None,
             tools_rx: None,
             ffmpeg_state: FfmpegState::Unknown,
         };
@@ -2069,6 +2070,12 @@ impl App {
         crate::ui::glass::sweep(ctx);
         // Every lane drains every frame; any can change the rows.
         let worker_changed = self.poll_worker();
+        if let Some(bundle) = self.relaunch_bundle.take() {
+            // The new bundle is in place; a detached shell opens it once
+            // this process is gone.
+            ordnung_core::update::relaunch(&bundle);
+            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+        }
         let vinyl_changed = self.poll_vinyl_edits();
         let analysis_changed = self.poll_analysis();
         if worker_changed || vinyl_changed || analysis_changed {
@@ -2420,7 +2427,23 @@ impl App {
                             if crate::ui::icon::close_button(ui, "Dismiss until the next launch") {
                                 self.update_available = None;
                             }
-                            if ui
+                            // In-app install when this build can swap itself
+                            // (a bundle, and the release ships a DMG); the
+                            // browser download otherwise.
+                            let can_install = info.dmg_url.is_some()
+                                && ordnung_core::update::running_bundle().is_some();
+                            if can_install {
+                                if ui
+                                    .add_enabled(
+                                        !self.is_busy(),
+                                        egui::Button::new(egui::RichText::new("Update now").strong()),
+                                    )
+                                    .on_hover_note("Download, install and relaunch")
+                                    .clicked()
+                                {
+                                    self.spawn_update_install(ctx.clone(), info.clone());
+                                }
+                            } else if ui
                                 .button(egui::RichText::new("Download").strong())
                                 .on_hover_note("Open the release page in your browser")
                                 .clicked()

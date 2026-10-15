@@ -67,6 +67,7 @@ impl App {
                     self.seller_listings_rx = None;
                     self.tracklist_entries_for = None;
                 }
+                Ok(JobMsg::Relaunch(bundle)) => self.relaunch_bundle = Some(bundle),
                 Ok(JobMsg::Failed(s)) => {
                     // Same as `fail`, inlined: `rx` holds a borrow of `self`.
                     self.status_failed = s.clone();
@@ -983,6 +984,55 @@ impl App {
         self.write_edits_running = true;
         let db = self.db_path.clone();
         thread::spawn(move || run_write_edits(db, cancel, tx, ctx));
+    }
+
+    /// Background job: fetch and install a newer Ord in place of this
+    /// bundle (see `ordnung_core::update::install`), then relaunch it.
+    pub(crate) fn spawn_update_install(
+        &mut self,
+        ctx: egui::Context,
+        info: ordnung_core::update::UpdateInfo,
+    ) {
+        let Some((tx, cancel)) = self.start_job(true) else {
+            return;
+        };
+        self.status = format!("Downloading Ord {}…", info.version);
+        thread::spawn(move || {
+            let mut last = std::time::Instant::now() - std::time::Duration::from_secs(1);
+            let result = ordnung_core::update::install(
+                &info,
+                &mut |p| {
+                    if last.elapsed() < std::time::Duration::from_millis(250) {
+                        return;
+                    }
+                    last = std::time::Instant::now();
+                    let _ = tx.send(JobMsg::Status(if p.total_bytes > 0 && p.read_bytes >= p.total_bytes {
+                        // Mounting, copying and swapping the bundle follow.
+                        format!("Installing Ord {}…", info.version)
+                    } else if p.total_bytes > 0 {
+                        format!(
+                            "Downloading Ord {}… {} of {} MB",
+                            info.version,
+                            p.read_bytes >> 20,
+                            p.total_bytes >> 20
+                        )
+                    } else {
+                        format!("Downloading Ord {}… {} MB", info.version, p.read_bytes >> 20)
+                    }));
+                    ctx.request_repaint();
+                },
+                &cancel,
+            );
+            let _ = match result {
+                Ok(Some(bundle)) => {
+                    let _ = tx.send(JobMsg::Done(format!("Ord {} installed, relaunching…", info.version)));
+                    tx.send(JobMsg::Relaunch(bundle))
+                }
+                Ok(None) => tx.send(JobMsg::Done("Update cancelled.".into())),
+                Err(e) => tx.send(JobMsg::Failed(format!("Update failed: {e}"))),
+            };
+            ctx.request_repaint();
+        });
     }
 
     /// Background job: zip a snapshot of the catalog into `dest` (see

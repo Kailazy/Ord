@@ -950,6 +950,8 @@ enum JobMsg {
     },
     Done(String),
     Failed(String),
+    /// An update is installed at this bundle: relaunch it and quit.
+    Relaunch(PathBuf),
     /// Per-item failures from a background job: `(item name, reason)`, with a
     /// `title` naming what was attempted (e.g. "Scan", "Write edits"). Sent just
     /// before `Done` whenever a job skipped or errored on any item, so the UI
@@ -2196,6 +2198,9 @@ struct App {
     /// A published release newer than this build, surfaced as a dismissible
     /// banner above the toolbar until the user downloads or dismisses it.
     update_available: Option<ordnung_core::update::UpdateInfo>,
+    /// Set when an in-app update landed: the frame relaunches this bundle
+    /// and closes the window.
+    relaunch_bundle: Option<PathBuf>,
     /// Progress of the managed ffmpeg download (`ordnung_core::tools`) off
     /// its worker. Its own channel, not the job slot: it runs at startup
     /// underneath whatever the user does next. See [`App::ensure_ffmpeg`].

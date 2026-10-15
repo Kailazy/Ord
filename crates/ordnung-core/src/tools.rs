@@ -140,6 +140,32 @@ pub fn download_gunzip(
     progress: &mut dyn FnMut(DownloadProgress),
     cancel: &AtomicBool,
 ) -> Result<bool> {
+    download_impl(url, what, dest, progress, cancel, |r| {
+        flate2::read::GzDecoder::new(BufReader::with_capacity(1 << 20, r))
+    })
+}
+
+/// [`download_gunzip`] for a file stored as-is (an app DMG, say).
+pub fn download(
+    url: &str,
+    what: &str,
+    dest: &Path,
+    progress: &mut dyn FnMut(DownloadProgress),
+    cancel: &AtomicBool,
+) -> Result<bool> {
+    download_impl(url, what, dest, progress, cancel, |r| r)
+}
+
+/// The shared download loop: `wrap` turns the counted network stream into
+/// whatever is written to `dest` (the stream itself, or a decoder over it).
+fn download_impl<R: Read>(
+    url: &str,
+    what: &str,
+    dest: &Path,
+    progress: &mut dyn FnMut(DownloadProgress),
+    cancel: &AtomicBool,
+    wrap: impl FnOnce(CountingReader<Box<dyn Read + Send + Sync>>) -> R,
+) -> Result<bool> {
     let agent = ureq::AgentBuilder::new()
         .timeout_read(std::time::Duration::from_secs(120))
         .user_agent("Ordnung/0.1 +https://kailazy.github.io/Ord/")
@@ -157,7 +183,7 @@ pub fn download_gunzip(
         inner: resp.into_reader(),
         read: read.clone(),
     };
-    let mut gz = flate2::read::GzDecoder::new(BufReader::with_capacity(1 << 20, counting));
+    let mut gz = wrap(counting);
 
     let _ = std::fs::remove_file(dest);
     let io_err = |source: std::io::Error| Error::Io {
