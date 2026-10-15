@@ -307,6 +307,42 @@ follow-ups in `docs/design/tracklist-match.md`.
 Still to do for full GUI parity: a dedicated **harmonic-mixing key view** (the table
 already color-codes the Camelot wheel, but there's no separate mixing view).
 
+## Backlog (2026-10-15 review)  `[ ]`
+Ranked from the open-items review plus a read of rbxport.com (analysis page =
+https://rbxport.com/analysis/). Ideas judged worth taking; everything else on that
+site (LINK EXPORT, tempo/key preview, VU meter, AppleScript, whole-model undo)
+was rejected as big surface for little payoff on a <2k-track library.
+
+1. **Bug: unsaved inspector edits are wiped** by `refresh_selected` whenever ANY
+   job finishes (found 2026-09-28, still open). Fix first; data loss.
+2. **Beatgrid: kick-attack marker refinement** (rbxport recipe). After tempo is
+   fixed, snap each marker to the nearest kick *onset* measured as RMS in 1 ms
+   steps over the 900–9000 Hz band inside a ±15 ms window, comparing two phases
+   half a beat apart; weighted linear fit through reliable attacks, refit with
+   outliers dropped; steady tempo within 0.1 BPM of an integer snaps to it. Aimed
+   at the open click-kick/dub miss class (5/17 in `testdata/rekordbox-grids`,
+   `grid_eval`), where our folded sub average lands on the offbeat bass bump
+   and rekordbox grids the broadband click. Must not regress the 12 passing.
+3. **Downbeat: 8 candidates per bar** (four beats + midpoints), evidence from
+   drops/breakdowns/bass changes over 1/2/4/8-bar views; shift half a beat if a
+   midpoint wins. Compare against `analysis/downbeat.rs` on the same 17.
+4. **Catalog backup + restore.** Zip of the catalog db (+wal/shm), analysis and
+   artwork, no audio; standalone restore script inside the zip; replaced files
+   parked in a dated before-restore folder. Ord has no rekordbox to fall back on.
+5. **Harmonic-mixing key view**: filter/sort by Camelot neighbours (same, ±1,
+   relative) of the current song, reusing `song_rows`.
+6. **Blob column order rebuild** (schema bump, blobs last in `analysis` and
+   `tracks`): light reads 5,056→1,336 and 4,797→1,003 pages. Needs Kai's OK,
+   rehearse on a snapshot.
+7. **Variable-tempo grids** (rbxport recipe): tempo per 16 s window, accept a
+   change when 3 windows agree within 1% and differ >2% from current; walk hits
+   beat by beat allowing 5% period drift; rejoin after 4 intervals match within
+   1% period / 2 ms phase. Only if Kai plays edits with tempo changes.
+8. **Key: major-key tiebreak** (Phase 2.1). rbxport's PreferMinor (+0.1) fixed
+   44 / broke 6 on 155 tracks, so expect a small net gain at best.
+9. When USB export returns: multi-stick export, auto-eject, "max compatibility"
+   convert FLAC/M4A→WAV for older CDJs.
+
 GUI artwork TODOs:
 - ~~**Multi-candidate release picker.**~~ **Done.** The Discogs candidate list
   (release id / title / year / label / thumbnail) is returned via
