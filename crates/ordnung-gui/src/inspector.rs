@@ -54,6 +54,9 @@ impl App {
                     return;
                 }
             }
+            // The form is now what the catalog holds: mark it clean so
+            // `refresh_selected` reloads it rather than keeping it as an edit.
+            self.tag_edit_saved = self.tag_edit.clone();
             self.reload();
             self.refresh_selected();
             return;
@@ -115,6 +118,9 @@ impl App {
 
         // Reload the table (artist/title/etc. columns may have changed) and
         // re-read the selection, which resets the edit buffers + dirty state.
+        // The form is now what the catalog holds: mark it clean so
+        // `refresh_selected` reloads it rather than keeping it as an edit.
+        self.tag_edit_saved = self.tag_edit.clone();
         self.reload();
         self.refresh_selected();
     }

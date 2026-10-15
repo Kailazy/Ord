@@ -37,16 +37,22 @@ impl App {
             },
             None => (None, false),
         };
+        // Every finished job (cover fetch, analysis, vinyl sync) lands here
+        // through `update`, so unsaved edits in the inspector's form must
+        // survive the re-read: keep the buffers when the same track is still
+        // selected and the form is dirty. A new selection or a clean form
+        // reloads them so they never show a previous track's values.
+        let same_track = self.selected_track.as_ref().map(|t| t.id) == track.as_ref().map(|t| t.id);
+        let keep_edits = same_track && track.is_some() && self.tag_edit != self.tag_edit_saved;
         self.selected_track = track;
-        // Reset the inspector edit buffers to match the freshly-loaded track so
-        // they never show a previous selection's values, and the dirty state
-        // starts clean.
-        self.tag_edit = self
-            .selected_track
-            .as_ref()
-            .map(|t| TagEdit::from_tags(&t.tags))
-            .unwrap_or_default();
-        self.tag_edit_saved = self.tag_edit.clone();
+        if !keep_edits {
+            self.tag_edit = self
+                .selected_track
+                .as_ref()
+                .map(|t| TagEdit::from_tags(&t.tags))
+                .unwrap_or_default();
+            self.tag_edit_saved = self.tag_edit.clone();
+        }
         self.selected_has_external_art = has_art;
     }
 
