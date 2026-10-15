@@ -168,7 +168,7 @@ impl App {
                     if let Some(exact) = n
                         .strip_prefix('"')
                         .and_then(|s| s.strip_suffix('"'))
-                        .filter(|s| !s.is_empty())
+                        .filter(|s| !s.is_empty() && !s.contains('"'))
                     {
                         return hay == exact;
                     }
@@ -176,7 +176,12 @@ impl App {
                     let mut any = false;
                     let matched = alts.any(|alt| {
                         any = true;
-                        hay.contains(alt)
+                        // A quoted alternative is a whole-cell match too, so a
+                        // key list like "1A", "2A" can't take 11A and 12A along.
+                        match alt.strip_prefix('"').and_then(|s| s.strip_suffix('"')) {
+                            Some(exact) if !exact.is_empty() => hay == exact,
+                            _ => hay.contains(alt),
+                        }
                     });
                     // An all-comma/blank needle has no real alternatives → don't filter.
                     !any || matched
@@ -560,6 +565,31 @@ impl App {
         }
     }
 
+    /// The Key filter's harmonic preset for the current song — the playing
+    /// track, else the inspector's — as `(its key label, the filter text)`:
+    /// every Camelot position `Camelot::compatible_with` it, quoted so each
+    /// alternative matches a whole cell. `None` without a keyed current song.
+    pub(crate) fn harmonic_preset(&self) -> Option<(String, String)> {
+        let playing = self.audio.as_ref().and_then(|a| a.current());
+        let row_key = |id: Id| self.rows.iter().find(|r| r.id == id).and_then(|r| r.camelot);
+        let current = playing
+            .and_then(row_key)
+            .or_else(|| self.selected.and_then(row_key))
+            .or_else(|| {
+                self.selected_track
+                    .as_ref()
+                    .and_then(|t| t.analysis.as_ref())
+                    .and_then(|a| a.key)
+                    .map(|k| k.camelot())
+            })?;
+        let keys: Vec<String> = (1..=12u8)
+            .flat_map(|number| [false, true].map(|major| Camelot { number, major }))
+            .filter(|c| c.compatible_with(current))
+            .map(|c| format!("\"{}\"", c.label()))
+            .collect();
+        Some((current.label(), keys.join(", ")))
+    }
+
     /// Draws the per-column filter search bar opened by double-clicking a header.
     /// A tiny anchored bar with one text field; typing live-filters the table by
     /// substring match against that column's values. Closes on Escape, the × /
@@ -578,6 +608,9 @@ impl App {
         let mut clear = false;
         // Remember the bar's rect so a click anywhere else this frame closes it.
         let mut bar_rect = egui::Rect::NOTHING;
+        // The Key column's one-click preset: the current song's harmonic
+        // neighbours. Resolved before the window closure borrows `text`.
+        let harmonic = (col == TableColumn::Key).then(|| self.harmonic_preset()).flatten();
 
         // Escape closes the bar; the filter stays.
         let mut stays = true;
@@ -590,6 +623,17 @@ impl App {
                 // The Quality column filters by verdict, so offer one-click presets
                 // (and the legend) instead of making the user remember the chip
                 // labels. The free-text field below still works for anything else.
+                if let Some((label, keys)) = &harmonic {
+                    if ui
+                        .button(format!("Mixes with {label}"))
+                        .on_hover_note("Same key, its relative, and one step either way on the wheel")
+                        .clicked()
+                    {
+                        text = keys.clone();
+                        changed = true;
+                    }
+                    ui.add_space(2.0);
+                }
                 if col == TableColumn::Quality {
                     quality_legend_ui(ui);
                     ui.add_space(4.0);
