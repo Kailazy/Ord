@@ -990,6 +990,16 @@ impl App {
         // The whole multi-selection in visible order, computed once per frame. A
         // drag from any selected row carries this exact list; precomputing avoids
         // re-scanning every row for every visible selected row each frame.
+        // The playing song and its key, for the harmonic row tint (see the
+        // row body). Read off the rows: a playing song filtered out of the
+        // view has no key here, and then nothing is tinted.
+        let playing = self.audio.as_ref().and_then(|a| a.current());
+        let playing_camelot =
+            playing.and_then(|id| self.rows.iter().find(|r| r.id == id).and_then(|r| r.camelot));
+        // The table's rect, so the tint spans every column.
+        let table_rect = Some(ui.available_rect_before_wrap());
+        /// The green of `tokens::color::GREEN`, faint enough to sit under text.
+        const MIXES_TINT: egui::Color32 = egui::Color32::from_rgba_premultiplied(10, 44, 18, 48);
         let selected_ordered: Vec<Id> = self
             .rows
             .iter()
@@ -1347,6 +1357,14 @@ impl App {
                         body.rows(ROW_H, self.rows.len(), |mut row| {
                             let idx = row.index();
                             let r = &self.rows[idx];
+                            // Harmonic cue: every row whose key mixes with the
+                            // playing song's (Camelot same / relative / ±1) gets a
+                            // green row tint, so the next track can be picked by
+                            // colour while the current one plays.
+                            let mixes = matches!(
+                                (playing_camelot, r.camelot),
+                                (Some(a), Some(b)) if a.compatible_with(b)
+                            ) && playing != Some(r.id);
                             // Every member of the multi-selection gets the highlighted row
                             // background; the primary row (drives the inspector) is also
                             // bolded so it stands out within a multi-selection.
@@ -1385,6 +1403,25 @@ impl App {
                             // the 1-based row number is only drawn in playlist views,
                             // so the library gutter stays blank.
                             let (rect, _) = row.col(|ui| {
+                                if mixes {
+                                    // One fill across the whole row, painted from the
+                                    // first cell so every later cell draws over it.
+                                    // The cell's own painter clips to the cell, so
+                                    // paint on the layer, clipped to the table's rect
+                                    // (a half-scrolled row must not spill over the
+                                    // header).
+                                    let cell = ui.max_rect();
+                                    let span = table_rect.unwrap_or(cell);
+                                    let band = egui::Rect::from_min_max(
+                                        egui::pos2(span.left(), cell.top()),
+                                        egui::pos2(span.right(), cell.bottom()),
+                                    )
+                                    .intersect(span);
+                                    ui.ctx()
+                                        .layer_painter(ui.layer_id())
+                                        .with_clip_rect(band)
+                                        .rect_filled(band, 0.0, MIXES_TINT);
+                                }
                                 if draw_index {
                                     let r = ui.max_rect();
                                     ui.painter().text(
@@ -1642,25 +1679,20 @@ impl App {
                                     _ => "",
                                 };
                                 row.col(|ui| {
-                                    // The Key column renders as a Camelot-coloured chip so
-                                    // harmonically-related keys read at a glance; every
-                                    // other column is a plain (non-interactive) label.
+                                    // The Key column's text takes its Camelot colour so
+                                    // harmonically-related keys read at a glance (no
+                                    // filled box: the row tint below carries the
+                                    // "mixes with the playing song" signal); every other
+                                    // column is a plain (non-interactive) label.
                                     if col == TableColumn::Key {
                                         if let Some(cam) = r.camelot {
-                                            let bg = camelot_color(cam);
-                                            let fg = chip_text_color(bg);
-                                            // Fill the entire cell with the Camelot colour
-                                            // so the key reads as a solid colour-block, not
-                                            // a small chip floating in an empty cell, with
-                                            // the key text centred inside it.
                                             let rect = ui.max_rect();
-                                            ui.painter().rect_filled(rect, 0.0, bg);
                                             ui.painter().text(
                                                 rect.center(),
                                                 egui::Align2::CENTER_CENTER,
                                                 text,
                                                 egui::TextStyle::Body.resolve(ui.style()),
-                                                fg,
+                                                camelot_color(cam),
                                             );
                                         } else {
                                             ui.add(egui::Label::new(
