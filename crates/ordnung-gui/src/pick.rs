@@ -60,6 +60,10 @@ pub(crate) enum Then {
     ConvertSettingOutDir,
     /// Write `text` to the chosen file and report `count` tracks saved.
     SaveTrackList { text: String, count: usize },
+    /// Zip the catalog into the chosen file.
+    BackupCatalog,
+    /// Replace the catalog with the one inside the chosen backup zip.
+    RestoreCatalog,
 }
 
 /// A panel that is up, or whose answer has not been read yet.

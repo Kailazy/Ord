@@ -1614,6 +1614,16 @@ impl App {
                     }
                 }
             }
+            Then::BackupCatalog => {
+                if let Some(path) = first {
+                    self.spawn_backup(ctx.clone(), path);
+                }
+            }
+            Then::RestoreCatalog => {
+                if let Some(path) = first {
+                    self.restore_catalog(path);
+                }
+            }
         }
     }
 
@@ -2271,6 +2281,19 @@ impl App {
                 }
                 macos_menu::MenuCommand::PlayPause => self.toggle_play_pause(),
                 macos_menu::MenuCommand::FocusSearch => self.focus_search = true,
+                macos_menu::MenuCommand::BackupCatalog => {
+                    let file_name = format!("Ord-catalog-{}.zip", ordnung_core::backup::stamp());
+                    self.open_panel(pick::Panel::Save { file_name }, pick::Then::BackupCatalog);
+                }
+                macos_menu::MenuCommand::RestoreCatalog => {
+                    self.open_panel(
+                        pick::Panel::Files {
+                            name: "Ord catalog backup",
+                            exts: &["zip"],
+                        },
+                        pick::Then::RestoreCatalog,
+                    );
+                }
             }
         }
 

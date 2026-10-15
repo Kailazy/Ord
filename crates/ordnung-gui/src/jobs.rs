@@ -985,6 +985,65 @@ impl App {
         thread::spawn(move || run_write_edits(db, cancel, tx, ctx));
     }
 
+    /// Background job: zip a snapshot of the catalog into `dest` (see
+    /// `ordnung_core::backup`). Read-only on the catalog, so it shares the
+    /// job slot like any other job and the table stays usable meanwhile.
+    pub(crate) fn spawn_backup(&mut self, ctx: egui::Context, dest: PathBuf) {
+        let Some((tx, _cancel)) = self.start_job(false) else {
+            return;
+        };
+        self.status = "Backing up the catalog…".into();
+        let db = self.db_path.clone();
+        let cfg = crate::config::config_path();
+        thread::spawn(move || {
+            let msg = match ordnung_core::backup::backup(&db, cfg.as_deref(), &dest) {
+                Ok(()) => JobMsg::Done(format!("Backed up the catalog to {}.", dest.display())),
+                Err(e) => JobMsg::Failed(format!("Backup failed: {e}")),
+            };
+            let _ = tx.send(msg);
+            ctx.request_repaint();
+        });
+    }
+
+    /// Put the catalog inside the backup `zip` in place of the live one, on
+    /// the frame: it is a rename once the zip is checked, and nothing else
+    /// may touch the catalog while its file moves. The previous catalog is
+    /// parked next to it (the status line says where). Every connection
+    /// this side holds is dropped first, since an open one keeps reading
+    /// the moved file: the change probe, the row thumb loader (restarted
+    /// on a fresh channel) and the analysis lane's, which reopens per run.
+    pub(crate) fn restore_catalog(&mut self, zip: PathBuf) {
+        if self.is_busy() || self.analysis_progress().is_some() {
+            self.status = "Busy — wait for the current job to finish before restoring.".into();
+            return;
+        }
+        self.catalog_probe = None;
+        let (req_tx, req_rx) = mpsc::channel::<Id>();
+        self.thumb_req_tx = req_tx;
+        crate::covers::spawn_thumb_loader(
+            self.db_path.clone(),
+            self.egui_ctx.clone(),
+            req_rx,
+            self.cover_tx.clone(),
+        );
+        self.cover_cache.clear();
+        self.cover_full_cache.clear();
+        self.cover_inflight.clear();
+        match ordnung_core::backup::restore(&zip, &self.db_path) {
+            Ok(park) => {
+                self.status = format!(
+                    "Restored the catalog from {}. The previous one is in {}.",
+                    zip.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default(),
+                    park.display()
+                );
+                self.reload();
+                self.refresh_selected();
+                self.recount_missing();
+            }
+            Err(e) => self.fail(format!("Restore failed: {e}")),
+        }
+    }
+
     /// Background job: trash a reviewed batch of duplicate copies. `batch` is
     /// `(keeper id, drop id, source path)` per marked copy; each file goes to the
     /// system Trash (recoverable) and, on success, its catalog row is dropped with

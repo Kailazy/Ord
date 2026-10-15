@@ -50,6 +50,10 @@ pub enum MenuCommand {
     PlayPause,
     /// Put the caret in the toolbar search box (⌘F).
     FocusSearch,
+    /// Save a zip of the catalog (db snapshot, config, restore script).
+    BackupCatalog,
+    /// Put a backup zip's catalog in place of the live one.
+    RestoreCatalog,
 }
 
 /// Slot holding at most one pending command. A `u8` rather than a channel so the
@@ -61,7 +65,18 @@ static PENDING: AtomicU8 = AtomicU8::new(0);
 
 fn decode(v: u8) -> Option<MenuCommand> {
     use MenuCommand::*;
-    let all = [Reload, Settings, SelectAll, ClearFilters, Copy, AddFolder, PlayPause, FocusSearch];
+    let all = [
+        Reload,
+        Settings,
+        SelectAll,
+        ClearFilters,
+        Copy,
+        AddFolder,
+        PlayPause,
+        FocusSearch,
+        BackupCatalog,
+        RestoreCatalog,
+    ];
     all.into_iter().find(|&c| c as u8 == v)
 }
 
@@ -266,6 +281,27 @@ mod imp {
             "r",
             CMD,
             Some(MenuCommand::Reload),
+            None,
+            Some(&target),
+        ));
+        separator(mtm, &library);
+        // The catalog is the only copy of everything Ord knows; these are
+        // its way out and back (see `ordnung_core::backup`).
+        library.addItem(&item(
+            mtm,
+            "Back Up Catalog…",
+            "",
+            NONE,
+            Some(MenuCommand::BackupCatalog),
+            None,
+            Some(&target),
+        ));
+        library.addItem(&item(
+            mtm,
+            "Restore Catalog from Backup…",
+            "",
+            NONE,
+            Some(MenuCommand::RestoreCatalog),
             None,
             Some(&target),
         ));

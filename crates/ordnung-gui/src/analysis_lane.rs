@@ -316,6 +316,10 @@ fn run_lane(
                     } else {
                         format!("Analyzed {ok} track(s), {failed} failed.")
                     }));
+                    // Reopen per run: a catalog restore between runs moves
+                    // the file this connection has open (see
+                    // `App::restore_catalog`).
+                    catalog = None;
                 }
                 ctx.request_repaint();
             }
