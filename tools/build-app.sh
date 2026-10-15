@@ -179,9 +179,12 @@ rm -rf "$work"
 # which are stable across rebuilds.
 #
 # Run `bash tools/make-signing-cert.sh` once to create the local identity.
-# CI has no keychain, so it falls back to ad-hoc (release DMGs are unaffected).
-sign_id="${ORDNUNG_SIGN_ID:-Ordnung Local Signing}"
-if security find-identity -v -p codesigning 2>/dev/null | grep -qF "$sign_id"; then
+# CI imports its own (`Ord Release Signing`, from the ORD_SIGNING_P12 secret,
+# see release.yml) and names it in ORDNUNG_SIGN_ID. That one is self-signed and
+# untrusted on the runner, so it is looked up without `-v` (valid-only): codesign
+# signs with it all the same, and the requirement it yields is what TCC keys on.
+sign_id="${ORDNUNG_SIGN_ID:-Ord Release Signing}"
+if security find-identity -p codesigning 2>/dev/null | grep -qF "\"$sign_id\""; then
   echo "==> Code signing (identity: $sign_id)"
   codesign --force --deep --sign "$sign_id" \
     --identifier app.ordnung.gui \

@@ -30,7 +30,7 @@
 
 set -euo pipefail
 
-name="Ordnung Local Signing"
+name="Ord Release Signing"
 keychain="$HOME/Library/Keychains/login.keychain-db"
 
 if security find-identity -v -p codesigning 2>/dev/null | grep -qF "$name"; then

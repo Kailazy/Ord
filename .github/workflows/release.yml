@@ -56,8 +56,40 @@ jobs:
           echo "version=$ver" >> "$GITHUB_OUTPUT"
           echo "Building version $ver"
 
+      # One stable self-signed identity for every release: macOS keys the
+      # app's privacy grants (Desktop, Documents, removable volumes) to the
+      # signature's designated requirement, so the same certificate across
+      # versions keeps them through an update. The identity is not trusted
+      # by Gatekeeper (that takes Developer ID + notarization); tools/build-app.sh
+      # looks it up without requiring trust. Without the secret the build
+      # falls back to ad-hoc signing as before.
+      - name: Import signing identity
+        env:
+          P12_B64: ${{ secrets.ORD_SIGNING_P12 }}
+          P12_PASSWORD: ${{ secrets.ORD_SIGNING_P12_PASSWORD }}
+        run: |
+          if [ -z "$P12_B64" ]; then echo "no signing secret; ad-hoc build"; exit 0; fi
+          kc="$RUNNER_TEMP/signing.keychain-db"
+          echo "$P12_B64" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security create-keychain -p "" "$kc"
+          security set-keychain-settings -lut 21600 "$kc"
+          security unlock-keychain -p "" "$kc"
+          security import "$RUNNER_TEMP/cert.p12" -k "$kc" -P "$P12_PASSWORD" -T /usr/bin/codesign -A
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "" "$kc" >/dev/null
+          security list-keychains -d user -s "$kc" $(security list-keychains -d user | tr -d '"')
+          rm -f "$RUNNER_TEMP/cert.p12"
+          security find-identity -p codesigning "$kc"
+
       - name: Build universal DMG
+        env:
+          ORDNUNG_SIGN_ID: Ord Release Signing
         run: bash tools/build-app.sh --no-install --no-launch --universal --dmg --dist --version=${{ steps.ver.outputs.version }}
+
+      - name: Show the signature
+        run: |
+          hdiutil attach -nobrowse -readonly -mountpoint "$RUNNER_TEMP/mnt" Ord.dmg >/dev/null
+          codesign -dr - "$RUNNER_TEMP/mnt/Ord.app" 2>&1 | grep designated
+          hdiutil detach "$RUNNER_TEMP/mnt" >/dev/null
 
       - name: Name the artifact
         # Two copies of the same DMG: the versioned one, and a fixed name so
