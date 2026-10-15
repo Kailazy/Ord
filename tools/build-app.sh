@@ -22,6 +22,9 @@
 # Run it any time after editing the GUI; one command refreshes the Dock app.
 
 set -euo pipefail
+# rustup's cargo must win over any stray toolchain earlier on PATH (an Intel
+# Homebrew Rust once shadowed it and every local bundle came out x86_64).
+export PATH="$HOME/.cargo/bin:$PATH"
 
 install=1
 launch=1
@@ -95,6 +98,10 @@ fi
 
 if [[ ! -f "$bin" ]]; then
   echo "build did not produce $bin" >&2
+  exit 1
+fi
+if [[ "$universal" -eq 0 ]] && ! lipo -archs "$bin" | grep -qw "$(uname -m)"; then
+  echo "$bin is $(lipo -archs "$bin"), host is $(uname -m): wrong toolchain on PATH" >&2
   exit 1
 fi
 
