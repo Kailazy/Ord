@@ -4300,7 +4300,7 @@ impl Catalog {
     pub fn create_crate_set(&self, name: &str, kind: CrateKind) -> Result<Id> {
         let name = name.trim();
         if name.is_empty() {
-            return Err(Error::Invalid(format!("a {} needs a name", kind.noun())));
+            return Err(Error::Invalid(format!("a {} needs a name", kind.as_str())));
         }
         self.conn.execute(
             "INSERT INTO crates (name, kind) VALUES (?1, ?2)",

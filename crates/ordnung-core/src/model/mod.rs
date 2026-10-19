@@ -757,14 +757,6 @@ impl CrateKind {
             _ => CrateKind::Crate,
         }
     }
-
-    /// The word for one of these in status lines and errors.
-    pub fn noun(self) -> &'static str {
-        match self {
-            CrateKind::Crate => "crate",
-            CrateKind::Tag => "tag",
-        }
-    }
 }
 
 /// A crate: a named set of songs on records, the vinyl side's playlist

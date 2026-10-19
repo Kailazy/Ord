@@ -3915,12 +3915,12 @@ impl App {
                             needs_focus: true,
                         });
                     }
-                    Err(e) => self.fail(format!("Couldn't make the {}: {e}", kind.noun())),
+                    Err(e) => self.fail(format!("Couldn't make the {}: {e}", kind.as_str())),
                 }
                 self.load_crate_sets();
             }
             Some(SidebarAction::RenameCrateSet(id, name)) => {
-                let noun = self.crate_kind(id).noun();
+                let noun = self.crate_kind(id).as_str();
                 if let Err(e) = Catalog::open(&self.db_path).and_then(|c| c.rename_crate_set(id, &name)) {
                     self.fail(format!("Couldn't rename the {noun}: {e}"));
                 }
@@ -3931,7 +3931,7 @@ impl App {
             Some(SidebarAction::DeleteCrateSet(id)) => {
                 let kind = self.crate_kind(id);
                 if let Err(e) = Catalog::open(&self.db_path).and_then(|c| c.delete_crate_set(id)) {
-                    self.fail(format!("Couldn't delete the {}: {e}", kind.noun()));
+                    self.fail(format!("Couldn't delete the {}: {e}", kind.as_str()));
                 }
                 if self.view == LibraryView::CrateSet(id) {
                     self.view = match kind {
