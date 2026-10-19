@@ -1472,7 +1472,9 @@ pub(crate) fn run_usb_transfer(
                 to_import.push(dst);
                 continue;
             }
-            dst = unique_destination(&dst);
+            // src is on the device and dst under a local folder, so the
+            // `== src` exemptions in unique_dest never fire here.
+            dst = unique_dest(dst, src, 2);
         }
         match std::fs::copy(src, &dst) {
             Ok(_) => {
@@ -1551,27 +1553,6 @@ pub(crate) fn run_usb_transfer(
         }
     }
     finish_import(&catalog, outcome, &follow, &cancel, &tx, &ctx);
-}
-
-/// `song.mp3` → `song (2).mp3`, `song (3).mp3`, … — the first name that
-/// doesn't collide with an existing file.
-fn unique_destination(dst: &Path) -> PathBuf {
-    let stem = dst
-        .file_stem()
-        .map(|s| s.to_string_lossy().into_owned())
-        .unwrap_or_default();
-    let ext = dst
-        .extension()
-        .map(|e| format!(".{}", e.to_string_lossy()))
-        .unwrap_or_default();
-    let dir = dst.parent().unwrap_or(Path::new(""));
-    for n in 2.. {
-        let candidate = dir.join(format!("{stem} ({n}){ext}"));
-        if !candidate.exists() {
-            return candidate;
-        }
-    }
-    unreachable!()
 }
 
 /// Import a drag-and-drop of paths from Finder: directories are walked for audio
@@ -3902,14 +3883,16 @@ pub(crate) fn convert_dest_for(track: &Track, target: Format, out_dir: Option<&P
                 out_dir,
             ),
         };
-    unique_dest(base, src)
+    unique_dest(base, src, 1)
 }
 
 /// Return `base` if it's free (or is the source file itself, which a convert may
-/// legitimately replace); otherwise append " (1)", " (2)", … until a free path is
-/// found. Prevents a metadata-named output from overwriting a different existing
-/// file when two tracks share a name.
-pub(crate) fn unique_dest(base: PathBuf, src: &Path) -> PathBuf {
+/// legitimately replace); otherwise append " (first)", " (first+1)", … until a
+/// free path is found. Prevents a metadata-named output from overwriting a
+/// different existing file when two tracks share a name (`first` 1), and gives
+/// a device copy its own numbered name, `song (2).mp3`, next to the local
+/// file it differs from (`first` 2).
+pub(crate) fn unique_dest(base: PathBuf, src: &Path, first: u32) -> PathBuf {
     if !base.exists() || base == src {
         return base;
     }
@@ -3920,21 +3903,15 @@ pub(crate) fn unique_dest(base: PathBuf, src: &Path) -> PathBuf {
         .unwrap_or_default();
     let ext = base
         .extension()
-        .map(|s| s.to_string_lossy().into_owned())
+        .map(|e| format!(".{}", e.to_string_lossy()))
         .unwrap_or_default();
-    let mut n = 1u32;
-    loop {
-        let name = if ext.is_empty() {
-            format!("{stem} ({n})")
-        } else {
-            format!("{stem} ({n}).{ext}")
-        };
-        let cand = dir.join(name);
+    for n in first.. {
+        let cand = dir.join(format!("{stem} ({n}){ext}"));
         if !cand.exists() || cand == src {
             return cand;
         }
-        n += 1;
     }
+    unreachable!()
 }
 
 pub(crate) fn convert_track(
@@ -4418,9 +4395,9 @@ mod usb_transfer_tests {
         std::fs::create_dir_all(&dir).unwrap();
         let f = dir.join("song.mp3");
         std::fs::write(&f, b"x").unwrap();
-        assert_eq!(unique_destination(&f), dir.join("song (2).mp3"));
+        assert_eq!(unique_dest(f.clone(), Path::new(""), 2), dir.join("song (2).mp3"));
         std::fs::write(dir.join("song (2).mp3"), b"x").unwrap();
-        assert_eq!(unique_destination(&f), dir.join("song (3).mp3"));
+        assert_eq!(unique_dest(f.clone(), Path::new(""), 2), dir.join("song (3).mp3"));
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
