@@ -86,6 +86,14 @@ pub(crate) fn fmt_running_time(ms: u64) -> String {
     }
 }
 
+/// Unix seconds now, or 0 when the clock reads before 1970.
+pub(crate) fn unix_now() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0)
+}
+
 pub(crate) fn non_empty(s: &str) -> Option<String> {
     let t = s.trim();
     if t.is_empty() {

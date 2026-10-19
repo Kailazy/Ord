@@ -650,10 +650,7 @@ pub(crate) fn rank_for_anchor(
 /// The current calendar year, from the system clock — close enough for
 /// capping a search year, which is all it's for.
 fn this_year() -> u16 {
-    let secs = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0);
+    let secs = unix_now() as u64;
     // Mean tropical years since 1970; off by at most a day around New Year.
     (1970 + secs / 31_556_952).min(u16::MAX as u64) as u16
 }
@@ -2421,7 +2418,7 @@ impl App {
             sub: step.sub.clone(),
             thumb_url: step.thumb_url.clone(),
             wanted: false,
-            dug_at: crate::graph::unix_now(),
+            dug_at: unix_now(),
         };
         // Grafted under the record it was dug from — a second thread taken out
         // of the same record forks the web rather than replacing the first.

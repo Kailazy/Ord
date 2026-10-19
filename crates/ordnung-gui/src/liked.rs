@@ -51,10 +51,7 @@ impl LikeSpec {
             rel_year: self.rel_year,
             rel_thumb: self.rel_thumb.filter(|s| !s.is_empty()),
             local_track_id: self.local_track_id,
-            added_at: std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_secs() as i64)
-                .unwrap_or(0),
+            added_at: unix_now(),
         }
     }
 

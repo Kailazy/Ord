@@ -132,11 +132,7 @@ fn parse_seller_input(input: &str) -> Option<String> {
 
 /// `2h ago` / `3d ago` for the sweep stamp.
 fn fmt_ago(unix: i64) -> String {
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs() as i64)
-        .unwrap_or(unix);
-    let secs = (now - unix).max(0);
+    let secs = (unix_now() - unix).max(0);
     match secs {
         0..=59 => "just now".to_string(),
         60..=3599 => format!("{}m ago", secs / 60),

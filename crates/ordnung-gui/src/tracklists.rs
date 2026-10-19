@@ -114,13 +114,6 @@ pub(crate) fn fmt_day(unix: i64) -> String {
     format!("{d} {} {y}", MONTHS[(m - 1) as usize])
 }
 
-fn now_unix() -> i64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs() as i64)
-        .unwrap_or(0)
-}
-
 /// `12:34` / `1:02:03` for a line's timestamp.
 fn fmt_clock(secs: u32) -> String {
     let (h, m, s) = (secs / 3600, (secs / 60) % 60, secs % 60);
@@ -396,7 +389,7 @@ impl App {
             .show(ctx, |ui| {
                 ui.set_width(SIDE);
                 let suggested = tracklist::suggested_name(&self.tracklist_paste)
-                    .unwrap_or_else(|| format!("Pasted {}", fmt_day(now_unix())));
+                    .unwrap_or_else(|| format!("Pasted {}", fmt_day(unix_now())));
                 let focus_name = std::mem::take(&mut self.tracklist_focus_name);
                 let name = crate::ui::field::Field::singleline(&mut self.tracklist_name)
                     .id(egui::Id::new("tracklist_name_box"))
@@ -452,7 +445,7 @@ impl App {
             (_, false) => typed,
             (Some(t), true) => t.name.clone(),
             (None, true) => tracklist::suggested_name(&text)
-                .unwrap_or_else(|| format!("Pasted {}", fmt_day(now_unix()))),
+                .unwrap_or_else(|| format!("Pasted {}", fmt_day(unix_now()))),
         };
         let saved = match editing {
             Some(t) => Catalog::open(&self.db_path)
@@ -1079,7 +1072,7 @@ impl App {
                 sub,
                 thumb_url: Some(c.thumb_url.clone()).filter(|u| !u.is_empty()),
                 wanted: false,
-                dug_at: now_unix(),
+                dug_at: unix_now(),
             });
         }
         self.reload_tracklists();

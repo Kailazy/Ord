@@ -3011,10 +3011,7 @@ pub(crate) fn load_rows(
     };
     // `added_at` is formatted relative to now so the Added column reads
     // "today / 3d ago".
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs() as i64)
-        .unwrap_or(0);
+    let now = unix_now();
     // An unfiltered listing's rows are kept per view (see `RowSources::rows`);
     // a hit touches no catalog at all (a change empties the cache first).
     if q.is_none() {
