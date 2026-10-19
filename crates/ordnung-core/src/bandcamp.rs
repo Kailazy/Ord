@@ -227,14 +227,12 @@ pub fn pick<'a>(
 /// Bandcamp over the shared HTTP pool.
 #[derive(Clone)]
 pub struct Client {
-    user_agent: String,
     agent: ureq::Agent,
 }
 
 impl Client {
-    pub fn new(user_agent: impl Into<String>) -> Self {
+    pub fn new() -> Self {
         Client {
-            user_agent: user_agent.into(),
             agent: crate::discogs::shared_agent(),
         }
     }
@@ -250,7 +248,7 @@ impl Client {
         let resp: SearchResponse = self
             .agent
             .post(SEARCH_URL)
-            .set("User-Agent", &self.user_agent)
+            .set("User-Agent", crate::USER_AGENT)
             .send_json(body)
             .map_err(net)?
             .into_json()
@@ -271,7 +269,7 @@ impl Client {
     /// Read an album page. `Ok(None)` when the page is gone or no longer
     /// carries the data this reads. One request.
     pub fn fetch_album(&self, url: &str) -> Result<Option<Album>> {
-        let resp = match self.agent.get(url).set("User-Agent", &self.user_agent).call() {
+        let resp = match self.agent.get(url).set("User-Agent", crate::USER_AGENT).call() {
             Ok(r) => r,
             Err(ureq::Error::Status(404 | 410, _)) => return Ok(None),
             Err(e) => return Err(net(e)),

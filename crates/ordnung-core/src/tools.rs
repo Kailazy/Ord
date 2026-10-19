@@ -168,7 +168,7 @@ fn download_impl<R: Read>(
 ) -> Result<bool> {
     let agent = ureq::AgentBuilder::new()
         .timeout_read(std::time::Duration::from_secs(120))
-        .user_agent("Ordnung/0.1 +https://kailazy.github.io/Ord/")
+        .user_agent(crate::USER_AGENT)
         .build();
     let resp = agent
         .get(url)

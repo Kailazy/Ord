@@ -32,3 +32,6 @@ pub use catalog::{
 pub use error::{Error, Result};
 pub use model::key::{Camelot, Key, Mode, PitchClass};
 pub use model::{AudioProperties, Format, Playlist, Tags, Track, VinylList, VinylRecord};
+
+/// The `User-Agent` every outbound request carries; Discogs rejects ureq's default.
+pub const USER_AGENT: &str = "Ordnung/0.1 +https://kailazy.github.io/Ord/";

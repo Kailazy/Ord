@@ -8,7 +8,7 @@ use ordnung_core::discogs::Client;
 #[ignore = "network + token"]
 fn free_text_lookup_returns_usable_records() {
     let token = std::env::var("DISCOGS_TOKEN").expect("DISCOGS_TOKEN");
-    let c = Client::new(token, "Ordnung/0.1 +https://kailazy.github.io/Ord/");
+    let c = Client::new(token);
     let page = c
         .search_records("metro area", 1, 10)
         .expect("search should succeed");
@@ -32,7 +32,7 @@ fn free_text_lookup_returns_usable_records() {
 /// An empty query must not spend a request.
 #[test]
 fn blank_query_short_circuits_without_network() {
-    let c = Client::new("not-a-real-token", "Ordnung/0.1 +test");
+    let c = Client::new("not-a-real-token");
     let page = c.search_records("   ", 1, 10).expect("blank is not an error");
     assert!(page.hits.is_empty());
     assert_eq!(page.items, 0);

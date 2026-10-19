@@ -786,8 +786,7 @@ impl App {
         self.sheet_price_rx = Some(rx);
         let db = self.db_path.clone();
         thread::spawn(move || {
-            let client =
-                discogs::Client::new(token, "Ordnung/0.1 +https://kailazy.github.io/Ord/");
+            let client = discogs::Client::new(token);
             let mine = client.marketplace_price(release_id);
             // Priced fine, or the request failed — either way there's nothing
             // more to ask.
@@ -860,10 +859,7 @@ impl App {
                                     tracklists and videos."
                             .to_string());
                     }
-                    let client = discogs::Client::new(
-                        token,
-                        "Ordnung/0.1 +https://kailazy.github.io/Ord/",
-                    );
+                    let client = discogs::Client::new(token);
                     cat.release_cached_or(&id, || client.fetch_release(&id))
                         .map_err(|e| e.to_string())
                 });
@@ -1024,12 +1020,11 @@ impl App {
         let token = self.discogs_token();
         let ctx = self.egui_ctx.clone();
         thread::spawn(move || {
-            const UA: &str = "Ordnung/0.1 +https://kailazy.github.io/Ord/";
             let official = || {
                 if token.trim().is_empty() {
                     return Vec::new();
                 }
-                let client = discogs::Client::new(token.clone(), UA);
+                let client = discogs::Client::new(token.clone());
                 let mut urls = Vec::new();
                 if let Some(id) = ask.label_id {
                     urls.extend(client.fetch_label(id).map(|l| l.urls).unwrap_or_default());
@@ -1039,7 +1034,7 @@ impl App {
                 }
                 bandcamp::bandcamp_hosts(&urls)
             };
-            let album = bandcamp::Client::new(UA)
+            let album = bandcamp::Client::new()
                 .find_album(&ask.artists, &ask.labels, &ask.title, &ask.tracks, official)
                 .ok()
                 .flatten();

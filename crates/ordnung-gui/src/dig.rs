@@ -2202,8 +2202,7 @@ impl App {
         self.dig_rx = Some(rx);
         let ctx = self.egui_ctx.clone();
         thread::spawn(move || {
-            let client =
-                discogs::Client::new(token, "Ordnung/0.1 +https://kailazy.github.io/Ord/");
+            let client = discogs::Client::new(token);
             // An explicit step is never stood down: it's the request the user
             // is waiting on, so it runs to completion.
             let result = browse_step(
@@ -2472,9 +2471,7 @@ impl App {
             if matches!(cat.cached_release(&id), Ok(Some(_))) {
                 return;
             }
-            let client =
-                discogs::Client::new(token, "Ordnung/0.1 +https://kailazy.github.io/Ord/")
-                    .background();
+            let client = discogs::Client::new(token).background();
             let _ = cat.release_cached_or(&id, || client.fetch_release(&id));
         });
     }
@@ -2496,10 +2493,7 @@ impl App {
                 if token.trim().is_empty() {
                     return None;
                 }
-                let client = discogs::Client::new(
-                    token.clone(),
-                    "Ordnung/0.1 +https://kailazy.github.io/Ord/",
-                );
+                let client = discogs::Client::new(token.clone());
                 cat.release_cached_or(&id, || client.fetch_release(&id))
                     .ok()
             });
@@ -2523,9 +2517,7 @@ impl App {
             let mut aliases: Vec<(NamedRef, &'static str)> = Vec::new();
             let mut family: Vec<(NamedRef, &'static str)> = Vec::new();
             if !token.trim().is_empty() {
-                let client =
-                    discogs::Client::new(token, "Ordnung/0.1 +https://kailazy.github.io/Ord/")
-                        .background();
+                let client = discogs::Client::new(token).background();
                 if let Some(id) = artist_id {
                     if let Ok(a) = client.fetch_artist(id) {
                         aliases.extend(a.aliases.into_iter().map(|r| (r, "Also known as")));
@@ -2668,9 +2660,7 @@ impl App {
         thread::spawn(move || {
             // Speculation stands aside for anything the user is waiting on:
             // a click here or a sheet opened elsewhere takes the pace first.
-            let client =
-                discogs::Client::new(token, "Ordnung/0.1 +https://kailazy.github.io/Ord/")
-                    .background();
+            let client = discogs::Client::new(token).background();
             for (i, (thread, query, page)) in jobs.into_iter().enumerate() {
                 // Checked before each browse rather than only at the top: each
                 // thread's page is its own trip through the shared pace, and
@@ -2829,8 +2819,7 @@ impl App {
             let ctx = self.egui_ctx.clone();
             let token = self.discogs_token();
             thread::spawn(move || {
-                let client =
-                    discogs::Client::new(token, "Ordnung/0.1 +https://kailazy.github.io/Ord/");
+                let client = discogs::Client::new(token);
                 // Image CDN downloads don't count against the API rate limit,
                 // so a cover fetch never delays the next dig step.
                 let img = client.fetch_thumb(&url_owned).and_then(|png| {

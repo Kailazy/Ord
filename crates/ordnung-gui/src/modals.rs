@@ -3098,8 +3098,7 @@ files elsewhere on the device stay plain storage.",
         let tx = self.preview_tx.clone();
         let ctx = ctx.clone();
         thread::spawn(move || {
-            let client =
-                discogs::Client::new(token, "Ordnung/0.1 +https://kailazy.github.io/Ord/");
+            let client = discogs::Client::new(token);
             // Open the catalog first so the fetch can go cache-first (reusing a
             // release already pulled, sparing a rate-limited round trip).
             let resolved = Catalog::open(&db_path).and_then(|catalog| {
@@ -3150,8 +3149,7 @@ files elsewhere on the device stay plain storage.",
         let tx = self.link_tx.clone();
         let ctx = ctx.clone();
         thread::spawn(move || {
-            let client =
-                discogs::Client::new(token, "Ordnung/0.1 +https://kailazy.github.io/Ordnung/");
+            let client = discogs::Client::new(token);
             let result = client
                 .fetch_release_candidate(&release_id)
                 .map(|(c, detail)| {
@@ -3250,10 +3248,7 @@ files elsewhere on the device stay plain storage.",
             let client = if token.trim().is_empty() {
                 None
             } else {
-                Some(discogs::Client::new(
-                    token,
-                    "Ordnung/0.1 +https://kailazy.github.io/Ord/",
-                ))
+                Some(discogs::Client::new(token))
             };
 
             // Resolve the full-resolution image — skipped entirely when the cover

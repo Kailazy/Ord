@@ -1301,7 +1301,6 @@ pub enum Priority {
 #[derive(Clone)]
 pub struct Client {
     token: String,
-    user_agent: String,
     agent: ureq::Agent,
     priority: Priority,
 }
@@ -1391,14 +1390,11 @@ pub(crate) fn shared_agent() -> ureq::Agent {
 
 impl Client {
     /// `token` is a Discogs personal access token (https://www.discogs.com/settings/developers).
-    /// `user_agent` must be set — Discogs rejects requests with a default
-    /// `ureq` UA. Use something like `"Ordnung/0.1 +https://example.com"`.
     ///
     /// The client is [`Priority::Foreground`] — see [`Client::background`].
-    pub fn new(token: impl Into<String>, user_agent: impl Into<String>) -> Self {
+    pub fn new(token: impl Into<String>) -> Self {
         Client {
             token: token.into(),
-            user_agent: user_agent.into(),
             agent: shared_agent(),
             priority: Priority::Foreground,
         }
@@ -2149,7 +2145,7 @@ impl Client {
     /// paths above set these inline (alongside their query parameters); the
     /// writes carry no query string, so they share this one helper.
     fn authed(&self, req: ureq::Request) -> ureq::Request {
-        req.set("User-Agent", &self.user_agent)
+        req.set("User-Agent", crate::USER_AGENT)
             .set("Authorization", &format!("Discogs token={}", self.token))
     }
 
@@ -2465,7 +2461,7 @@ impl Client {
         let resp = self
             .agent
             .get(url)
-            .set("User-Agent", &self.user_agent)
+            .set("User-Agent", crate::USER_AGENT)
             .call()
             .map_err(map_ureq_err)?;
         let mut buf = Vec::new();
@@ -4365,8 +4361,8 @@ mod throttle_tests {
     /// the moment it put a second caller on Discogs at the same time.
     #[test]
     fn throttle_is_shared_across_separately_built_clients() {
-        let a = Client::new("t", "Ordnung/test");
-        let b = Client::new("t", "Ordnung/test");
+        let a = Client::new("t");
+        let b = Client::new("t");
         let start = Instant::now();
         a.throttle();
         b.throttle();

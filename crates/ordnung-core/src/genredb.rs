@@ -254,7 +254,7 @@ pub fn import_latest(
     // Long stream: generous read timeout, no overall cap.
     let agent = ureq::AgentBuilder::new()
         .timeout_read(std::time::Duration::from_secs(120))
-        .user_agent("Ordnung/0.1 +https://kailazy.github.io/Ord/")
+        .user_agent(crate::USER_AGENT)
         .build();
     let (stamp, url) = latest_dump(&agent)?;
     import_from(db_path, &stamp, &url, progress, cancel)
@@ -272,7 +272,7 @@ pub fn import_from(
 ) -> Result<ImportStats> {
     let agent = ureq::AgentBuilder::new()
         .timeout_read(std::time::Duration::from_secs(120))
-        .user_agent("Ordnung/0.1 +https://kailazy.github.io/Ord/")
+        .user_agent(crate::USER_AGENT)
         .build();
     let stamp = stamp.to_string();
     let resp = agent
