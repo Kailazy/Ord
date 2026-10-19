@@ -1108,9 +1108,25 @@ impl App {
         // (or a narrow window) can be scrolled left/right. The trailing
         // `remainder` spacer fills slack when the window is wide, so the
         // horizontal bar only appears once the columns exceed the viewport.
+        // A bar for an overflow narrower than a column gap scrolls to nothing
+        // the eye can find. The last column at its minimum overshoots the
+        // viewport by a fraction of a point (egui_extras floors the remainder,
+        // then clamps it back up), and egui answered with a full-width bar
+        // under a table that fit. Judged on last frame's measure, kept in
+        // egui's memory like `viewport_narrowed` above.
+        let overflow_id = ui.id().with("songs_table_h_overflow");
+        let overflow = ui
+            .data_mut(|d| d.get_temp::<f32>(overflow_id))
+            .unwrap_or(0.0);
+        let bar = if overflow < col_spacing_x {
+            egui::scroll_area::ScrollBarVisibility::AlwaysHidden
+        } else {
+            egui::scroll_area::ScrollBarVisibility::VisibleWhenNeeded
+        };
         let scroll_out = egui::ScrollArea::horizontal()
             .id_salt("songs_table_hscroll")
             .auto_shrink([false, false])
+            .scroll_bar_visibility(bar)
             .show(ui, |ui| {
                 let mut builder = TableBuilder::new(ui)
                     // One stable id for EVERY view (library and all playlists) so the
@@ -1161,7 +1177,7 @@ impl App {
                     // table's edge, and it is the column that gives when the
                     // inspector opens beside the table.
                     if Some(col) == last_col {
-                        builder = builder.column(col.spec_last(COVER_PX, w));
+                        builder = builder.column(col.spec_last(COVER_PX));
                         continue;
                     }
                     let max = (viewport_w - right_pad - x).max(0.0);
@@ -2287,6 +2303,9 @@ impl App {
         // and the table's viewport as the Finder-drop landing zone.
         self.row_screen_rects = row_rects;
         self.table_screen_rect = Some(scroll_out.inner_rect);
+        ui.data_mut(|d| {
+            d.insert_temp(overflow_id, scroll_out.content_size.x - scroll_out.inner_rect.width())
+        });
 
         // egui_extras claims a band ten points wide down every column border,
         // from the header to the table's floor, and shows the resize cursor

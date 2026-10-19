@@ -302,6 +302,12 @@ fn apply_style(ctx: &egui::Context) {
     s.indent = 18.0;
     s.interact_size.y = 24.0;
     s.scroll.bar_width = 8.0;
+    // Overlay scroll bars paint the handle in the label colour, which at egui's
+    // 60 % rest opacity is a bright line down the table edge whenever the
+    // pointer is in the view. Thin it to a quiet grey (LABEL_4 over the
+    // background) and only brighten it under the pointer.
+    s.scroll.active_handle_opacity = 0.3;
+    s.scroll.interact_handle_opacity = 0.6;
 
     // Chrome text is chrome, not content. egui makes every `Label` selectable by
     // default, so dragging across the settings window, the sidebar or a status

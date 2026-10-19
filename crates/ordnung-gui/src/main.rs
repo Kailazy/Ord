@@ -729,19 +729,16 @@ impl TableColumn {
 
     /// The spec for the last visible column. It takes whatever width is left,
     /// so the table's right edge is the viewport's and a panel opening beside
-    /// the table squeezes this column first, and never less than the user's
-    /// width for it (or its default), past which the table scrolls instead.
+    /// the table squeezes this column first, down to its minimum, past which
+    /// the table scrolls instead. The floor is the minimum, not the default:
+    /// a default floor a few points wider than the slack left a full-width
+    /// horizontal bar under a table with nothing to scroll to.
     /// Not resizable: egui_extras freezes a resizable column at its stored
     /// width, and only a non-resizable remainder is recomputed every frame as
     /// the viewport changes.
-    fn spec_last(self, cover_px: f32, width: Option<f32>) -> Column {
-        let floor = if self == TableColumn::Cover {
-            cover_px + 6.0
-        } else {
-            width.unwrap_or_else(|| self.default_width(cover_px))
-        };
+    fn spec_last(self, cover_px: f32) -> Column {
         Column::remainder()
-            .at_least(floor)
+            .at_least(self.min_width(cover_px))
             .resizable(false)
             .clip(self.clips())
     }
