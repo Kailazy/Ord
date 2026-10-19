@@ -42,31 +42,6 @@ enum Place {
     Anchor(egui::Align2, egui::Vec2),
 }
 
-/// Where the user can grab a resizable window to size it: any set of its
-/// edges and corners. A corner sizes both ways, an edge one. The default
-/// is the bottom-right corner alone, which is where a window is expected
-/// to be sized from; a window sized only in height offers its bottom edge.
-/// The top edge is never a default: egui sizes from the top by moving the
-/// top and keeping the height when the content can't shrink, which drags
-/// the whole window rather than sizing it.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub struct Grips(u8);
-
-impl Grips {
-    pub const LEFT: Self = Self(1);
-    pub const RIGHT: Self = Self(2);
-    pub const TOP: Self = Self(4);
-    pub const BOTTOM: Self = Self(8);
-    pub const TOP_LEFT: Self = Self(16);
-    pub const TOP_RIGHT: Self = Self(32);
-    pub const BOTTOM_LEFT: Self = Self(64);
-    pub const BOTTOM_RIGHT: Self = Self(128);
-
-    pub const fn has(self, other: Self) -> bool {
-        self.0 & other.0 == other.0
-    }
-}
-
 /// Half the side of the square a corner grip answers to: a little more
 /// than egui's own, so the corner is caught without aiming for the pixel.
 /// Set into the style by `theme`, read back from it here so the blockers
@@ -286,11 +261,6 @@ impl<'o> Window<'o> {
         // grips this window doesn't offer are covered by blockers (see
         // `block_grips`), and a drag on a blocker moves the window, as a
         // drag on the frame there would without them.
-        let grips = if self.resizable[0] {
-            Grips::BOTTOM_RIGHT
-        } else {
-            Grips::BOTTOM
-        };
         let last_rect = egui::AreaState::load(ctx, id).map(|s| s.rect());
         let moved = BLOCKERS
             .iter()
@@ -395,7 +365,7 @@ impl<'o> Window<'o> {
             // Before the content, so the content's own controls stay on
             // top of the blockers where they overlap the frame's edge.
             if let Some(rect) = last_rect.filter(|_| resizable[0] || resizable[1]) {
-                block_grips(ui, id, rect, resizable, grips);
+                block_grips(ui, id, rect, resizable[0]);
             }
             let bar = with_title_bar.then(|| title_row(ui, &title, close, title_gap));
             let from = first_shape(ui);
@@ -652,22 +622,15 @@ fn close_button(ui: &mut egui::Ui, id: egui::Id, right: f32, centre_y: f32) -> b
 }
 
 /// Whether one of egui's own grips on the window is being dragged: egui
-/// registers them under its area's layer, by these names.
+/// registers them under its area's layer, by these names. Past the
+/// blockers (see [`block_grips`]) only the bottom edge and the
+/// bottom-right corner are left to drag.
 fn grip_dragged(ctx: &egui::Context, id: egui::Id) -> bool {
     let layer = egui::LayerId::new(egui::Order::Middle, id);
     let base = egui::Id::new(layer).with("edge_drag");
-    [
-        "left",
-        "right",
-        "top",
-        "bottom",
-        "right_bottom",
-        "right_top",
-        "left_bottom",
-        "left_top",
-    ]
-    .iter()
-    .any(|k| ctx.read_response(base.with(k)).is_some_and(|r| r.dragged()))
+    ["bottom", "right_bottom"]
+        .iter()
+        .any(|k| ctx.read_response(base.with(k)).is_some_and(|r| r.dragged()))
 }
 
 /// The blockers a window may register, by key (see [`block_grips`]).
@@ -682,91 +645,48 @@ fn blocker_id(id: egui::Id, key: &str, half: &str) -> egui::Id {
 }
 
 /// Cover the grips egui offers on `rect` (the window's outer rect last
-/// frame) that `grips` doesn't, with drag-sensing widgets registered after
-/// egui's own so they take the pointer first. egui's side grips are bands
-/// `resize_grab_radius_side` either side of an edge, its corner grips
+/// frame) that the window doesn't, with drag-sensing widgets registered
+/// after egui's own so they take the pointer first. egui's side grips are
+/// bands `resize_grab_radius_side` either side of an edge, its corner grips
 /// squares `resize_grab_radius_corner` around a corner, corners on top
-/// (only where both axes size). A side blocker stops short of an allowed
-/// corner; a corner blocker covers the ends of allowed sides, as egui's
-/// corner would have taken those anyway. Sizing in one axis only has no
-/// corner grips, so a corner named there is that end of the band.
+/// (only where both axes size). A window sized `both` ways offers its
+/// bottom-right corner: the other three corners are covered, the top and
+/// left bands whole, and the bottom and right bands short of that corner,
+/// as egui's corner would have taken those ends anyway. One sized in
+/// height alone has no corner grips and offers its bottom edge, so only
+/// the top band is covered. (The top edge is never offered: egui sizes
+/// from the top by moving the top and keeping the height when the content
+/// can't shrink, which drags the whole window rather than sizing it.)
 ///
 /// Each blocker goes in as two widgets, one a pixel short at each end:
 /// egui's hit test gives a drag hit to a smaller drag widget the hit one
 /// contains, taking it for a handle on a background, and a blocker the
 /// same size as the grip counts as containing it. Neither half does.
-fn block_grips(
-    ui: &mut egui::Ui,
-    id: egui::Id,
-    rect: egui::Rect,
-    axes: [bool; 2],
-    grips: Grips,
-) {
+fn block_grips(ui: &mut egui::Ui, id: egui::Id, rect: egui::Rect, both: bool) {
     let (sr, cr) = {
         let i = &ui.style().interaction;
         (i.resize_grab_radius_side, i.resize_grab_radius_corner)
     };
-    let mut blocks: Vec<(&str, egui::Rect)> = Vec::new();
-    if axes[0] && axes[1] {
-        for (g, key, p) in [
-            (Grips::TOP_LEFT, "tl", rect.left_top()),
-            (Grips::TOP_RIGHT, "tr", rect.right_top()),
-            (Grips::BOTTOM_LEFT, "bl", rect.left_bottom()),
-            (Grips::BOTTOM_RIGHT, "br", rect.right_bottom()),
-        ] {
-            if !grips.has(g) {
-                blocks.push((
-                    key,
-                    egui::Rect::from_center_size(p, egui::Vec2::splat(2.0 * cr)),
-                ));
-            }
-        }
-    }
-    // A side band, its ends pulled in where the corner is offered.
     let band = |a: egui::Pos2, b: egui::Pos2| egui::Rect::from_min_max(a, b).expand(sr);
-    if axes[1] && !grips.has(Grips::TOP) {
-        let mut r = band(rect.left_top(), rect.right_top());
-        if grips.has(Grips::TOP_LEFT) {
-            r.min.x = rect.min.x + cr;
-        }
-        if grips.has(Grips::TOP_RIGHT) {
-            r.max.x = rect.max.x - cr;
-        }
-        blocks.push(("top", r));
-    }
-    if axes[1] && !grips.has(Grips::BOTTOM) {
-        let mut r = band(rect.left_bottom(), rect.right_bottom());
-        if grips.has(Grips::BOTTOM_LEFT) {
-            r.min.x = rect.min.x + cr;
-        }
-        if grips.has(Grips::BOTTOM_RIGHT) {
-            r.max.x = rect.max.x - cr;
-        }
-        blocks.push(("bottom", r));
-    }
-    if axes[0] && !grips.has(Grips::LEFT) {
-        let mut r = band(rect.left_top(), rect.left_bottom());
-        if grips.has(Grips::TOP_LEFT) {
-            r.min.y = rect.min.y + cr;
-        }
-        if grips.has(Grips::BOTTOM_LEFT) {
-            r.max.y = rect.max.y - cr;
-        }
-        blocks.push(("left", r));
-    }
-    if axes[0] && !grips.has(Grips::RIGHT) {
-        let mut r = band(rect.right_top(), rect.right_bottom());
-        if grips.has(Grips::TOP_RIGHT) {
-            r.min.y = rect.min.y + cr;
-        }
-        if grips.has(Grips::BOTTOM_RIGHT) {
-            r.max.y = rect.max.y - cr;
-        }
-        blocks.push(("right", r));
-    }
-    if blocks.is_empty() {
-        return;
-    }
+    let corner = |p: egui::Pos2| egui::Rect::from_center_size(p, egui::Vec2::splat(2.0 * cr));
+    let top = band(rect.left_top(), rect.right_top());
+    let blocks: Vec<(&str, egui::Rect)> = if both {
+        let mut bottom = band(rect.left_bottom(), rect.right_bottom());
+        bottom.max.x = rect.max.x - cr;
+        let mut right = band(rect.right_top(), rect.right_bottom());
+        right.max.y = rect.max.y - cr;
+        vec![
+            ("tl", corner(rect.left_top())),
+            ("tr", corner(rect.right_top())),
+            ("bl", corner(rect.left_bottom())),
+            ("top", top),
+            ("bottom", bottom),
+            ("left", band(rect.left_top(), rect.left_bottom())),
+            ("right", right),
+        ]
+    } else {
+        vec![("top", top)]
+    };
     // The bands reach outside the frame, past the content's clip.
     let clip = ui.clip_rect();
     ui.set_clip_rect(clip.union(rect.expand(cr.max(sr))));
@@ -834,7 +754,7 @@ mod tests {
                 screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1280.0, 800.0))),
                 ..Default::default()
             };
-            ctx.run(input, |ctx| {
+            let _ = ctx.run(input, |ctx| {
                 let mut open = true;
                 let shown = Window::new("Under test")
                     .id(id)
