@@ -483,27 +483,12 @@ fn cloud_tint(name: &str) -> egui::Color32 {
         .bytes()
         .fold(0x811c_9dc5u32, |a, b| (a ^ b as u32).wrapping_mul(0x0100_0193));
     let hue = (h % 360) as f32 / 360.0;
-    let (s, l) = (0.55, 0.58);
-    // HSL to RGB.
-    let q = l + s - l * s;
-    let p = 2.0 * l - q;
-    let chan = |t: f32| -> f32 {
-        let t = t.rem_euclid(1.0);
-        if t < 1.0 / 6.0 {
-            p + (q - p) * 6.0 * t
-        } else if t < 0.5 {
-            q
-        } else if t < 2.0 / 3.0 {
-            p + (q - p) * (2.0 / 3.0 - t) * 6.0
-        } else {
-            p
-        }
-    };
-    egui::Color32::from_rgb(
-        (chan(hue + 1.0 / 3.0) * 255.0) as u8,
-        (chan(hue) * 255.0) as u8,
-        (chan(hue - 1.0 / 3.0) * 255.0) as u8,
-    )
+    // HSL saturation 0.55, lightness 0.58, as the HSV egui converts.
+    let (s, l) = (0.55f32, 0.58f32);
+    let c = (1.0 - (2.0 * l - 1.0).abs()) * s;
+    let v = l + c / 2.0;
+    let [r, g, b] = egui::ecolor::rgb_from_hsv((hue, c / v, v));
+    egui::Color32::from_rgb((r * 255.0) as u8, (g * 255.0) as u8, (b * 255.0) as u8)
 }
 
 /// Lay `n` bodies of half-size `body` on concentric rings outside a hub of
