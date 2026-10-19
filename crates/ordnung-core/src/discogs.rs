@@ -1557,6 +1557,19 @@ impl Client {
         }
     }
 
+    /// One decoded API response: the request `build` makes, sent through
+    /// [`Self::call_with_retry`], with a decode failure reported as
+    /// "decoding Discogs {what}".
+    fn get_json<T: serde::de::DeserializeOwned>(
+        &self,
+        what: &str,
+        build: impl Fn() -> ureq::Request,
+    ) -> Result<T> {
+        self.call_with_retry(build)?
+            .into_json()
+            .map_err(|e| Error::Network(format!("decoding Discogs {what}: {e}")))
+    }
+
     /// Free-text record lookup: search all of Discogs for releases matching a
     /// user-typed query, the way the discogs.com search box does.
     ///
@@ -1589,16 +1602,13 @@ impl Client {
         }
         let page = page.max(1).to_string();
         let per_page = per_page.clamp(1, 100).to_string();
-        let resp = self.call_with_retry(|| {
+        let body: SearchResponse = self.get_json("search response", || {
             self.authed(self.agent.get(SEARCH_URL))
                 .query("q", query)
                 .query("type", "release")
                 .query("per_page", &per_page)
                 .query("page", &page)
         })?;
-        let body: SearchResponse = resp
-            .into_json()
-            .map_err(|e| Error::Network(format!("decoding Discogs search response: {e}")))?;
         Ok(RecordSearchPage {
             pages: body.pagination.pages,
             items: body.pagination.items,
@@ -1640,16 +1650,13 @@ impl Client {
             return Ok(Vec::new());
         }
         let per_page = per_page.clamp(1, 100).to_string();
-        let resp = self.call_with_retry(|| {
+        let body: SearchResponse = self.get_json("artist search", || {
             self.authed(self.agent.get(SEARCH_URL))
                 .query("q", query)
                 .query("type", "artist")
                 .query("per_page", &per_page)
                 .query("page", "1")
         })?;
-        let body: SearchResponse = resp
-            .into_json()
-            .map_err(|e| Error::Network(format!("decoding Discogs artist search: {e}")))?;
         Ok(artist_hits(body.results))
     }
 
@@ -1800,21 +1807,15 @@ impl Client {
     /// `GET /releases/{id}`, decoded.
     fn get_release(&self, release_id: impl std::fmt::Display) -> Result<ReleaseResponse> {
         let url = format!("{RELEASE_URL}/{release_id}");
-        let resp = self.call_with_retry(|| self.authed(self.agent.get(&url)))?;
-        resp.into_json()
-            .map_err(|e| Error::Network(format!("decoding Discogs release response: {e}")))
+        self.get_json("release response", || self.authed(self.agent.get(&url)))
     }
 
     /// Resolve the token owner's Discogs username (`GET /oauth/identity`). One
     /// authenticated request — the collection endpoints are keyed by username, so
     /// this is the first call a collection sync makes.
     pub fn identity(&self) -> Result<String> {
-        let resp = self.call_with_retry(|| {
-            self.authed(self.agent.get(IDENTITY_URL))
-        })?;
-        let body: IdentityResponse = resp
-            .into_json()
-            .map_err(|e| Error::Network(format!("decoding Discogs identity response: {e}")))?;
+        let body: IdentityResponse =
+            self.get_json("identity response", || self.authed(self.agent.get(IDENTITY_URL)))?;
         if body.username.trim().is_empty() {
             return Err(Error::Network(
                 "Discogs identity returned no username".into(),
@@ -1861,16 +1862,13 @@ impl Client {
         let per_page = COLLECTION_PER_PAGE.to_string();
         for page in 1u32.. {
             let page_str = page.to_string();
-            let resp = self.call_with_retry(|| {
+            let body: T = self.get_json(&format!("{what} response"), || {
                 self.authed(self.agent.get(base))
                     .query("page", &page_str)
                     .query("per_page", &per_page)
                     .query("sort", "added")
                     .query("sort_order", "desc")
             })?;
-            let body: T = resp
-                .into_json()
-                .map_err(|e| Error::Network(format!("decoding Discogs {what} response: {e}")))?;
             let (recs, pages) = split(body);
             out.extend(recs);
             if page >= pages.max(1) {
@@ -1898,10 +1896,8 @@ impl Client {
     /// view, so the caller must not cache it (and should say so).
     pub fn add_to_wantlist(&self, username: &str, release_id: u64) -> Result<Option<VinylRecord>> {
         let url = format!("https://api.discogs.com/users/{username}/wants/{release_id}");
-        let resp = self.call_with_retry(|| self.authed(self.agent.put(&url)))?;
-        let item: WantItem = resp
-            .into_json()
-            .map_err(|e| Error::Network(format!("decoding Discogs wantlist add response: {e}")))?;
+        let item: WantItem =
+            self.get_json("wantlist add response", || self.authed(self.agent.put(&url)))?;
         Ok(item.into_record())
     }
 
@@ -1926,10 +1922,8 @@ impl Client {
             "https://api.discogs.com/users/{username}/collection/folders/\
              {UNCATEGORIZED_FOLDER}/releases/{release_id}"
         );
-        let resp = self.call_with_retry(|| self.authed(self.agent.post(&url)))?;
-        let added: CollectionAdd = resp.into_json().map_err(|e| {
-            Error::Network(format!("decoding Discogs collection add response: {e}"))
-        })?;
+        let added: CollectionAdd =
+            self.get_json("collection add response", || self.authed(self.agent.post(&url)))?;
         if added.instance_id == 0 {
             return Err(Error::Network(
                 "Discogs accepted the collection add but returned no instance id".into(),
@@ -1951,13 +1945,10 @@ impl Client {
     /// likely to be for sale. One API request.
     pub fn master_versions(&self, master_id: u64) -> Result<Vec<MasterVersion>> {
         let url = format!("{MASTERS_URL}/{master_id}/versions");
-        let resp = self.call_with_retry(|| {
+        let body: VersionsResponse = self.get_json("versions response", || {
             self.authed(self.agent.get(&url))
                 .query("per_page", "100")
         })?;
-        let body: VersionsResponse = resp
-            .into_json()
-            .map_err(|e| Error::Network(format!("decoding Discogs versions response: {e}")))?;
         let mut out: Vec<MasterVersion> = body
             .versions
             .into_iter()
@@ -2004,12 +1995,8 @@ impl Client {
         instance_id: u64,
     ) -> Result<(Option<VinylRecord>, ReleaseDetail)> {
         let url = format!("{RELEASE_URL}/{release_id}");
-        let resp = self.call_with_retry(|| {
-            self.authed(self.agent.get(&url))
-        })?;
-        let body: serde_json::Value = resp
-            .into_json()
-            .map_err(|e| Error::Network(format!("decoding Discogs release response: {e}")))?;
+        let body: serde_json::Value =
+            self.get_json("release response", || self.authed(self.agent.get(&url)))?;
         let parse = || {
             serde_json::from_value::<ReleaseResponse>(body.clone())
                 .map_err(|e| Error::Network(format!("decoding Discogs release response: {e}")))
@@ -2037,10 +2024,8 @@ impl Client {
     ) -> Result<Option<u32>> {
         let url =
             format!("https://api.discogs.com/users/{username}/collection/releases/{release_id}");
-        let resp = self.call_with_retry(|| self.authed(self.agent.get(&url)))?;
-        let body: CollectionResponse = resp.into_json().map_err(|e| {
-            Error::Network(format!("decoding Discogs collection lookup response: {e}"))
-        })?;
+        let body: CollectionResponse =
+            self.get_json("collection lookup response", || self.authed(self.agent.get(&url)))?;
         Ok(body
             .releases
             .iter()
@@ -2081,10 +2066,8 @@ impl Client {
     /// cache what comes back.
     pub fn marketplace_price(&self, release_id: u64) -> Result<Option<MarketPrice>> {
         let url = format!("https://api.discogs.com/marketplace/stats/{release_id}");
-        let resp = self.call_with_retry(|| self.authed(self.agent.get(&url)))?;
-        let body: MarketplaceStats = resp
-            .into_json()
-            .map_err(|e| Error::Network(format!("decoding Discogs marketplace stats: {e}")))?;
+        let body: MarketplaceStats =
+            self.get_json("marketplace stats", || self.authed(self.agent.get(&url)))?;
         if body.blocked_from_sale {
             return Ok(None);
         }
@@ -2119,7 +2102,7 @@ impl Client {
         let page = page.max(1);
         let url = format!("https://api.discogs.com/users/{username}/inventory");
         let order = if newest_first { "desc" } else { "asc" };
-        let resp = self.call_with_retry(|| {
+        let body: InventoryResponse = self.get_json("inventory response", || {
             self.authed(self.agent.get(&url))
                 .query("status", "For Sale")
                 .query("per_page", "100")
@@ -2127,9 +2110,6 @@ impl Client {
                 .query("sort", "listed")
                 .query("sort_order", order)
         })?;
-        let body: InventoryResponse = resp
-            .into_json()
-            .map_err(|e| Error::Network(format!("decoding Discogs inventory response: {e}")))?;
         Ok(InventoryPage {
             pages: body.pagination.pages.max(1),
             items: body.pagination.items,
@@ -2241,14 +2221,11 @@ impl Client {
             BrowseThread::Artist => format!("{ARTISTS_URL}/{id}/releases"),
             BrowseThread::Label => format!("{LABELS_URL}/{id}/releases"),
         };
-        let resp = self.call_with_retry(|| {
+        let body: BrowseResponse = self.get_json("browse response", || {
             self.authed(self.agent.get(&url))
                 .query("per_page", "100")
                 .query("page", &page.to_string())
         })?;
-        let body: BrowseResponse = resp
-            .into_json()
-            .map_err(|e| Error::Network(format!("decoding Discogs browse response: {e}")))?;
         Ok(BrowsePage {
             pages: body.pagination.pages.max(1),
             items: body.pagination.items,
@@ -2347,12 +2324,8 @@ impl Client {
 
     fn fetch_artist_uncached(&self, id: u64) -> Result<ArtistDetail> {
         let url = format!("{ARTISTS_URL}/{id}");
-        let resp = self.call_with_retry(|| {
-            self.authed(self.agent.get(&url))
-        })?;
-        let body: ArtistResponse = resp
-            .into_json()
-            .map_err(|e| Error::Network(format!("decoding Discogs artist response: {e}")))?;
+        let body: ArtistResponse =
+            self.get_json("artist response", || self.authed(self.agent.get(&url)))?;
         let refs = |v: Vec<RefEntry>| -> Vec<NamedRef> {
             v.into_iter().filter_map(RefEntry::into_ref).collect()
         };
@@ -2376,12 +2349,8 @@ impl Client {
 
     fn fetch_label_uncached(&self, id: u64) -> Result<LabelDetail> {
         let url = format!("{LABELS_URL}/{id}");
-        let resp = self.call_with_retry(|| {
-            self.authed(self.agent.get(&url))
-        })?;
-        let body: LabelResponse = resp
-            .into_json()
-            .map_err(|e| Error::Network(format!("decoding Discogs label response: {e}")))?;
+        let body: LabelResponse =
+            self.get_json("label response", || self.authed(self.agent.get(&url)))?;
         Ok(LabelDetail {
             id: body.id,
             name: strip_discogs_number(&body.name).to_string(),
@@ -2400,7 +2369,7 @@ impl Client {
     /// label browse so a dig can spend it the same way.
     fn search_page(&self, facets: &[(&str, &str)], page: u32) -> Result<BrowsePage> {
         let page = page.max(1).to_string();
-        let resp = self.call_with_retry(|| {
+        let body: SearchResponse = self.get_json("search response", || {
             let mut req = self.authed(self.agent.get(SEARCH_URL));
             for (k, v) in facets {
                 req = req.query(k, v);
@@ -2410,9 +2379,6 @@ impl Client {
                 .query("per_page", "100")
                 .query("page", &page)
         })?;
-        let body: SearchResponse = resp
-            .into_json()
-            .map_err(|e| Error::Network(format!("decoding Discogs search response: {e}")))?;
         Ok(BrowsePage {
             pages: body.pagination.pages.max(1),
             items: body.pagination.items,
@@ -2444,16 +2410,13 @@ impl Client {
     }
 
     fn search_release(&self, params: &[(&str, &str)]) -> Result<Vec<SearchHit>> {
-        let resp = self.call_with_retry(|| {
+        let body: SearchResponse = self.get_json("search response", || {
             let mut req = self.authed(self.agent.get(SEARCH_URL));
             for (k, v) in params {
                 req = req.query(k, v);
             }
             req
         })?;
-        let body: SearchResponse = resp
-            .into_json()
-            .map_err(|e| Error::Network(format!("decoding Discogs search response: {e}")))?;
         Ok(body.results)
     }
 
