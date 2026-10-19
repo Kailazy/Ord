@@ -421,11 +421,11 @@ mod tests {
 
     #[test]
     fn every_command_round_trips_through_its_tag() {
-        for v in 1..=8u8 {
-            let cmd = decode(v).expect("tags 1-8 are commands");
+        for v in 1..=10u8 {
+            let cmd = decode(v).expect("tags 1-10 are commands");
             assert_eq!(cmd as u8, v);
         }
         assert_eq!(decode(0), None);
-        assert_eq!(decode(9), None);
+        assert_eq!(decode(11), None);
     }
 }
