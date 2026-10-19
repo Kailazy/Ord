@@ -2455,13 +2455,7 @@ impl App {
         }
         let db = self.db_path.clone();
         thread::spawn(move || {
-            let id = release_id.to_string();
-            let Ok(cat) = Catalog::open(&db) else { return };
-            if matches!(cat.cached_release(&id), Ok(Some(_))) {
-                return;
-            }
-            let client = discogs::Client::new(token).background();
-            let _ = cat.release_cached_or(&id, || client.fetch_release(&id));
+            let _ = util::release_detail(&db, &token, release_id, true);
         });
     }
 
@@ -2474,18 +2468,7 @@ impl App {
         let token = self.discogs_token();
         let ctx = self.egui_ctx.clone();
         thread::spawn(move || {
-            let id = release_id.to_string();
-            let detail = Catalog::open(&db).ok().and_then(|cat| {
-                if let Ok(Some(d)) = cat.cached_release(&id) {
-                    return Some(d);
-                }
-                if token.trim().is_empty() {
-                    return None;
-                }
-                let client = discogs::Client::new(token.clone());
-                cat.release_cached_or(&id, || client.fetch_release(&id))
-                    .ok()
-            });
+            let detail = util::release_detail(&db, &token, release_id, false).ok();
             let (artist_id, label_id) = match &detail {
                 Some(d) => (
                     d.artist_ids

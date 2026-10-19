@@ -823,28 +823,9 @@ impl App {
     fn spawn_sheet_fetch(&mut self, release_id: u64, ctx: egui::Context) {
         let db = self.db_path.clone();
         let token = self.discogs_token();
-        self.sheet_rx = Some(util::spawn_oneshot(&ctx, move || {
-            let id = release_id.to_string();
-            let result = Catalog::open(&db)
-                .map_err(|e| e.to_string())
-                .and_then(|cat| {
-                    match cat.cached_release(&id) {
-                        Ok(Some(d)) => return Ok(d),
-                        Ok(None) => {}
-                        // A cache read failure isn't fatal — fall through to the
-                        // network and let that decide.
-                        Err(_) => {}
-                    }
-                    if token.trim().is_empty() {
-                        return Err("No Discogs token set. Add one in Settings to load \
-                                    tracklists and videos."
-                            .to_string());
-                    }
-                    let client = discogs::Client::new(token);
-                    cat.release_cached_or(&id, || client.fetch_release(&id))
-                        .map_err(|e| e.to_string())
-                });
-            SheetFetched { release_id, result }
+        self.sheet_rx = Some(util::spawn_oneshot(&ctx, move || SheetFetched {
+            release_id,
+            result: util::release_detail(&db, &token, release_id, false),
         }));
     }
 

@@ -38,6 +38,34 @@ pub(crate) fn spawn_oneshot<T: Send + 'static>(
     rx
 }
 
+/// One release's detail, cache first, network on a miss. A missing token
+/// is only an error when the release isn't cached, so a record opened
+/// before still works offline. `background` takes the paced lane for a
+/// fetch nobody is waiting on. The error is the sheet's message.
+pub(crate) fn release_detail(
+    db: &Path,
+    token: &str,
+    release_id: u64,
+    background: bool,
+) -> Result<discogs::ReleaseDetail, String> {
+    let id = release_id.to_string();
+    let cat = Catalog::open(db).map_err(|e| e.to_string())?;
+    // A cache read failure isn't fatal — fall through to the network and
+    // let that decide.
+    if let Ok(Some(d)) = cat.cached_release(&id) {
+        return Ok(d);
+    }
+    if token.trim().is_empty() {
+        return Err("No Discogs token set. Add one in Settings to load \
+                    tracklists and videos."
+            .to_string());
+    }
+    let client = discogs::Client::new(token.to_string());
+    let client = if background { client.background() } else { client };
+    cat.release_cached_or(&id, || client.fetch_release(&id))
+        .map_err(|e| e.to_string())
+}
+
 /// One line of an exported track-list text file.
 pub(crate) struct TrackListEntry {
     pub artist: String,

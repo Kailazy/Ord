@@ -932,19 +932,7 @@ impl App {
         let token = self.discogs_token();
         let ahead = self.radio.now.is_some();
         self.radio.detail_rx = Some(util::spawn_oneshot(&ctx, move || {
-            let id = release_id.to_string();
-            let detail = Catalog::open(&db).ok().and_then(|cat| {
-                if let Ok(Some(d)) = cat.cached_release(&id) {
-                    return Some(d);
-                }
-                if token.trim().is_empty() {
-                    return None;
-                }
-                let client = discogs::Client::new(token);
-                let client = if ahead { client.background() } else { client };
-                cat.release_cached_or(&id, || client.fetch_release(&id)).ok()
-            });
-            (release_id, detail)
+            (release_id, util::release_detail(&db, &token, release_id, ahead).ok())
         }));
     }
 
