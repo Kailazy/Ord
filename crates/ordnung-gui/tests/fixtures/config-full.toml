@@ -1,0 +1,265 @@
+discogs_token = "tok-abc"
+hidden_release_mediums = [
+    "vinyl",
+    "cd",
+    "digital",
+    "cassette",
+    "other",
+]
+discogs_auto_fetch = false
+discogs_auto_match = "oldest"
+discogs_username = "kai"
+library_root = "/Users/dj/Music/seeker"
+column_order = [
+    "notes",
+    "quality",
+    "bitrate",
+    "format",
+    "key",
+    "bpm",
+    "added",
+    "waveform",
+    "duration",
+    "tags",
+    "genre",
+    "album",
+    "title",
+    "artist",
+    "cover",
+]
+hidden_columns = [
+    "waveform",
+    "notes",
+]
+default_sort = "bpm"
+default_sort_ascending = false
+vinyl_sort = "price"
+vinyl_sort_ascending = true
+vinyl_view = "list"
+radio_dock = "left"
+graph_arrange = "genres"
+graph_hide = [
+    "owned",
+    "wanted",
+    "dug",
+]
+nav_primary = "vinyl"
+export_convert_for_older_players = true
+export_comment = "notes_tags"
+nav_density = "icon"
+nav_collapsed = [
+    "playlists",
+    "crates",
+    "tags",
+]
+inspector_density = "narrow"
+inspector_open = true
+startup_view = "recent"
+auto_analyze = false
+cue_bar_open = true
+cue_quantize = false
+auto_write_tags = false
+onboarding_completed_version = 3
+convert_format = "mp3"
+convert_bitrate_kbps = "256"
+convert_out_dir = "/Users/dj/Music/converted"
+convert_in_place = false
+auto_convert = true
+auto_convert_sources = [
+    "flac",
+    "wav",
+    "aiff",
+    "aac",
+    "mp3",
+]
+volume = 0.5
+key_lock = true
+mid_start_videos = true
+mid_start_files = true
+waveform_color_mode = "spectrum"
+waveform_height_exp = 1.5
+waveform_band_gain = [
+    0.875,
+    0.75,
+    0.625,
+]
+waveform_energy_gain = 1.125
+waveform_band_colors = [
+    [
+    1,
+    2,
+    3,
+],
+    [
+    4,
+    5,
+    6,
+],
+    [
+    7,
+    8,
+    9,
+],
+]
+waveform_energy_colors = [
+    [
+    10,
+    11,
+    12,
+],
+    [
+    13,
+    14,
+    15,
+],
+    [
+    16,
+    17,
+    18,
+],
+    [
+    19,
+    20,
+    21,
+],
+    [
+    22,
+    23,
+    24,
+],
+]
+waveform_low_hz = 100.0
+waveform_mid_hz = 1800.0
+waveform_smoothing = 0.5
+waveform_smooth_attack_ms = 2.5
+waveform_smooth_release_ms = 45.0
+waveform_bass_floor_threshold = 0.375
+waveform_bass_floor_amount = 0.25
+
+[column_widths]
+artist = 180.5
+title = 240.0
+
+[[waveform_presets]]
+slot = 1
+color_mode = "energy"
+height_exp = 1.25
+band_gain = [
+    0.5,
+    0.625,
+    0.75,
+]
+energy_gain = 0.75
+band_colors = [
+    [
+    30,
+    31,
+    32,
+],
+    [
+    33,
+    34,
+    35,
+],
+    [
+    36,
+    37,
+    38,
+],
+]
+energy_colors = [
+    [
+    40,
+    41,
+    42,
+],
+    [
+    43,
+    44,
+    45,
+],
+    [
+    46,
+    47,
+    48,
+],
+    [
+    49,
+    50,
+    51,
+],
+    [
+    52,
+    53,
+    54,
+],
+]
+low_hz = 90.0
+mid_hz = 1500.0
+smoothing = 0.25
+smooth_attack_ms = 3.0
+smooth_release_ms = 80.0
+bass_floor_threshold = 0.125
+bass_floor_amount = 0.625
+
+[[waveform_presets]]
+slot = 5
+color_mode = "spectrum"
+height_exp = 2.0
+band_gain = [
+    1.5,
+    1.25,
+    1.0,
+]
+energy_gain = 1.5
+band_colors = [
+    [
+    60,
+    61,
+    62,
+],
+    [
+    63,
+    64,
+    65,
+],
+    [
+    66,
+    67,
+    68,
+],
+]
+energy_colors = [
+    [
+    70,
+    71,
+    72,
+],
+    [
+    73,
+    74,
+    75,
+],
+    [
+    76,
+    77,
+    78,
+],
+    [
+    79,
+    80,
+    81,
+],
+    [
+    82,
+    83,
+    84,
+],
+]
+low_hz = 150.0
+mid_hz = 2500.0
+smoothing = 1.0
+smooth_attack_ms = 0.5
+smooth_release_ms = 120.0
+bass_floor_threshold = 0.5
+bass_floor_amount = 0.875

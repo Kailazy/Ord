@@ -1,0 +1,26 @@
+# Keys an older build wrote, which today's code still reads.
+
+# v0.153's one mid-start switch carries over to the records switch.
+mid_start = true
+# The retired wide sidebar tier lands on the designed default.
+nav_density = "wide"
+# The retired inspector tiers named the old 320/440 pair.
+inspector_density = "expanded"
+# A key from a build this one has never heard of is ignored.
+some_future_key = 1
+
+# A value no build ever wrote falls back per field.
+discogs_auto_match = "nope"
+startup_view = "nope"
+export_comment = "nope"
+nav_primary = "nope"
+waveform_color_mode = "nope"
+radio_dock = "nope"
+graph_arrange = "nope"
+convert_format = "nope"
+default_sort = "nope"
+vinyl_sort = "nope"
+vinyl_view = "nope"
+graph_hide = ["nope"]
+hidden_release_mediums = ["nope"]
+column_order = ["nope", "artist"]

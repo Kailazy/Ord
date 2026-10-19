@@ -1122,4 +1122,261 @@ mod tests {
         }
         std::fs::remove_dir_all(&tmp).ok();
     }
+    const FULL: &str = include_str!("../tests/fixtures/config-full.toml");
+    const DEFAULTS: &str = include_str!("../tests/fixtures/config-defaults.toml");
+    const LEGACY: &str = include_str!("../tests/fixtures/config-legacy.toml");
+
+    /// The file format is pinned: a config written by this build, with every
+    /// field off its default, parses to exactly these values and writes back
+    /// byte for byte.
+    #[test]
+    fn full_fixture_parses_every_field_and_writes_back_identically() {
+        let expected = Config {
+            discogs_token: "tok-abc".into(),
+            hidden_release_mediums: ["vinyl", "cd", "digital", "cassette", "other"]
+                .map(String::from)
+                .to_vec(),
+            discogs_auto_fetch: false,
+            discogs_auto_match: "oldest".into(),
+            discogs_username: "kai".into(),
+            library_root: Some(PathBuf::from("/Users/dj/Music/seeker")),
+            column_order: [
+                "notes", "quality", "bitrate", "format", "key", "bpm", "added", "waveform",
+                "duration", "tags", "genre", "album", "title", "artist", "cover",
+            ]
+            .map(String::from)
+            .to_vec(),
+            hidden_columns: ["waveform", "notes"].map(String::from).to_vec(),
+            column_widths: [("artist".to_string(), 180.5), ("title".to_string(), 240.0)]
+                .into_iter()
+                .collect(),
+            default_sort: "bpm".into(),
+            default_sort_ascending: false,
+            vinyl_sort: "price".into(),
+            vinyl_sort_ascending: true,
+            vinyl_view: "list".into(),
+            radio_dock: "left".into(),
+            graph_arrange: "genres".into(),
+            graph_hide: ["owned", "wanted", "dug"].map(String::from).to_vec(),
+            nav_primary: "vinyl".into(),
+            export_convert_for_older_players: true,
+            export_comment: "notes_tags".into(),
+            nav_density: "icon".into(),
+            nav_collapsed: ["playlists", "crates", "tags"].map(String::from).to_vec(),
+            inspector_density: "narrow".into(),
+            inspector_open: true,
+            startup_view: "recent".into(),
+            auto_analyze: false,
+            cue_bar_open: true,
+            cue_quantize: false,
+            auto_write_tags: false,
+            onboarding_completed_version: 3,
+            convert_format: "mp3".into(),
+            convert_bitrate_kbps: "256".into(),
+            convert_out_dir: Some(PathBuf::from("/Users/dj/Music/converted")),
+            convert_in_place: false,
+            auto_convert: true,
+            auto_convert_sources: ["flac", "wav", "aiff", "aac", "mp3"].map(String::from).to_vec(),
+            volume: 0.5,
+            key_lock: true,
+            mid_start_videos: true,
+            mid_start_files: true,
+            waveform_color_mode: "spectrum".into(),
+            waveform_height_exp: 1.5,
+            waveform_band_gain: [0.875, 0.75, 0.625],
+            waveform_energy_gain: 1.125,
+            waveform_band_colors: [[1, 2, 3], [4, 5, 6], [7, 8, 9]],
+            waveform_energy_colors: [[10, 11, 12], [13, 14, 15], [16, 17, 18], [19, 20, 21], [22, 23, 24]],
+            waveform_low_hz: 100.0,
+            waveform_mid_hz: 1800.0,
+            waveform_smoothing: 0.5,
+            waveform_smooth_attack_ms: 2.5,
+            waveform_smooth_release_ms: 45.0,
+            waveform_bass_floor_threshold: 0.375,
+            waveform_bass_floor_amount: 0.25,
+            waveform_presets: vec![
+                WaveformPreset {
+                    slot: 1,
+                    color_mode: "energy".into(),
+                    height_exp: 1.25,
+                    band_gain: [0.5, 0.625, 0.75],
+                    energy_gain: 0.75,
+                    band_colors: [[30, 31, 32], [33, 34, 35], [36, 37, 38]],
+                    energy_colors: [[40, 41, 42], [43, 44, 45], [46, 47, 48], [49, 50, 51], [52, 53, 54]],
+                    low_hz: 90.0,
+                    mid_hz: 1500.0,
+                    smoothing: 0.25,
+                    smooth_attack_ms: 3.0,
+                    smooth_release_ms: 80.0,
+                    bass_floor_threshold: 0.125,
+                    bass_floor_amount: 0.625,
+                },
+                WaveformPreset {
+                    slot: 5,
+                    color_mode: "spectrum".into(),
+                    height_exp: 2.0,
+                    band_gain: [1.5, 1.25, 1.0],
+                    energy_gain: 1.5,
+                    band_colors: [[60, 61, 62], [63, 64, 65], [66, 67, 68]],
+                    energy_colors: [[70, 71, 72], [73, 74, 75], [76, 77, 78], [79, 80, 81], [82, 83, 84]],
+                    low_hz: 150.0,
+                    mid_hz: 2500.0,
+                    smoothing: 1.0,
+                    smooth_attack_ms: 0.5,
+                    smooth_release_ms: 120.0,
+                    bass_floor_threshold: 0.5,
+                    bass_floor_amount: 0.875,
+                },
+            ],
+        };
+        let parsed: Config = toml::from_str(FULL).unwrap();
+        // Every field, through Debug: exact for every type the config holds,
+        // and the literal above cannot omit a field.
+        assert_eq!(format!("{parsed:?}"), format!("{expected:?}"));
+        assert_eq!(toml::to_string_pretty(&parsed).unwrap(), FULL);
+    }
+
+    /// The defaults are pinned on disk, and an empty file loads exactly them.
+    #[test]
+    fn defaults_are_pinned_and_an_empty_file_loads_them() {
+        assert_eq!(toml::to_string_pretty(&Config::default()).unwrap(), DEFAULTS);
+        let empty: Config = toml::from_str("").unwrap();
+        assert_eq!(format!("{empty:?}"), format!("{:?}", Config::default()));
+    }
+
+    /// Old keys and values no build ever wrote keep loading, each landing on
+    /// its documented fallback.
+    #[test]
+    fn legacy_keys_and_unknown_values_still_load() {
+        use crate::graph::{Arrange, Status};
+        use crate::inspector::InspectorDensity;
+        use crate::radio::RadioDock;
+        use crate::sidebar::NavDensity;
+        use crate::util::format_from_key;
+        use crate::TableColumn;
+
+        let c: Config = toml::from_str(LEGACY).unwrap();
+        assert!(c.mid_start_videos);
+        assert!(!c.mid_start_files);
+        assert_eq!(NavDensity::from_key(&c.nav_density), NavDensity::Narrow);
+        assert_eq!(InspectorDensity::from_key(&c.inspector_density), InspectorDensity::Expanded);
+        assert_eq!(ReleaseAutoMatch::from_key(&c.discogs_auto_match), ReleaseAutoMatch::MostCollected);
+        assert_eq!(StartupView::from_key(&c.startup_view), StartupView::Library);
+        assert_eq!(ExportComment::from_key(&c.export_comment), ExportComment::Notes);
+        assert_eq!(NavPrimary::from_key(&c.nav_primary), NavPrimary::Digital);
+        assert_eq!(WaveformColorMode::from_key(&c.waveform_color_mode), WaveformColorMode::Energy);
+        assert_eq!(RadioDock::from_key(&c.radio_dock), RadioDock::Top);
+        assert_eq!(Arrange::from_key(&c.graph_arrange), Arrange::Artists);
+        assert_eq!(format_from_key(&c.convert_format), None);
+        assert!(TableColumn::from_key(&c.default_sort).is_none());
+        assert!(Status::hidden(&c.graph_hide).is_empty());
+        assert!(c.shows_release_format("CD, Album"));
+        assert_eq!(
+            c.column_order
+                .iter()
+                .map(|k| TableColumn::from_key(k).map(TableColumn::key))
+                .collect::<Vec<_>>(),
+            [None, Some("artist")]
+        );
+        // The vinyl grid's fallbacks (`views::VinylSort`, the grid/list switch)
+        // are private to that module; the strings reach it untouched.
+        assert_eq!(c.vinyl_sort, "nope");
+        assert_eq!(c.vinyl_view, "nope");
+    }
+
+    /// Every spelling each enum-valued field accepts writes back as itself,
+    /// and each enum's key pairs agree with those spellings.
+    #[test]
+    fn every_enum_key_round_trips_through_the_file() {
+        use crate::graph::{Arrange, Status};
+        use crate::inspector::InspectorDensity;
+        use crate::radio::RadioDock;
+        use crate::sidebar::NavDensity;
+        use crate::ui::nav::Tier;
+        use crate::util::format_from_key;
+        use crate::TableColumn;
+
+        const COLUMNS: [&str; 15] = [
+            "cover", "artist", "title", "album", "genre", "tags", "duration", "waveform",
+            "added", "bpm", "key", "format", "bitrate", "quality", "notes",
+        ];
+        const KEYS: &[(&str, &[&str])] = &[
+            ("discogs_auto_match", &["most_collected", "most_wanted", "oldest", "top_hit"]),
+            ("vinyl_sort", &["added", "price", "artist"]),
+            ("vinyl_view", &["grid", "list"]),
+            ("radio_dock", &["top", "bottom", "left", "right"]),
+            ("graph_arrange", &["artists", "genres"]),
+            ("nav_primary", &["digital", "vinyl"]),
+            ("export_comment", &["notes", "tags", "notes_tags", "none"]),
+            ("nav_density", &["icon", "narrow"]),
+            ("inspector_density", &["narrow", "regular"]),
+            ("startup_view", &["library", "vinyl", "recent"]),
+            ("waveform_color_mode", &["energy", "spectrum"]),
+            ("convert_format", &["mp3", "aac", "flac", "wav", "aiff"]),
+            ("default_sort", &COLUMNS),
+        ];
+        for (field, keys) in KEYS {
+            for key in *keys {
+                let line = format!("{field} = \"{key}\"");
+                let c: Config = toml::from_str(&line).unwrap();
+                let out = toml::to_string_pretty(&c).unwrap();
+                assert!(out.lines().any(|l| l == line), "{line} wrote back as something else");
+            }
+        }
+
+        fn pin<T: PartialEq + std::fmt::Debug + Copy>(
+            all: &[T],
+            key: fn(T) -> &'static str,
+            from_key: fn(&str) -> T,
+            fallback: T,
+        ) {
+            for v in all {
+                assert_eq!(from_key(key(*v)), *v);
+            }
+            assert_eq!(from_key("nope"), fallback);
+        }
+        pin(&NavPrimary::ALL, NavPrimary::key, NavPrimary::from_key, NavPrimary::Digital);
+        pin(
+            &ReleaseAutoMatch::ALL,
+            ReleaseAutoMatch::key,
+            ReleaseAutoMatch::from_key,
+            ReleaseAutoMatch::MostCollected,
+        );
+        pin(&StartupView::ALL, StartupView::key, StartupView::from_key, StartupView::Library);
+        pin(&ExportComment::ALL, ExportComment::key, ExportComment::from_key, ExportComment::Notes);
+        pin(
+            &[WaveformColorMode::Energy, WaveformColorMode::Spectrum],
+            WaveformColorMode::key,
+            WaveformColorMode::from_key,
+            WaveformColorMode::Energy,
+        );
+        pin(
+            &[RadioDock::Top, RadioDock::Bottom, RadioDock::Left, RadioDock::Right],
+            RadioDock::key,
+            RadioDock::from_key,
+            RadioDock::Top,
+        );
+        pin(&[Arrange::Artists, Arrange::Genres], Arrange::key, Arrange::from_key, Arrange::Artists);
+        pin(<NavDensity as Tier>::ALL, NavDensity::key, NavDensity::from_key, NavDensity::Narrow);
+        pin(
+            <InspectorDensity as Tier>::ALL,
+            InspectorDensity::key,
+            InspectorDensity::from_key,
+            InspectorDensity::Expanded,
+        );
+        assert_eq!(
+            ReleaseMedium::ALL.map(ReleaseMedium::key),
+            ["vinyl", "cd", "digital", "cassette", "other"]
+        );
+        for s in Status::ALL {
+            assert_eq!(Status::hidden(&[s.key().to_string()]), [s]);
+        }
+        assert_eq!(TableColumn::DEFAULT_ORDER.map(TableColumn::key), COLUMNS);
+        for col in TableColumn::DEFAULT_ORDER {
+            assert!(TableColumn::from_key(col.key()) == Some(col));
+        }
+        for key in ["mp3", "aac", "flac", "wav", "aiff"] {
+            assert_eq!(format_from_key(key).map(crate::util::format_key), Some(key));
+        }
+    }
 }

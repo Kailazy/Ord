@@ -1,0 +1,99 @@
+discogs_token = ""
+hidden_release_mediums = []
+discogs_auto_fetch = true
+discogs_auto_match = "most_collected"
+discogs_username = ""
+column_order = []
+hidden_columns = []
+default_sort = ""
+default_sort_ascending = true
+vinyl_sort = "added"
+vinyl_sort_ascending = false
+vinyl_view = "grid"
+radio_dock = "top"
+graph_arrange = ""
+graph_hide = []
+nav_primary = "digital"
+export_convert_for_older_players = false
+export_comment = "notes"
+nav_density = "wide"
+nav_collapsed = []
+inspector_density = "regular"
+inspector_open = false
+startup_view = "library"
+auto_analyze = true
+cue_bar_open = false
+cue_quantize = true
+auto_write_tags = true
+onboarding_completed_version = 0
+convert_format = "aiff"
+convert_bitrate_kbps = ""
+convert_in_place = true
+auto_convert = false
+auto_convert_sources = []
+volume = 1.0
+key_lock = false
+mid_start_videos = false
+mid_start_files = false
+waveform_color_mode = "energy"
+waveform_height_exp = 1.0099999904632568
+waveform_band_gain = [
+    1.0,
+    0.8500000238418579,
+    0.3799999952316284,
+]
+waveform_energy_gain = 0.8999999761581421
+waveform_band_colors = [
+    [
+    0,
+    50,
+    255,
+],
+    [
+    207,
+    156,
+    42,
+],
+    [
+    230,
+    241,
+    255,
+],
+]
+waveform_energy_colors = [
+    [
+    45,
+    80,
+    150,
+],
+    [
+    40,
+    160,
+    170,
+],
+    [
+    70,
+    190,
+    110,
+],
+    [
+    235,
+    195,
+    70,
+],
+    [
+    225,
+    75,
+    55,
+],
+]
+waveform_low_hz = 120.0
+waveform_mid_hz = 2000.0
+waveform_smoothing = 0.7900000214576721
+waveform_smooth_attack_ms = 1.2000000476837158
+waveform_smooth_release_ms = 60.0
+waveform_bass_floor_threshold = 0.20000000298023224
+waveform_bass_floor_amount = 0.25
+waveform_presets = []
+
+[column_widths]
