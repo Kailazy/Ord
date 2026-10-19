@@ -1658,7 +1658,7 @@ mod segmented_tests {
         }
         let out = Rc::new(Cell::new(None));
         let (o, r) = (out.clone(), rect.clone());
-        ctx.run(input, |ctx| {
+        let _ = ctx.run(input, |ctx| {
             egui::CentralPanel::default().show(ctx, |ui| {
                 let fired = segmented(ui, 120.0, "t", repeat, &CELLS);
                 r.set(ui.min_rect());
