@@ -1,8 +1,8 @@
 //! BPM-detection accuracy regression test against rekordbox ground truth.
 //!
 //! Runs the *production* `tempo::detect` over the same 79-track labelled sample set
-//! as `key_eval`, grading each detected BPM against the rekordbox value the user
-//! transcribed (the `BPM↣rb` column of KEY_CHECK.md). Asserts the within-2-BPM and
+//! as `key_eval` (`common::GROUND_TRUTH`), grading each detected BPM against the
+//! rekordbox value the user transcribed (the `BPM↣rb` column of KEY_CHECK.md). Asserts the within-2-BPM and
 //! modulo-octave rates stay at or above the calibrated baseline, so re-enabling and
 //! later tuning the tempo path can't silently regress it.
 //!
@@ -17,93 +17,11 @@
 //!
 //! Run: cargo test -p ordnung-core --test bpm_eval --release -- --ignored --nocapture
 
+mod common;
+
+use common::GROUND_TRUTH;
 use ordnung_core::analysis::{decode_mono_capped, downbeat, dsp, tempo};
 use std::path::PathBuf;
-
-/// (filename substring, rekordbox BPM). Needles match `key_eval`; BPM is the value
-/// after `↣` in KEY_CHECK.md (rekordbox's own reading — the target we grade against,
-/// even where rekordbox itself picked a half/double tempo, e.g. Requiem at 75).
-const GROUND_TRUTH: &[(&str, f32)] = &[
-    ("(38) [Toasty]", 141.0),
-    ("00 - Basso Ostinato", 125.0),
-    ("Lime In Da Coconut", 130.0),
-    ("303 Views", 125.0),
-    ("01 - B-PAX", 124.0),
-    ("Birmingham Screwdriver", 167.0),
-    ("Cascade Effect", 136.0),
-    ("01 - Dimensional", 118.0),
-    ("01 - Elevation", 125.0),
-    ("Enteroctopus Dofleini", 125.0),
-    ("01 - I Love Ya", 122.0),
-    ("Midtown 120 Intro", 120.0),
-    ("01 - Sentient", 130.0),
-    ("Phylyps Trak", 144.0),
-    ("Space Jelly", 127.0),
-    ("02 - Ifeksa", 146.0),
-    ("Midtown 120 Blues", 120.0),
-    ("Sistol - Keno", 127.0),
-    ("Ben Nevile", 127.0),
-    ("cell_out-transcendance", 131.0),
-    ("klint-horus", 143.0),
-    ("whip_it_good", 134.0),
-    ("02. Lava", 130.0),
-    ("Mine Has A Shower", 122.0),
-    ("basic_math_three", 127.0),
-    ("04 - Reptilian", 130.0),
-    ("04 Collider", 115.0),
-    ("bidoben-unfair", 140.0),
-    ("rene_wise-cutting_thick", 133.0),
-    ("tekra-ybbob", 131.0),
-    ("Kronberg 4", 126.0),
-    ("domina (maurizio", 129.0),
-    ("regis-point_of_entry", 134.0),
-    ("Baby Ford - Monolense", 133.0),
-    ("Dorisburg - Gripen", 125.0),
-    ("models of wellbeing", 73.0),
-    ("06 Lovesick", 104.0),
-    ("cabanne-fraisheur", 126.0),
-    ("Exit Strategy", 135.0),
-    ("07 All That Nothing", 128.0),
-    ("graviton", 125.0),
-    ("metapattern-pseudo_user", 137.0),
-    ("Fresh (Sprinkles Alt", 120.0),
-    ("The Etheric Body", 134.0),
-    ("Circul Globus", 125.0),
-    ("1.02. Oriel", 125.0),
-    ("dinky-twelve_to_four", 125.0),
-    ("marcel_dettman-scourer", 130.0),
-    ("scb-down_moment", 125.0),
-    ("wenn_meine_mutti", 123.0),
-    ("Deuce-Cue Ed", 130.0),
-    ("ABRAX - OCB", 126.0),
-    ("trance me up", 128.0),
-    ("Made Your Point", 113.0),
-    ("Neoclassicdub", 128.0),
-    ("Basso Ostinato.mp3", 124.0),
-    ("There's Galaxies Better", 126.0),
-    ("Dub 22", 150.0),
-    ("Double Lardon", 128.0),
-    ("Ouane Forzeshow", 124.0),
-    ("New Atlantis", 135.0),
-    ("Transform Into Glass", 135.0),
-    ("Cut 06", 126.0),
-    ("EARTH JUMP", 140.0),
-    ("Sand Blind", 121.0),
-    ("J1. GS", 126.0),
-    ("Detune (AWSI", 129.0),
-    ("Mullet is in da house", 128.0),
-    ("Scania", 133.0),
-    ("RB208", 140.0),
-    ("Klong", 125.0),
-    ("Undertow", 129.0),
-    ("Rezzett-Doyce", 129.0),
-    ("When Will We Leave", 120.0),
-    ("Ultimo Sentenza", 125.0),
-    ("Not Your Business", 146.0),
-    ("Young Seth - Moment", 122.0),
-    ("gadget o'flow", 128.0),
-    ("tadeo - requiem", 75.0),
-];
 
 /// Tolerance for an "ok" match (rekordbox rounds to whole BPM; our lock is <0.5 off
 /// on steady material, so 2 BPM absorbs rounding + genuine near-misses like KEY_CHECK).
@@ -146,7 +64,7 @@ fn bpm_accuracy_regression() {
     let (mut ok, mut octave, mut miss, mut total) = (0, 0, 0, 0);
     let mut rows: Vec<(char, &str, f32, f32)> = Vec::new();
 
-    for &(needle, want) in GROUND_TRUTH {
+    for &(needle, _, want) in GROUND_TRUTH {
         let path = std::fs::read_dir(&dir)
             .unwrap()
             .filter_map(|e| e.ok())
@@ -218,7 +136,7 @@ fn downbeat_phase_probe() {
     }
     let mut counts = [0usize; 4];
     println!("\n--- detected bar phase (0 = first detected beat is the downbeat) ---");
-    for &(needle, _) in GROUND_TRUTH {
+    for &(needle, _, _) in GROUND_TRUTH {
         let path = std::fs::read_dir(&dir)
             .unwrap()
             .filter_map(|e| e.ok())

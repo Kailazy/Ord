@@ -1,104 +1,19 @@
 //! Key-detection accuracy regression test against rekordbox ground truth.
 //!
-//! Runs the *production* `key::detect` over the 79-track labelled sample set and
-//! grades each call against the rekordbox Camelot the user transcribed (KEY_CHECK.md).
+//! Runs the *production* `key::detect` over the 79-track labelled sample set
+//! (`common::GROUND_TRUTH`) and grades each call against the rekordbox Camelot the
+//! user transcribed (KEY_CHECK.md).
 //! Asserts the exact/compatible rates stay at or above the calibrated baseline, so a
 //! future chroma/profile change can't silently regress key accuracy.
 //!
 //! Run: cargo test -p ordnung-core --test key_eval --release -- --ignored --nocapture
 
+mod common;
+
+use common::GROUND_TRUTH;
 use ordnung_core::analysis::{decode_mono_capped, dsp, key};
-use ordnung_core::model::key::{Camelot, Mode};
+use ordnung_core::model::key::{Camelot, Key, Mode};
 use std::path::PathBuf;
-
-/// (filename substring, rekordbox Camelot). Transcribed from KEY_CHECK.md.
-const GROUND_TRUTH: &[(&str, &str)] = &[
-    ("(38) [Toasty]", "11B"),
-    ("00 - Basso Ostinato", "10A"),
-    ("Lime In Da Coconut", "1A"),
-    ("303 Views", "12A"),
-    ("01 - B-PAX", "11A"),
-    ("Birmingham Screwdriver", "1A"),
-    ("Cascade Effect", "8A"),
-    ("01 - Dimensional", "10A"),
-    ("01 - Elevation", "9A"),
-    ("Enteroctopus Dofleini", "6A"),
-    ("01 - I Love Ya", "1A"),
-    ("Midtown 120 Intro", "4A"),
-    ("01 - Sentient", "11A"),
-    ("Phylyps Trak", "6B"),
-    ("Space Jelly", "3A"),
-    ("02 - Ifeksa", "6A"),
-    ("Midtown 120 Blues", "2A"),
-    ("Sistol - Keno", "1B"),
-    ("Ben Nevile", "3A"),
-    ("cell_out-transcendance", "5A"),
-    ("klint-horus", "6A"),
-    ("whip_it_good", "2A"),
-    ("02. Lava", "6A"),
-    ("Mine Has A Shower", "6B"),
-    ("basic_math_three", "2A"),
-    ("04 - Reptilian", "4A"),
-    ("04 Collider", "1A"),
-    ("bidoben-unfair", "1A"),
-    ("rene_wise-cutting_thick", "11A"),
-    ("tekra-ybbob", "8A"),
-    ("Kronberg 4", "9A"),
-    ("domina (maurizio", "1A"),
-    ("regis-point_of_entry", "10A"),
-    ("Baby Ford - Monolense", "9A"),
-    ("Dorisburg - Gripen", "6A"),
-    ("models of wellbeing", "8A"),
-    ("06 Lovesick", "8A"),
-    ("cabanne-fraisheur", "1A"),
-    ("Exit Strategy", "1A"),
-    ("07 All That Nothing", "1A"),
-    ("graviton", "7A"),
-    ("metapattern-pseudo_user", "1A"),
-    ("Fresh (Sprinkles Alt", "8A"),
-    ("The Etheric Body", "4A"),
-    ("Circul Globus", "10A"),
-    ("1.02. Oriel", "10B"),
-    ("dinky-twelve_to_four", "8A"),
-    ("marcel_dettman-scourer", "11A"),
-    ("scb-down_moment", "11A"),
-    ("wenn_meine_mutti", "11A"),
-    ("Deuce-Cue Ed", "10A"),
-    ("ABRAX - OCB", "1A"),
-    ("trance me up", "1A"),
-    ("Made Your Point", "3A"),
-    ("Neoclassicdub", "5B"),
-    ("Basso Ostinato.mp3", "10A"),
-    ("There's Galaxies Better", "10A"),
-    ("Dub 22", "10A"),
-    ("Double Lardon", "6A"),
-    ("Ouane Forzeshow", "11A"),
-    ("New Atlantis", "3A"),
-    ("Transform Into Glass", "4A"),
-    ("Cut 06", "6A"),
-    ("EARTH JUMP", "8B"),
-    ("Sand Blind", "1A"),
-    ("J1. GS", "4B"),
-    ("Detune (AWSI", "1A"),
-    ("Mullet is in da house", "5A"),
-    ("Scania", "11A"),
-    ("RB208", "6A"),
-    ("Klong", "1A"),
-    ("Undertow", "3A"),
-    ("Rezzett-Doyce", "1A"),
-    ("When Will We Leave", "7A"),
-    ("Ultimo Sentenza", "2A"),
-    ("Not Your Business", "5A"),
-    ("Young Seth - Moment", "1A"),
-    ("gadget o'flow", "7A"),
-    ("tadeo - requiem", "1A"),
-];
-
-fn parse_camelot(s: &str) -> Camelot {
-    let major = s.ends_with('B');
-    let number = s[..s.len() - 1].parse::<u8>().unwrap();
-    Camelot { number, major }
-}
 
 #[derive(PartialEq, Clone, Copy)]
 enum Grade {
@@ -143,7 +58,7 @@ fn key_accuracy_regression() {
         (0, 0, 0, 0, 0, 0, 0);
     let mut rows: Vec<(char, &str, String, &str)> = Vec::new();
 
-    for &(needle, gt) in GROUND_TRUTH {
+    for &(needle, gt, _) in GROUND_TRUTH {
         let path = std::fs::read_dir(&dir)
             .unwrap()
             .filter_map(|e| e.ok())
@@ -158,7 +73,7 @@ fn key_accuracy_regression() {
         };
         let spec = dsp::spectrogram(&audio.samples, audio.sample_rate);
         total += 1;
-        let want = parse_camelot(gt);
+        let want = Key::parse(gt).unwrap().camelot();
         let (label, g) = match key::detect(&spec) {
             Some(k) => {
                 if k.mode == Mode::Minor {
