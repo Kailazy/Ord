@@ -134,24 +134,10 @@ pub(crate) fn source_font() -> egui::FontId {
     font::strong(font::headline().size)
 }
 
-/// A full-width rectangular navigation button for the sidebar. `height`
-/// sizes the tile and `font` its label; `selected` paints the muted accent
+/// A rectangular navigation button for the sidebar. `width` and `height`
+/// size the tile and `font` its label; `selected` paints the muted accent
 /// fill. The `Response` is returned so callers can wire clicks, drag-and-drop
 /// drop targets and context menus on top of it.
-pub(crate) fn nav_button(
-    ui: &mut egui::Ui,
-    label: &str,
-    selected: bool,
-    height: f32,
-    font: egui::FontId,
-) -> egui::Response {
-    let w = ui.available_width();
-    nav_button_sized(ui, label, selected, w, height, font)
-}
-
-/// Like [`nav_button`] but with an explicit tile `width` instead of filling the
-/// available space — used when two tiles share a row (e.g. the big "Library"
-/// tile alongside the smaller "Recent" tile).
 pub(crate) fn nav_button_sized(
     ui: &mut egui::Ui,
     label: &str,
@@ -719,7 +705,7 @@ pub(crate) fn playlist_row(
     // a playlist's chosen icon keeps its chosen hue whether or not the row
     // is selected.
     let resp = if density.icons_only() {
-        rail_tile(ui, "", selected).on_hover_note(name)
+        rail_tile_sized(ui, "", selected, RAIL_GLYPH).on_hover_note(name)
     } else {
         // The track count is painted over the tile's right end, so the name is
         // truncated to leave that lane clear — otherwise a long name runs
@@ -1607,12 +1593,12 @@ pub(crate) fn nav_button_painted(
     // captions are gone.
     let r = if density.icons_only() { 10.0 } else { 7.5 };
     let resp = if density.icons_only() {
-        rail_tile(ui, "", selected)
+        rail_tile_sized(ui, "", selected, RAIL_GLYPH)
     } else {
         // Indent the label with spaces to clear the mark, which is painted over
         // the tile afterwards. Crude, but it keeps every nav tile going through
         // the one `nav_button` path rather than forking the layout.
-        nav_button(ui, &format!("       {label}"), selected, height, font)
+        nav_button_sized(ui, &format!("       {label}"), selected, ui.available_width(), height, font)
     };
     let cx = if density.icons_only() {
         resp.rect.center().x
@@ -1625,14 +1611,6 @@ pub(crate) fn nav_button_painted(
     // above the lists under them.
     draw(ui.painter(), egui::pos2(cx, resp.rect.center().y), color::LABEL, r);
     resp
-}
-
-/// One square target in the rail tier: a glyph centred in a fixed
-/// [`NavDensity::RAIL_TILE`] box, itself centred in the rail's width. Every
-/// rail tile is this exact size, whatever it stands for, so the rail is a
-/// predictable column your eye can run down.
-pub(crate) fn rail_tile(ui: &mut egui::Ui, icon: &str, selected: bool) -> egui::Response {
-    rail_tile_sized(ui, icon, selected, RAIL_GLYPH)
 }
 
 /// Glyph point size for an ordinary rail tile (a playlist, a USB volume).
@@ -1698,7 +1676,11 @@ pub(crate) fn rail_add_tile(ui: &mut egui::Ui) -> egui::Response {
     .inner
 }
 
-/// [`rail_tile`] with an explicit glyph size, so the rail can rank its entries.
+/// One square target in the rail tier: a glyph centred in a fixed
+/// [`NavDensity::RAIL_TILE`] box, itself centred in the rail's width. Every
+/// rail tile is this exact size, whatever it stands for, so the rail is a
+/// predictable column your eye can run down; `glyph` is the point size, so
+/// the rail can rank its entries.
 pub(crate) fn rail_tile_sized(
     ui: &mut egui::Ui,
     icon: &str,
