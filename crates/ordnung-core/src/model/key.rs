@@ -91,21 +91,6 @@ impl Key {
         }
     }
 
-    /// Open Key number 1..=12 with 'd' (major) / 'm' (minor). C major = 1d.
-    pub fn open_key(self) -> String {
-        let c = self.camelot();
-        let open = ((c.number + 12 - 8) % 12) + 1; // shift so Camelot 8 -> Open Key 1
-        format!("{}{}", open, if c.major { 'd' } else { 'm' })
-    }
-
-    /// Classical name, e.g. "Am", "C", "F#m".
-    pub fn classical(self) -> String {
-        match self.mode {
-            Mode::Major => self.tonic.name().to_string(),
-            Mode::Minor => format!("{}m", self.tonic.name()),
-        }
-    }
-
     /// Default display: Camelot label.
     pub fn display(self) -> String {
         self.camelot().label()
@@ -140,8 +125,8 @@ impl Key {
             if !(1..=12).contains(&number) {
                 return None;
             }
-            // Open Key is the same wheel rotated so Camelot 8 reads as 1 (see
-            // `open_key`); fold it onto the Camelot number first.
+            // Open Key is the same wheel rotated so Camelot 8 reads as 1; fold
+            // it onto the Camelot number first.
             let (number, major) = match last.to_ascii_uppercase() {
                 'B' => (number, true),
                 'A' => (number, false),
@@ -223,8 +208,6 @@ mod tests {
             for mode in [Mode::Major, Mode::Minor] {
                 let k = key(pc, mode);
                 assert_eq!(Key::parse(&k.camelot().label()), Some(k));
-                assert_eq!(Key::parse(&k.classical()), Some(k));
-                assert_eq!(Key::parse(&k.open_key()), Some(k));
             }
         }
         assert_eq!(Key::parse(""), None);
@@ -258,20 +241,6 @@ mod tests {
             "all 12 Camelot numbers present for major keys"
         );
         assert!(seen.iter().all(|&n| (1..=12).contains(&n)));
-    }
-
-    #[test]
-    fn open_key_mapping() {
-        assert_eq!(key(0, Mode::Major).open_key(), "1d"); // C major
-        assert_eq!(key(9, Mode::Minor).open_key(), "1m"); // A minor
-        assert_eq!(key(7, Mode::Major).open_key(), "2d"); // G major
-    }
-
-    #[test]
-    fn classical_names() {
-        assert_eq!(key(9, Mode::Minor).classical(), "Am");
-        assert_eq!(key(0, Mode::Major).classical(), "C");
-        assert_eq!(key(6, Mode::Minor).classical(), "F#m");
     }
 
     #[test]

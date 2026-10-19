@@ -2684,15 +2684,6 @@ impl Catalog {
         Ok(())
     }
 
-    /// Undo [`ignore_duplicate_group`] — the group can be reported again.
-    pub fn unignore_duplicate_group(&self, group_key: &str) -> Result<()> {
-        self.conn.execute(
-            "DELETE FROM ignored_duplicates WHERE group_key = ?1",
-            params![group_key],
-        )?;
-        Ok(())
-    }
-
     /// Tracks in one playlist, in playlist order (`playlist_tracks.position`),
     /// optionally narrowed by the same substring filter `list_tracks` uses.
     /// Folders have no tracks and yield an empty vec. Mirrors `list_tracks` so
@@ -4262,18 +4253,6 @@ impl Catalog {
         Ok(())
     }
 
-    pub fn rename_tracklist(&self, tracklist_id: Id, name: &str) -> Result<()> {
-        let name = name.trim();
-        if name.is_empty() {
-            return Err(Error::Invalid("a tracklist needs a name".into()));
-        }
-        self.conn.execute(
-            "UPDATE tracklists SET name = ?2 WHERE id = ?1",
-            params![tracklist_id as i64, name],
-        )?;
-        Ok(())
-    }
-
     /// Delete a tracklist and its lines. Records it matched stay on the map.
     pub fn delete_tracklist(&self, tracklist_id: Id) -> Result<()> {
         self.conn.execute(
@@ -4767,41 +4746,6 @@ impl Catalog {
             });
         }
         Ok(out)
-    }
-
-    /// One playlist (or folder) with its ordered `track_ids`.
-    pub fn get_playlist(&self, id: Id) -> Result<Playlist> {
-        let (name, parent, is_folder, icon, color) = self
-            .conn
-            .query_row(
-                "SELECT name, parent_id, is_folder, icon, color FROM playlists WHERE id=?1",
-                params![id as i64],
-                |r| {
-                    Ok((
-                        r.get::<_, String>(0)?,
-                        r.get::<_, Option<i64>>(1)?.map(|v| v as Id),
-                        r.get::<_, i64>(2)? != 0,
-                        r.get::<_, Option<String>>(3)?,
-                        r.get::<_, Option<i64>>(4)?.map(|c| c as u32),
-                    ))
-                },
-            )
-            .optional()?
-            .ok_or_else(|| Error::NotFound(format!("playlist {id}")))?;
-        let track_ids = if is_folder {
-            Vec::new()
-        } else {
-            self.playlist_track_ids(id)?
-        };
-        Ok(Playlist {
-            id,
-            name,
-            parent,
-            is_folder,
-            track_ids,
-            icon,
-            color,
-        })
     }
 
     /// Set a playlist's or folder's icon (an icon-library name) and colour
@@ -5419,6 +5363,10 @@ impl Drop for DetailFetchGuard {
 mod tests {
     use super::*;
 
+    fn playlist(cat: &Catalog, id: Id) -> Playlist {
+        cat.list_playlists().unwrap().into_iter().find(|p| p.id == id).unwrap()
+    }
+
     fn scanned(path: &str, artist: &str, genre: &str, duration_ms: u64) -> ScannedTrack {
         ScannedTrack {
             source_path: path.to_string(),
@@ -5584,7 +5532,7 @@ mod tests {
         assert_eq!(cat.count().unwrap(), 1, "no duplicate row");
         assert_eq!(cat.get_track(id).unwrap().source_path, "/no/such/new/a.mp3");
         assert_eq!(
-            cat.get_playlist(pl).unwrap().track_ids,
+            playlist(&cat, pl).track_ids,
             vec![id],
             "playlist link survived the move"
         );
@@ -5733,12 +5681,6 @@ mod tests {
         cat.ignore_duplicate_group(&key).unwrap();
         assert!(cat.find_duplicates().unwrap().is_empty());
 
-        cat.unignore_duplicate_group(&key).unwrap();
-        assert_eq!(
-            cat.find_duplicates().unwrap().len(),
-            1,
-            "un-dismiss restores it"
-        );
         std::fs::remove_dir_all(&dir).ok();
     }
 
@@ -5980,7 +5922,7 @@ mod tests {
         );
         // Playlist row survives but holds no tracks.
         assert!(
-            cat.get_playlist(pl).unwrap().track_ids.is_empty(),
+            playlist(&cat, pl).track_ids.is_empty(),
             "playlist emptied"
         );
     }
@@ -6331,8 +6273,6 @@ mod tests {
         assert!(cat.update_tracklist(id, "  ", text2, &lines2).is_err());
         assert!(cat.update_tracklist(999, "x", text2, &lines2).is_err());
 
-        cat.rename_tracklist(id, "Deep Space 2019").unwrap();
-        assert_eq!(cat.list_tracklists().unwrap()[0].name, "Deep Space 2019");
         cat.delete_tracklist(id).unwrap();
         assert!(cat.list_tracklists().unwrap().is_empty());
         assert!(cat.tracklist_entries(id).unwrap().is_empty());
@@ -6371,7 +6311,7 @@ mod tests {
         // the survivor stays. Unknown ids are skipped, not counted.
         assert_eq!(cat.delete_tracks(&[t1, t2, 9999]).unwrap(), 2);
         assert_eq!(cat.count().unwrap(), 1);
-        assert_eq!(cat.get_playlist(pl).unwrap().track_ids, vec![t3]);
+        assert_eq!(playlist(&cat, pl).track_ids, vec![t3]);
         assert!(cat.get_track(t1).is_err());
         assert!(cat.get_track(t3).is_ok());
     }
@@ -6395,10 +6335,10 @@ mod tests {
         assert_eq!(cat.replace_tracks(&[(aiff, mp3)]).unwrap(), 1);
 
         // A: the aiff inherits the mp3's exact slot (position preserved).
-        assert_eq!(cat.get_playlist(a).unwrap().track_ids, vec![t2, aiff, t3]);
+        assert_eq!(playlist(&cat, a).track_ids, vec![t2, aiff, t3]);
         // B: the aiff was already present, so the mp3 is just dropped and the
         // aiff keeps its original position — no duplicate entry.
-        assert_eq!(cat.get_playlist(b).unwrap().track_ids, vec![aiff, t2]);
+        assert_eq!(playlist(&cat, b).track_ids, vec![aiff, t2]);
         // The mp3 is gone from the catalog; the aiff survives.
         assert!(cat.get_track(mp3).is_err());
         assert!(cat.get_track(aiff).is_ok());
@@ -6415,30 +6355,30 @@ mod tests {
         assert_eq!(cat.add_tracks(pl, &[t1, t2, t3]).unwrap(), 3);
         // Duplicates are skipped.
         assert_eq!(cat.add_tracks(pl, &[t2]).unwrap(), 0);
-        assert_eq!(cat.get_playlist(pl).unwrap().track_ids, vec![t1, t2, t3]);
+        assert_eq!(playlist(&cat, pl).track_ids, vec![t1, t2, t3]);
 
         // Reorder to a permutation.
         cat.reorder_tracks(pl, &[t3, t1, t2]).unwrap();
-        assert_eq!(cat.get_playlist(pl).unwrap().track_ids, vec![t3, t1, t2]);
+        assert_eq!(playlist(&cat, pl).track_ids, vec![t3, t1, t2]);
 
         // Remove one.
         assert_eq!(cat.remove_tracks(pl, &[t1]).unwrap(), 1);
-        assert_eq!(cat.get_playlist(pl).unwrap().track_ids, vec![t3, t2]);
+        assert_eq!(playlist(&cat, pl).track_ids, vec![t3, t2]);
 
         // The playlist is nested under the folder.
-        assert_eq!(cat.get_playlist(pl).unwrap().parent, Some(folder));
+        assert_eq!(playlist(&cat, pl).parent, Some(folder));
     }
 
     #[test]
     fn playlist_look_round_trips_and_clears() {
         let cat = Catalog::open(":memory:").unwrap();
         let pl = cat.create_playlist("Warmup", None, false).unwrap();
-        let fresh = cat.get_playlist(pl).unwrap();
+        let fresh = playlist(&cat, pl);
         assert_eq!((fresh.icon, fresh.color), (None, None), "default look");
 
         cat.set_playlist_look(pl, Some("vinyl-record"), Some(0xFF9F0A))
             .unwrap();
-        let got = cat.get_playlist(pl).unwrap();
+        let got = playlist(&cat, pl);
         assert_eq!(got.icon.as_deref(), Some("vinyl-record"));
         assert_eq!(got.color, Some(0xFF9F0A));
         let listed = cat.list_playlists().unwrap();
@@ -6447,10 +6387,10 @@ mod tests {
 
         // Either half clears on its own.
         cat.set_playlist_look(pl, None, Some(0xFF9F0A)).unwrap();
-        let got = cat.get_playlist(pl).unwrap();
+        let got = playlist(&cat, pl);
         assert_eq!((got.icon, got.color), (None, Some(0xFF9F0A)));
         cat.set_playlist_look(pl, None, None).unwrap();
-        let got = cat.get_playlist(pl).unwrap();
+        let got = playlist(&cat, pl);
         assert_eq!((got.icon, got.color), (None, None));
 
         assert!(cat.set_playlist_look(999, Some("x"), None).is_err());
@@ -6546,7 +6486,7 @@ mod tests {
         let cat = Catalog::open(&path).unwrap();
         let all = cat.list_playlists().unwrap();
         assert_eq!(all.len(), 2);
-        let reloaded = cat.get_playlist(pl).unwrap();
+        let reloaded = playlist(&cat, pl);
         assert_eq!(reloaded.name, "Night");
         assert_eq!(reloaded.parent, Some(folder));
         assert_eq!(
