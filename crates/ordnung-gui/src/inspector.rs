@@ -575,14 +575,14 @@ impl App {
                             .num_columns(2)
                             .spacing(egui::vec2(space::S3, space::S2))
                             .show(ui, |ui| {
-                                edit_row(ui, "Title", &mut self.tag_edit.title);
-                                edit_row(ui, "Artist", &mut self.tag_edit.artist);
-                                edit_row(ui, "Album artist", &mut self.tag_edit.album_artist);
-                                edit_row(ui, "Album", &mut self.tag_edit.album);
-                                edit_row(ui, "Genre", &mut self.tag_edit.genre);
-                                edit_row(ui, "Label", &mut self.tag_edit.label);
-                                edit_row(ui, "Year", &mut self.tag_edit.year);
-                                edit_row_multiline(ui, "Notes", &mut self.tag_edit.comment);
+                                edit_row(ui, "Title", &mut self.tag_edit.title, false);
+                                edit_row(ui, "Artist", &mut self.tag_edit.artist, false);
+                                edit_row(ui, "Album artist", &mut self.tag_edit.album_artist, false);
+                                edit_row(ui, "Album", &mut self.tag_edit.album, false);
+                                edit_row(ui, "Genre", &mut self.tag_edit.genre, false);
+                                edit_row(ui, "Label", &mut self.tag_edit.label, false);
+                                edit_row(ui, "Year", &mut self.tag_edit.year, false);
+                                edit_row(ui, "Notes", &mut self.tag_edit.comment, true);
                             });
 
                         ui.add_space(8.0);
@@ -1061,7 +1061,7 @@ pub(crate) fn has_value(v: &Option<String>) -> bool {
 pub(crate) fn tag_view_row(ui: &mut egui::Ui, label: &str, value: &str) {
     let v = value.trim();
     if v.is_empty() {
-        inspector_row_dim(ui, label, "—");
+        row_impl(ui, label, "—", Some(ui.visuals().weak_text_color()));
     } else {
         inspector_row(ui, label, v);
     }
@@ -1072,12 +1072,6 @@ pub(crate) fn tag_view_row(ui: &mut egui::Ui, label: &str, value: &str) {
 /// x for every row.
 pub(crate) fn inspector_row(ui: &mut egui::Ui, label: &str, value: &str) {
     row_impl(ui, label, value, None);
-}
-
-/// [`inspector_row`] with the value dimmed — used for "not set" placeholders.
-pub(crate) fn inspector_row_dim(ui: &mut egui::Ui, label: &str, value: &str) {
-    let c = ui.visuals().weak_text_color();
-    row_impl(ui, label, value, Some(c));
 }
 
 fn row_impl(ui: &mut egui::Ui, label: &str, value: &str, value_color: Option<egui::Color32>) {
@@ -1133,38 +1127,23 @@ pub(crate) fn opt_row(ui: &mut egui::Ui, label: &str, value: &Option<String>) {
     }
 }
 
-/// One editable label + single-line field row inside the inspector's edit grid.
-/// `ui.end_row()` advances the surrounding `egui::Grid`.
-pub(crate) fn edit_row(ui: &mut egui::Ui, label: &str, value: &mut String) {
+/// One editable label + field row inside the inspector's edit grid: a
+/// single-line field, or with `multiline` a wrapping two-line box for
+/// free-form text such as the comment/notes field, which is often longer
+/// than one line. `ui.end_row()` advances the surrounding `egui::Grid`.
+pub(crate) fn edit_row(ui: &mut egui::Ui, label: &str, value: &mut String, multiline: bool) {
     use crate::ui::tokens::{color, font};
     ui.label(
         egui::RichText::new(label)
             .font(font::footnote())
             .color(color::LABEL_3),
     );
-    ui.add(
+    let field = if multiline {
+        crate::ui::field::Field::multiline(value).rows(2)
+    } else {
         crate::ui::field::Field::singleline(value)
-            .hint("—")
-            .width(f32::INFINITY),
-    );
-    ui.end_row();
-}
-
-/// Like [`edit_row`] but a wrapping, multi-line box — for free-form text such as
-/// the comment/notes field, which is often longer than one line.
-pub(crate) fn edit_row_multiline(ui: &mut egui::Ui, label: &str, value: &mut String) {
-    use crate::ui::tokens::{color, font};
-    ui.label(
-        egui::RichText::new(label)
-            .font(font::footnote())
-            .color(color::LABEL_3),
-    );
-    ui.add(
-        crate::ui::field::Field::multiline(value)
-            .hint("—")
-            .rows(2)
-            .width(f32::INFINITY),
-    );
+    };
+    ui.add(field.hint("—").width(f32::INFINITY));
     ui.end_row();
 }
 
