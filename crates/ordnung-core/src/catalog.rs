@@ -1821,19 +1821,19 @@ impl Catalog {
         Ok(())
     }
 
-    /// The cached pressings of a master, if listed within `max_age_secs`.
-    /// A row that no longer deserializes is a miss, not an error.
-    pub fn cached_master_versions(
+    /// The cached pressings of a master, if listed within
+    /// [`MASTER_VERSIONS_MAX_AGE_SECS`]. A row that no longer deserializes is
+    /// a miss, not an error.
+    fn cached_master_versions(
         &self,
         master_id: u64,
-        max_age_secs: i64,
     ) -> Result<Option<Vec<crate::discogs::MasterVersion>>> {
         let json: Option<String> = self
             .conn
             .query_row(
                 "SELECT versions_json FROM master_versions_cache
                  WHERE master_id=?1 AND fetched_at >= unixepoch() - ?2",
-                params![master_id as i64, max_age_secs],
+                params![master_id as i64, MASTER_VERSIONS_MAX_AGE_SECS],
                 |r| r.get(0),
             )
             .optional()?;
@@ -1841,7 +1841,7 @@ impl Catalog {
     }
 
     /// Remember a master's pressings, replacing any older listing.
-    pub fn cache_master_versions(
+    fn cache_master_versions(
         &self,
         master_id: u64,
         versions: &[crate::discogs::MasterVersion],
@@ -1870,7 +1870,7 @@ impl Catalog {
     where
         F: FnOnce() -> Result<Vec<crate::discogs::MasterVersion>>,
     {
-        if let Some(v) = self.cached_master_versions(master_id, MASTER_VERSIONS_MAX_AGE_SECS)? {
+        if let Some(v) = self.cached_master_versions(master_id)? {
             return Ok(v);
         }
         let versions = fetch()?;
