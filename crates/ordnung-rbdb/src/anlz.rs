@@ -62,7 +62,7 @@ pub struct AnlzWaveforms {
 /// The `(offset, length)` of each section of a `PMAI` file, in file order,
 /// and the offset the walk reached (the file's length when the sections tile
 /// it). `None` when the file isn't `PMAI`; a malformed length ends the walk.
-pub(crate) fn section_spans(data: &[u8]) -> Option<(Vec<(usize, usize)>, usize)> {
+pub fn section_spans(data: &[u8]) -> Option<(Vec<(usize, usize)>, usize)> {
     if data.get(0..4) != Some(b"PMAI") {
         return None;
     }
@@ -969,21 +969,19 @@ mod tests {
 
     /// Walk a PMAI file: (tag, len_header, len_tag) triples must tile it.
     fn walk(data: &[u8]) -> Vec<(String, u32, u32)> {
-        assert_eq!(&data[0..4], b"PMAI");
-        let flen = u32::from_be_bytes(data[8..12].try_into().unwrap()) as usize;
-        assert_eq!(flen, data.len());
-        let mut off = u32::from_be_bytes(data[4..8].try_into().unwrap()) as usize;
-        let mut out = Vec::new();
-        while off + 12 <= data.len() {
-            let tag = String::from_utf8_lossy(&data[off..off + 4]).into_owned();
-            let lh = u32::from_be_bytes(data[off + 4..off + 8].try_into().unwrap());
-            let lt = u32::from_be_bytes(data[off + 8..off + 12].try_into().unwrap());
-            assert!(lt as usize >= 12, "section {tag} too short");
-            out.push((tag, lh, lt));
-            off += lt as usize;
-        }
-        assert_eq!(off, data.len(), "sections must tile the file exactly");
-        out
+        let (spans, end) = section_spans(data).expect("PMAI");
+        assert_eq!(u32_at(data, 8), Some(data.len() as u32));
+        assert_eq!(end, data.len(), "sections must tile the file exactly");
+        spans
+            .into_iter()
+            .map(|(off, _)| {
+                (
+                    String::from_utf8_lossy(&data[off..off + 4]).into_owned(),
+                    u32_at(data, off + 4).unwrap(),
+                    u32_at(data, off + 8).unwrap(),
+                )
+            })
+            .collect()
     }
 
     #[test]

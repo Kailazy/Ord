@@ -69,21 +69,16 @@ fn track(id: u64, path: &Path, format: Format, title: &str, artist: &str) -> Tra
     }
 }
 
-/// Minimal big-endian ANLZ walker for verifying our own output.
+/// Our own ANLZ output walked by the crate's section parser: (tag, offset, len_tag).
 fn anlz_sections(data: &[u8]) -> Vec<(String, usize, usize)> {
-    assert_eq!(&data[0..4], b"PMAI");
+    let (spans, end) = ordnung_rbdb::anlz::section_spans(data).expect("PMAI");
     let file_len = u32::from_be_bytes(data[8..12].try_into().unwrap()) as usize;
     assert_eq!(file_len, data.len(), "PMAI len_file must match the file");
-    let mut off = u32::from_be_bytes(data[4..8].try_into().unwrap()) as usize;
-    let mut out = Vec::new();
-    while off + 12 <= data.len() {
-        let tag = String::from_utf8_lossy(&data[off..off + 4]).into_owned();
-        let lt = u32::from_be_bytes(data[off + 8..off + 12].try_into().unwrap()) as usize;
-        out.push((tag, off, lt));
-        off += lt;
-    }
-    assert_eq!(off, data.len(), "sections must tile the file");
-    out
+    assert_eq!(end, data.len(), "sections must tile the file");
+    spans
+        .into_iter()
+        .map(|(off, len)| (String::from_utf8_lossy(&data[off..off + 4]).into_owned(), off, len))
+        .collect()
 }
 
 #[test]
