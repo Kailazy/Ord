@@ -263,7 +263,7 @@ fn panel<R>(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
     let r = add(ui);
     // The frame wraps the content's `min_rect` in the menu margin; the glass
     // covers the same. One glass entry per open menu: the Area's id is one.
-    let rect = ui.style().spacing.menu_margin.expand_rect(ui.min_rect());
+    let rect = ui.min_rect() + ui.style().spacing.menu_margin;
     super::glass::end(
         &ctx,
         slot,

@@ -130,7 +130,7 @@ fn on_glass(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui)) {
     add(ui);
     // The frame wraps the content's `min_rect` in the popup margin; the
     // glass covers the same.
-    let rect = ui.style().spacing.menu_margin.expand_rect(ui.min_rect());
+    let rect = ui.min_rect() + ui.style().spacing.menu_margin;
     let rounding = ui.style().visuals.menu_rounding;
     glass::end(&ctx, slot, id, rect, rounding, stroke());
     glass::drawn(&ctx, id);

@@ -306,7 +306,7 @@ impl App {
         let mut goto: Option<TourStep> = None;
         let mut finish = false;
         let mut auto_write = tour.auto_write;
-        let mut library_root = tour.library_root.clone();
+        let library_root = tour.library_root.clone();
         // The folder panel runs off the frame (see `pick`); the tour's
         // root is filled in when it settles.
         let mut pick_root = false;
