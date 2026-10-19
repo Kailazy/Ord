@@ -6,7 +6,7 @@
 //! [`chip`] the avatar pill, [`cover`] the record's sleeve or its stand-in, [`menu`] the dropdown a button anchors,
 //! [`window`] the one floating window, [`sidebar`] the window docked to an
 //! edge, [`nav`] the docked panel that snaps between designed widths,
-//! [`tooltip`] the hover note, [`choices`] the row of buttons a dialog
+//! [`hover`] the hover note, [`choices`] the row of buttons a dialog
 //! ends with, [`glass`] the surface they all sit on, [`control_row`] the
 //! rule that a row of controls shares one height.
 
@@ -30,7 +30,6 @@ pub mod sidebar;
 pub mod text;
 pub mod theme;
 pub mod tokens;
-pub mod tooltip;
 pub mod window;
 
 use eframe::egui;
