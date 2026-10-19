@@ -1073,7 +1073,13 @@ mod imp {
             // asked, wherever it has been moved to since — or for none, when
             // that page has been retired meanwhile.
             PANEL.with(|slot| {
-                let mut slot = slot.borrow_mut();
+                // Not `borrow_mut`: WebKit runs this handler *inside*
+                // `evaluateJavaScript` when the page has no web content
+                // process to ask (killed, or gone under memory pressure),
+                // and [`poll`] still holds the slot at that point. Such an
+                // answer carries no state, so it is dropped rather than
+                // tripping the already-borrowed panic that aborted the app.
+                let Ok(mut slot) = slot.try_borrow_mut() else { return };
                 let Some(mini) = slot.as_mut() else { return };
                 let page = if mini.page.serial == serial {
                     Some(&mut mini.page)
