@@ -2794,15 +2794,9 @@ impl App {
                 let client = discogs::Client::new(token);
                 // Image CDN downloads don't count against the API rate limit,
                 // so a cover fetch never delays the next dig step.
-                let img = client.fetch_thumb(&url_owned).and_then(|png| {
-                    let d = image::load_from_memory(&png).ok()?;
-                    let rgba = d.to_rgba8();
-                    let size = [rgba.width() as usize, rgba.height() as usize];
-                    Some(egui::ColorImage::from_rgba_unmultiplied(
-                        size,
-                        &rgba.into_raw(),
-                    ))
-                });
+                let img = client
+                    .fetch_thumb(&url_owned)
+                    .and_then(|png| covers::decode_thumb_image(&png));
                 let _ = tx.send((url_owned, img));
                 ctx.request_repaint();
             });
