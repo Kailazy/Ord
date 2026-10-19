@@ -1167,7 +1167,7 @@ impl App {
                     }
                     let max = (viewport_w - right_pad - x).max(0.0);
                     column_caps.insert(col, max.max(col.min_width(COVER_PX)));
-                    builder = builder.column(col.spec(COVER_PX, w, Some(max)));
+                    builder = builder.column(col.spec(COVER_PX, w, max));
                     x += w.unwrap_or_else(|| col.default_width(COVER_PX)) + col_spacing_x;
                 }
                 // After "Reset to default", drop egui_extras' own stored widths so

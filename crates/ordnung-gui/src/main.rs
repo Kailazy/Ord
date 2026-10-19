@@ -676,20 +676,17 @@ impl TableColumn {
     /// table's right edge, so a resize can never push the column's own edge (and
     /// its drag handle) off screen. The Cover column is a fixed size and ignores
     /// both.
-    fn spec(self, cover_px: f32, width: Option<f32>, max: Option<f32>) -> Column {
+    fn spec(self, cover_px: f32, width: Option<f32>, max: f32) -> Column {
         if self == TableColumn::Cover {
             return Column::exact(cover_px + 6.0);
         }
         let min = self.min_width(cover_px);
-        let col = Column::initial(width.unwrap_or_else(|| self.default_width(cover_px)))
-            .at_least(min)
-            .clip(self.clips());
         // Never cap below the minimum: a very narrow window must still leave the
         // column draggable within its own legal range.
-        match max {
-            Some(m) => col.at_most(m.max(min)),
-            None => col,
-        }
+        Column::initial(width.unwrap_or_else(|| self.default_width(cover_px)))
+            .at_least(min)
+            .clip(self.clips())
+            .at_most(max.max(min))
     }
 
     /// The spec for the last visible column. It takes whatever width is left,
