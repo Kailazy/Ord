@@ -710,19 +710,8 @@ impl App {
                     // cover
                     row.col(|ui| {
                         let (rect, _) = ui.allocate_exact_size(egui::vec2(THUMB, THUMB), egui::Sense::hover());
-                        match &tex {
-                            Some(h) => {
-                                egui::Image::new(h)
-                                    .fit_to_exact_size(egui::vec2(THUMB, THUMB))
-                                    .rounding(egui::Rounding::same(4.0))
-                                    .paint_at(ui, rect);
-                            }
-                            None => {
-                                if e.release_id.is_some() {
-                                    ui.painter().rect_filled(rect, egui::Rounding::same(4.0), egui::Color32::from_gray(34));
-                                    ui.painter().text(rect.center(), egui::Align2::CENTER_CENTER, "♪", egui::FontId::proportional(16.0), egui::Color32::from_gray(70));
-                                }
-                            }
+                        if tex.is_some() || e.release_id.is_some() {
+                            crate::ui::cover::paint_at(ui, rect, tex.as_ref(), 4.0, Some(16.0));
                         }
                     });
                     // the song as pasted: its name, with the clock and any
@@ -1086,14 +1075,7 @@ impl App {
                         let tex = (!c.thumb_url.is_empty())
                             .then(|| self.dig_cover(&c.thumb_url).cloned())
                             .flatten();
-                        match tex {
-                            Some(h) => {
-                                egui::Image::new(&h).fit_to_exact_size(thumb.size()).rounding(egui::Rounding::same(4.0)).paint_at(ui, thumb);
-                            }
-                            _ => {
-                                ui.painter().rect_filled(thumb, egui::Rounding::same(4.0), egui::Color32::from_gray(34));
-                            }
-                        }
+                        crate::ui::cover::paint_at(ui, thumb, tex.as_ref(), 4.0, None);
                         let x = thumb.right() + space::S3;
                         ui.painter().text(
                             egui::pos2(x, rect.top() + 9.0),

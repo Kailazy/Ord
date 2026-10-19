@@ -1187,28 +1187,7 @@ impl App {
                 );
                 let cart_hovered = cart_hit.hovered();
                 let card_hovered = resp.hovered() || dig_hovered || cart_hovered;
-                match &tex {
-                    Some(h) => {
-                        egui::Image::new(h)
-                            .fit_to_exact_size(egui::vec2(cover_side, cover_side))
-                            .rounding(egui::Rounding::same(6.0))
-                            .paint_at(ui, rect);
-                    }
-                    None => {
-                        ui.painter().rect_filled(
-                            rect,
-                            egui::Rounding::same(6.0),
-                            egui::Color32::from_gray(34),
-                        );
-                        ui.painter().text(
-                            rect.center(),
-                            egui::Align2::CENTER_CENTER,
-                            "♪",
-                            egui::FontId::proportional(28.0),
-                            egui::Color32::from_gray(70),
-                        );
-                    }
-                }
+                crate::ui::cover::paint_at(ui, rect, tex.as_ref(), 6.0, Some(28.0));
                 if card_hovered {
                     ui.painter().rect_stroke(
                         rect,
@@ -1481,28 +1460,7 @@ impl App {
             egui::pos2(rect.left() + 4.0, rect.center().y - THUMB / 2.0),
             egui::vec2(THUMB, THUMB),
         );
-        match &tex {
-            Some(h) => {
-                egui::Image::new(h)
-                    .fit_to_exact_size(egui::vec2(THUMB, THUMB))
-                    .rounding(egui::Rounding::same(4.0))
-                    .paint_at(ui, thumb_rect);
-            }
-            None => {
-                ui.painter().rect_filled(
-                    thumb_rect,
-                    egui::Rounding::same(4.0),
-                    egui::Color32::from_gray(34),
-                );
-                ui.painter().text(
-                    thumb_rect.center(),
-                    egui::Align2::CENTER_CENTER,
-                    "♪",
-                    egui::FontId::proportional(18.0),
-                    egui::Color32::from_gray(70),
-                );
-            }
-        }
+        crate::ui::cover::paint_at(ui, thumb_rect, tex.as_ref(), 4.0, Some(18.0));
         // Sale terms on the right edge, then the membership chip to their
         // left — a record already on a shelf changes what the price means.
         // The marker column starts where the painted text actually ends, not

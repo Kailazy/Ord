@@ -540,21 +540,7 @@ impl App {
                                         want_covers.push(u.clone());
                                     }
                                 }
-                                match &r.cover {
-                                    Some(t) => {
-                                        egui::Image::new(t)
-                                            .fit_to_exact_size(egui::vec2(THUMB, THUMB))
-                                            .rounding(egui::Rounding::same(4.0))
-                                            .paint_at(ui, trect);
-                                    }
-                                    None => {
-                                        ui.painter().rect_filled(
-                                            trect,
-                                            egui::Rounding::same(4.0),
-                                            egui::Color32::from_gray(34),
-                                        );
-                                    }
-                                }
+                                crate::ui::cover::paint_at(ui, trect, r.cover.as_ref(), 4.0, None);
                                 let tresp = tresp
                                     .on_hover_cursor(egui::CursorIcon::PointingHand)
                                     .on_hover_note("Open the record");

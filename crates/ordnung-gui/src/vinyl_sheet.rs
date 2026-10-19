@@ -1679,21 +1679,7 @@ impl App {
                 ui.horizontal(|ui| {
                     let c = col_h.map_or(C_MIN, |h| h.max(C_MIN)).round();
                     let (rect, _) = ui.allocate_exact_size(egui::vec2(c, c), egui::Sense::hover());
-                    match &cover {
-                        Some(h) => {
-                            egui::Image::new(h)
-                                .fit_to_exact_size(egui::vec2(c, c))
-                                .rounding(egui::Rounding::same(6.0))
-                                .paint_at(ui, rect);
-                        }
-                        None => {
-                            ui.painter().rect_filled(
-                                rect,
-                                egui::Rounding::same(6.0),
-                                egui::Color32::from_gray(34),
-                            );
-                        }
-                    }
+                    crate::ui::cover::paint_at(ui, rect, cover.as_ref(), 6.0, None);
                     ui.add_space(C_GAP);
                     let col = ui.vertical(|ui| {
                         // Wrap at a width that doesn't follow the cover.

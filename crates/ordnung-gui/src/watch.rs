@@ -115,21 +115,7 @@ fn draw_row(ui: &mut egui::Ui, r: &Row, show_seller: bool) -> Option<Act> {
     let mut act = None;
     ui.horizontal(|ui| {
         let (trect, _) = ui.allocate_exact_size(egui::vec2(THUMB, THUMB), egui::Sense::hover());
-        match &r.cover {
-            Some(t) => {
-                egui::Image::new(t)
-                    .fit_to_exact_size(egui::vec2(THUMB, THUMB))
-                    .rounding(egui::Rounding::same(4.0))
-                    .paint_at(ui, trect);
-            }
-            None => {
-                ui.painter().rect_filled(
-                    trect,
-                    egui::Rounding::same(4.0),
-                    egui::Color32::from_gray(34),
-                );
-            }
-        }
+        crate::ui::cover::paint_at(ui, trect, r.cover.as_ref(), 4.0, None);
         ui.add_space(8.0);
         ui.vertical(|ui| {
             ui.spacing_mut().item_spacing.y = 1.0;
