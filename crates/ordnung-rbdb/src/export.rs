@@ -425,15 +425,15 @@ struct ExistingTrack {
 }
 
 /// Read the export already at `dest_root` for a merge. Returns the existing
-/// tracks (keyed for path lookup) and playlist nodes. A stick with no export
-/// (or an unreadable one) merges as if empty.
-fn read_existing(dest_root: &Path) -> (Vec<ExistingTrack>, Vec<RbPlaylist>) {
+/// tracks (keyed for path lookup), playlist nodes and playlist memberships. A
+/// stick with no export (or an unreadable one) merges as if empty.
+fn read_existing(dest_root: &Path) -> (Vec<ExistingTrack>, Vec<RbPlaylist>, HashMap<u32, Vec<u32>>) {
     let pdb = dest_root
         .join("PIONEER")
         .join("rekordbox")
         .join("export.pdb");
     let Ok(export) = crate::pdb::read_export(&pdb) else {
-        return (Vec::new(), Vec::new());
+        return Default::default();
     };
     let mut tracks = Vec::new();
     for (id, t) in &export.tracks {
@@ -487,7 +487,7 @@ fn read_existing(dest_root: &Path) -> (Vec<ExistingTrack>, Vec<RbPlaylist>) {
                 .map(|p| (t.artwork_id, p)),
         });
     }
-    (tracks, export.playlists)
+    (tracks, export.playlists, export.entries)
 }
 
 /// File-type enum from a filename extension (the read side doesn't store it).
@@ -678,10 +678,10 @@ fn export_impl(
     // ---- carry-over from an existing export (Merge only) -----------------
     // In Merge mode the tracks already on the stick are kept verbatim — same
     // id, filename and ANLZ files — and the new selection is layered on top.
-    let (existing_tracks, existing_playlists) = if mode == ExportMode::Merge {
+    let (existing_tracks, existing_playlists, existing_entries) = if mode == ExportMode::Merge {
         read_existing(dest_root)
     } else {
-        (Vec::new(), Vec::new())
+        Default::default()
     };
     // Path (as stored on the stick) → its existing id, so a re-selected track
     // reuses its slot instead of getting a duplicate.
@@ -1152,11 +1152,6 @@ fn export_impl(
     let mut entries: Vec<(u32, u32, u32)> = Vec::new();
     // Existing memberships are read straight back onto their (unchanged) track
     // ids, except for any node an incoming playlist is about to replace.
-    let existing_export = if mode == ExportMode::Merge {
-        crate::pdb::read_export(&rb_dir.join("export.pdb")).ok()
-    } else {
-        None
-    };
     let mut next_pl_id = playlist_rows.iter().map(|p| p.id).max().unwrap_or(0) + 1;
     // Incoming names that will replace an existing node (so we drop its old
     // membership below).
@@ -1165,15 +1160,13 @@ fn export_impl(
         .filter(|p| !p.is_folder)
         .map(|p| clamp(&p.name, 300).to_lowercase())
         .collect();
-    if let Some(exp) = &existing_export {
-        for p in &playlist_rows {
-            if p.is_folder || incoming_names.contains(&p.name.to_lowercase()) {
-                continue;
-            }
-            if let Some(ids) = exp.entries.get(&p.id) {
-                for (i, tid) in ids.iter().enumerate() {
-                    entries.push((i as u32 + 1, *tid, p.id));
-                }
+    for p in &playlist_rows {
+        if p.is_folder || incoming_names.contains(&p.name.to_lowercase()) {
+            continue;
+        }
+        if let Some(ids) = existing_entries.get(&p.id) {
+            for (i, tid) in ids.iter().enumerate() {
+                entries.push((i as u32 + 1, *tid, p.id));
             }
         }
     }
