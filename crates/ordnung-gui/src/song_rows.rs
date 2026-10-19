@@ -93,6 +93,32 @@ pub(crate) fn center_two(ui: &mut egui::Ui, two: bool) {
     ui.add_space(((ui.available_height() - block) / 2.0).max(0.0));
 }
 
+/// A cell's text: `top` over a caption in the caption font, each on one
+/// truncated line, the block centred in the row. Returns both responses,
+/// for a note on either.
+pub(crate) fn two_line(
+    ui: &mut egui::Ui,
+    top: egui::RichText,
+    sub: Option<String>,
+) -> (egui::Response, Option<egui::Response>) {
+    ui.vertical(|ui| {
+        ui.spacing_mut().item_spacing.y = 1.0;
+        center_two(ui, sub.is_some());
+        let top = ui.add(egui::Label::new(top).truncate());
+        let sub = sub.map(|s| {
+            ui.add(egui::Label::new(egui::RichText::new(s).font(font::caption()).color(color::LABEL_3)).truncate())
+        });
+        (top, sub)
+    })
+    .inner
+}
+
+/// A small strong word in the caption font (`OWNED`, `FILE`) with its note.
+pub(crate) fn badge(ui: &mut egui::Ui, text: &str, col: egui::Color32, tip: &str) {
+    ui.add(egui::Label::new(egui::RichText::new(text).font(font::caption()).color(col).strong()))
+        .on_hover_note(tip);
+}
+
 impl App {
     /// The table: `rows` are the set's songs, `shown` the indices to draw
     /// (the rest are filtered out), `in_library` the library track that is
@@ -148,38 +174,25 @@ impl App {
                     // carries after the artist (`Artist · dub, dark`).
                     let tags = self.tag_words(&s.song().key());
                     row.col(|ui| {
-                        ui.vertical(|ui| {
-                            ui.spacing_mut().item_spacing.y = 1.0;
-                            let caption = match (s.artist.is_empty(), tags.is_empty()) {
-                                (true, true) => String::new(),
-                                (false, true) => s.artist.clone(),
-                                (true, false) => tags.clone(),
-                                (false, false) => format!("{} · {tags}", s.artist),
-                            };
-                            center_two(ui, !caption.is_empty());
-                            ui.add(egui::Label::new(egui::RichText::new(&s.title).color(color::LABEL)).truncate());
-                            if !caption.is_empty() {
-                                ui.add(egui::Label::new(egui::RichText::new(caption).font(font::caption()).color(color::LABEL_3)).truncate());
-                            }
-                        });
+                        let caption = dots(&[
+                            (!s.artist.is_empty()).then_some(s.artist.as_str()),
+                            (!tags.is_empty()).then_some(tags.as_str()),
+                        ]);
+                        two_line(ui, egui::RichText::new(&s.title).color(color::LABEL), (!caption.is_empty()).then_some(caption));
                     });
                     // The record it sits on.
                     row.col(|ui| {
-                        ui.vertical(|ui| {
-                            ui.spacing_mut().item_spacing.y = 1.0;
-                            let name = s.record_name();
-                            let sub = record_sub(s);
-                            if name.is_empty() && sub.is_empty() {
+                        let name = s.record_name();
+                        let sub = record_sub(s);
+                        if name.is_empty() && sub.is_empty() {
+                            ui.vertical(|ui| {
+                                ui.spacing_mut().item_spacing.y = 1.0;
                                 center_two(ui, false);
                                 ui.label(egui::RichText::new("No record").color(color::LABEL_3));
-                            } else {
-                                center_two(ui, !sub.is_empty());
-                                ui.add(egui::Label::new(egui::RichText::new(name).color(color::LABEL)).truncate());
-                                if !sub.is_empty() {
-                                    ui.add(egui::Label::new(egui::RichText::new(sub).font(font::caption()).color(color::LABEL_3)).truncate());
-                                }
-                            }
-                        });
+                            });
+                        } else {
+                            two_line(ui, egui::RichText::new(name).color(color::LABEL), (!sub.is_empty()).then_some(sub));
+                        }
                     });
                     // The marks at the row's edge: the heart, and in a
                     // crate the ✕ that takes the song out; a green FILE on
@@ -201,8 +214,7 @@ impl App {
                             }
                             if local.is_some() {
                                 ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
-                                    ui.add(egui::Label::new(egui::RichText::new("FILE").font(font::caption()).color(color::GREEN).strong()))
-                                        .on_hover_note("A track in your library is this song");
+                                    badge(ui, "FILE", color::GREEN, "A track in your library is this song");
                                 });
                             }
                         });

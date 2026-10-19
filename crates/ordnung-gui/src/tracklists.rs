@@ -23,7 +23,7 @@
 use super::*;
 use crate::jobs::MatchScope;
 use crate::records::SearchScope;
-use crate::song_rows::center_two;
+use crate::song_rows::{badge, center_two, two_line};
 use crate::ui::text::truncated;
 use crate::ui::tokens::{color, font, space};
 use egui_extras::{Column, TableBuilder};
@@ -729,75 +729,59 @@ impl App {
                     // hints under it; the artist is what the record column
                     // names
                     row.col(|ui| {
-                        ui.vertical(|ui| {
-                            ui.spacing_mut().item_spacing.y = 1.0;
-                            // The record's spelling wins over the paste's
-                            // once the record's tracklist settled the line.
-                            let label = match (e.kind, e.rel_track.as_deref().or(e.title.as_deref())) {
-                                (LineKind::Id, _) => "ID".to_string(),
-                                (_, Some(t)) => t.to_string(),
-                                _ => e.song_label(),
-                            };
-                            let mut sub = Vec::new();
-                            if let Some(ts) = e.timestamp_s {
-                                sub.push(fmt_clock(ts));
-                            }
-                            if let Some(l) = e.label_hint.as_deref() {
-                                sub.push(l.to_string());
-                            }
-                            if let Some(c) = e.catno_hint.as_deref() {
-                                sub.push(c.to_string());
-                            }
-                            center_two(ui, !sub.is_empty());
-                            let name = ui.add(egui::Label::new(egui::RichText::new(label).color(color::LABEL)).truncate());
-                            if let (Some(_), Some(pasted)) = (e.rel_track.as_deref(), e.title.as_deref()) {
-                                name.on_hover_note(format!("Pasted as {pasted}"));
-                            }
-                            if !sub.is_empty() {
-                                ui.add(egui::Label::new(egui::RichText::new(sub.join(" · ")).font(font::caption()).color(color::LABEL_3)).truncate());
-                            }
-                        });
+                        // The record's spelling wins over the paste's
+                        // once the record's tracklist settled the line.
+                        let label = match (e.kind, e.rel_track.as_deref().or(e.title.as_deref())) {
+                            (LineKind::Id, _) => "ID".to_string(),
+                            (_, Some(t)) => t.to_string(),
+                            _ => e.song_label(),
+                        };
+                        let clock = e.timestamp_s.map(fmt_clock);
+                        let parts = [clock.as_deref(), e.label_hint.as_deref(), e.catno_hint.as_deref()];
+                        let sub = parts.iter().any(Option::is_some).then(|| dots(&parts));
+                        let (name, _) = two_line(ui, egui::RichText::new(label).color(color::LABEL), sub);
+                        if let (Some(_), Some(pasted)) = (e.rel_track.as_deref(), e.title.as_deref()) {
+                            name.on_hover_note(format!("Pasted as {pasted}"));
+                        }
                     });
                     // the matched record
                     row.col(|ui| {
-                        ui.vertical(|ui| {
-                            ui.spacing_mut().item_spacing.y = 1.0;
-                            match e.release_id {
-                                Some(_) => {
-                                    let name = match (e.rel_artist.as_deref(), e.rel_title.as_deref()) {
-                                        (Some(a), Some(t)) if !a.is_empty() => format!("{a} – {t}"),
-                                        (_, Some(t)) => t.to_string(),
-                                        _ => String::new(),
-                                    };
-                                    center_two(ui, true);
-                                    ui.add(egui::Label::new(egui::RichText::new(name).color(color::LABEL)).truncate());
-                                    ui.add(egui::Label::new(egui::RichText::new(record_sub(&e)).font(font::caption()).color(color::LABEL_3)).truncate());
-                                }
-                                None => {
-                                    // No record: the pasted artist keeps its
-                                    // place here, the status under it.
-                                    let (_, words) = confidence_look(&e);
-                                    let text = match (e.kind, e.chosen_by) {
-                                        (LineKind::Id, _) => "",
-                                        (_, ChosenBy::Nobody) => "Not matched yet",
-                                        (_, ChosenBy::User) => "Rejected",
-                                        (_, ChosenBy::Auto) => "Not found on Discogs",
-                                    };
-                                    match e.artist.as_deref().filter(|a| !a.is_empty() && e.kind != LineKind::Id) {
-                                        Some(a) => {
-                                            center_two(ui, true);
-                                            ui.add(egui::Label::new(egui::RichText::new(a).color(color::LABEL_2)).truncate());
-                                            ui.add(egui::Label::new(egui::RichText::new(text).font(font::caption()).color(color::LABEL_3)).truncate())
-                                                .on_hover_note(words);
+                        match e.release_id {
+                            Some(_) => {
+                                let name = match (e.rel_artist.as_deref(), e.rel_title.as_deref()) {
+                                    (Some(a), Some(t)) if !a.is_empty() => format!("{a} – {t}"),
+                                    (_, Some(t)) => t.to_string(),
+                                    _ => String::new(),
+                                };
+                                two_line(ui, egui::RichText::new(name).color(color::LABEL), Some(record_sub(&e)));
+                            }
+                            None => {
+                                // No record: the pasted artist keeps its
+                                // place here, the status under it.
+                                let (_, words) = confidence_look(&e);
+                                let text = match (e.kind, e.chosen_by) {
+                                    (LineKind::Id, _) => "",
+                                    (_, ChosenBy::Nobody) => "Not matched yet",
+                                    (_, ChosenBy::User) => "Rejected",
+                                    (_, ChosenBy::Auto) => "Not found on Discogs",
+                                };
+                                match e.artist.as_deref().filter(|a| !a.is_empty() && e.kind != LineKind::Id) {
+                                    Some(a) => {
+                                        let (_, sub) = two_line(ui, egui::RichText::new(a).color(color::LABEL_2), Some(text.to_string()));
+                                        if let Some(sub) = sub {
+                                            sub.on_hover_note(words);
                                         }
-                                        None => {
+                                    }
+                                    None => {
+                                        ui.vertical(|ui| {
+                                            ui.spacing_mut().item_spacing.y = 1.0;
                                             center_two(ui, false);
                                             ui.label(egui::RichText::new(text).color(color::LABEL_3)).on_hover_note(words);
-                                        }
+                                        });
                                     }
                                 }
                             }
-                        });
+                        }
                     });
                     // pip + badges, and the ↻ at the row's edge
                     row.col(|ui| {
@@ -826,12 +810,6 @@ impl App {
                                 let (pr, presp) = ui.allocate_exact_size(egui::vec2(14.0, 14.0), egui::Sense::hover());
                                 ui.painter().circle_filled(pr.center(), 4.0, c);
                                 presp.on_hover_note(words);
-                                let badge = |ui: &mut egui::Ui, text: &str, col: egui::Color32, tip: &str| {
-                                    ui.add(egui::Label::new(
-                                        egui::RichText::new(text).font(font::caption()).color(col).strong(),
-                                    ))
-                                    .on_hover_note(tip);
-                                };
                                 if let Some(r) = e.release_id {
                                     if self.vinyl_owned.contains(&r) {
                                         badge(ui, "OWNED", color::GREEN, "In your collection");

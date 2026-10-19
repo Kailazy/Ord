@@ -29,7 +29,7 @@
 
 use super::*;
 use crate::liked::LikeSpec;
-use crate::song_rows::{center_two, song_matches, SongSet};
+use crate::song_rows::{badge, song_matches, two_line, SongSet};
 use crate::ui::cover::thumb;
 use crate::ui::hover::HoverNoteExt;
 use crate::ui::tokens::{color, font, space};
@@ -601,14 +601,7 @@ impl App {
                     row.col(|ui| thumb(ui, THUMB, tex.as_ref()));
                     // The record: name over its imprint.
                     row.col(|ui| {
-                        ui.vertical(|ui| {
-                            ui.spacing_mut().item_spacing.y = 1.0;
-                            center_two(ui, !g.sub.is_empty());
-                            ui.add(egui::Label::new(egui::RichText::new(&g.name).color(color::LABEL)).truncate());
-                            if !g.sub.is_empty() {
-                                ui.add(egui::Label::new(egui::RichText::new(&g.sub).font(font::caption()).color(color::LABEL_3)).truncate());
-                            }
-                        });
+                        two_line(ui, egui::RichText::new(&g.name).color(color::LABEL), (!g.sub.is_empty()).then(|| g.sub.clone()));
                     });
                     // The songs the crate takes from it: `A1 Miura · B2 Caught Up`.
                     row.col(|ui| {
@@ -626,21 +619,12 @@ impl App {
                             .collect();
                         let n = g.songs.len();
                         let count = if n == 1 { "1 song".to_string() } else { format!("{n} songs") };
-                        ui.vertical(|ui| {
-                            ui.spacing_mut().item_spacing.y = 1.0;
-                            center_two(ui, true);
-                            ui.add(egui::Label::new(egui::RichText::new(words.join(" · ")).color(color::LABEL_2)).truncate());
-                            ui.add(egui::Label::new(egui::RichText::new(count).font(font::caption()).color(color::LABEL_3)).truncate());
-                        });
+                        two_line(ui, egui::RichText::new(words.join(" · ")).color(color::LABEL_2), Some(count));
                     });
                     // OWNED / WANT for the shelf, FILES when every song of
                     // the record is a track in the library.
                     row.col(|ui| {
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            let badge = |ui: &mut egui::Ui, text: &str, col: egui::Color32, tip: &str| {
-                                ui.add(egui::Label::new(egui::RichText::new(text).font(font::caption()).color(col).strong()))
-                                    .on_hover_note(tip);
-                            };
                             if g.songs.iter().all(|&i| files[i]) {
                                 badge(ui, "FILES", color::GREEN, "Every song the crate takes from this record is a track in your library");
                             }
