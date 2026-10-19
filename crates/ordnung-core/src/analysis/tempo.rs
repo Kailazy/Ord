@@ -47,9 +47,6 @@ pub struct TempoResult {
     pub bpm: f32,
     /// First detected beat position, in milliseconds.
     pub beat_offset_ms: u64,
-    /// Salience of the chosen period (peak comb score / median), clamped to [0, 1].
-    /// ~0.5+ is a confident lock; near 0 means weak/ambiguous tempo.
-    pub confidence: f32,
 }
 
 /// Spectral-flux onset strength per frame: positive changes of the log-compressed
@@ -93,7 +90,6 @@ pub fn detect(spec: &Spectrogram) -> TempoResult {
         return TempoResult {
             bpm: 0.0,
             beat_offset_ms: 0,
-            confidence: 0.0,
         };
     }
 
@@ -141,7 +137,6 @@ pub fn detect(spec: &Spectrogram) -> TempoResult {
     TempoResult {
         bpm: (bpm * 100.0).round() / 100.0,
         beat_offset_ms,
-        confidence: confidence(&scores, lag_min, hi, best_score),
     }
 }
 
@@ -313,25 +308,6 @@ fn lerp(env: &[f32], x: f32) -> f32 {
     }
     let f = x - i as f32;
     env[i] * (1.0 - f) + env[i + 1] * f
-}
-
-/// Peak-to-median comb-score ratio, squashed into [0, 1] as a confidence value.
-fn confidence(scores: &[f32], lo: usize, hi: usize, peak: f32) -> f32 {
-    if hi <= lo || peak <= 0.0 {
-        return 0.0;
-    }
-    let mut vals: Vec<f32> = scores[lo..=hi].iter().copied().filter(|v| *v > 0.0).collect();
-    if vals.is_empty() {
-        return 0.0;
-    }
-    vals.sort_by(|a, b| a.partial_cmp(b).unwrap());
-    let median = vals[vals.len() / 2];
-    if median <= 0.0 {
-        return 1.0;
-    }
-    // ratio 1 → 0 confidence, large ratio → ~1. ratio of 3 maps to ~0.5.
-    let ratio = peak / median;
-    (1.0 - (1.0 / ratio)).clamp(0.0, 1.0)
 }
 
 fn subtract_moving_average(env: &mut [f32], radius: usize) {
