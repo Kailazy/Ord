@@ -71,6 +71,11 @@ pub(crate) fn fmt_bytes(bytes: u64) -> String {
     }
 }
 
+/// `m:ss` for a track's length or a playhead: `0:05`, `65:12`.
+pub(crate) fn fmt_mmss(secs: u64) -> String {
+    format!("{}:{:02}", secs / 60, secs % 60)
+}
+
 /// Long-form running time for playlist totals: "2 hr 05 min", "42 min", "38 sec".
 /// Unlike the per-track `fmt_duration` (m:ss), totals span hours, so the units
 /// are spelled out rather than stacking colons.

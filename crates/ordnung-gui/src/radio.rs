@@ -109,10 +109,7 @@ fn radio_songs(d: &discogs::ReleaseDetail, artist: &str) -> Vec<RadioSong> {
                 position: String::new(),
                 artist: String::new(),
                 title: v.title.clone(),
-                duration: v
-                    .duration_secs
-                    .map(|s| format!("{}:{:02}", s / 60, s % 60))
-                    .unwrap_or_default(),
+                duration: v.duration_secs.map(|s| fmt_mmss(u64::from(s))).unwrap_or_default(),
             });
         }
     }

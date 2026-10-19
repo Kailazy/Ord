@@ -1544,8 +1544,7 @@ pub fn fmt_time(secs: f32) -> String {
     if !secs.is_finite() || secs < 0.0 {
         return "0:00".into();
     }
-    let total = secs as u32;
-    format!("{}:{:02}", total / 60, total % 60)
+    crate::util::fmt_mmss(secs as u64)
 }
 
 #[cfg(test)]

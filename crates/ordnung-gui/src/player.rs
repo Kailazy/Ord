@@ -2090,8 +2090,7 @@ pub(crate) fn draw_scrolling_line(
 }
 
 pub(crate) fn fmt_duration(ms: u64) -> String {
-    let secs = ms / 1000;
-    format!("{}:{:02}", secs / 60, secs % 60)
+    fmt_mmss(ms / 1000)
 }
 
 /// Random index in `0..len` without pulling in an RNG crate: each
