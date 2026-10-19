@@ -186,33 +186,15 @@ pub fn write_stick_cues(
 ) -> Result<(), ReadError> {
     backup_anlz(dat_path);
     crate::anlz::write_cues(dat_path, cues).map_err(ReadError::io(dat_path))?;
-    bump_track_counter(volume_root, track_id, Counter::Cue, None)
+    bump_track_counter(volume_root, track_id, CUE_COUNTER, None)
 }
 
 /// The per-track change counters a rekordbox export carries in both
-/// databases: pdb track-row string slots 3 / 4 and the DLP's
-/// `analysisDataUpdateCount` / `cueUpdateCount`. rekordbox and the players
-/// compare them against the collection to find tracks edited on the device.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Counter {
-    Analysis,
-    Cue,
-}
-
-impl Counter {
-    fn pdb_slot(self) -> usize {
-        match self {
-            Counter::Analysis => 3,
-            Counter::Cue => 4,
-        }
-    }
-    fn dlp_column(self) -> &'static str {
-        match self {
-            Counter::Analysis => "analysisDataUpdateCount",
-            Counter::Cue => "cueUpdateCount",
-        }
-    }
-}
+/// databases, as `(pdb track-row string slot, DLP content column)`. rekordbox
+/// and the players compare them against the collection to find tracks edited
+/// on the device.
+const ANALYSIS_COUNTER: (usize, &str) = (3, "analysisDataUpdateCount");
+const CUE_COUNTER: (usize, &str) = (4, "cueUpdateCount");
 
 /// Bump one change counter of a track in both stick databases, optionally
 /// patching the pdb row's tempo in the same rewrite. The pdb row is
@@ -221,7 +203,7 @@ impl Counter {
 fn bump_track_counter(
     volume_root: &Path,
     track_id: u32,
-    counter: Counter,
+    (slot, column): (usize, &str),
     centi_bpm: Option<u32>,
 ) -> Result<(), ReadError> {
     let dir = rb_dir(volume_root);
@@ -231,7 +213,6 @@ fn bump_track_counter(
         if let Some(centi) = centi_bpm {
             row.tempo_centi_bpm = centi;
         }
-        let slot = counter.pdb_slot();
         let n: u32 = row.strings[slot].trim().parse().unwrap_or(0);
         row.strings[slot] = (n + 1).to_string();
     })?;
@@ -257,7 +238,7 @@ fn bump_track_counter(
                 conn.execute(
                     &format!(
                         "UPDATE content SET {c} = COALESCE({c}, 0) + 1 WHERE content_id = ?1",
-                        c = counter.dlp_column()
+                        c = column
                     ),
                     rusqlite::params![id],
                 )?;
@@ -287,7 +268,7 @@ pub fn write_stick_beatgrid(
         .map(|b| b.bpm)
         .filter(|b| *b > 0.0)
         .map(|bpm| (bpm * 100.0).round().clamp(0.0, u32::MAX as f32) as u32);
-    bump_track_counter(volume_root, track_id, Counter::Analysis, centi)
+    bump_track_counter(volume_root, track_id, ANALYSIS_COUNTER, centi)
 }
 
 /// The beatgrid a track had before Ordnung first edited it on this stick —
