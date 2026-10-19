@@ -44,12 +44,10 @@ pub(crate) fn open(
     db_path: &Path,
     flags: rusqlite::OpenFlags,
 ) -> Result<rusqlite::Connection, ReadError> {
-    let err = |e: rusqlite::Error| ReadError::Dlp(e.to_string());
-    let conn = rusqlite::Connection::open_with_flags(db_path, flags).map_err(err)?;
+    let conn = rusqlite::Connection::open_with_flags(db_path, flags)?;
     conn.execute_batch(&format!(
         "PRAGMA key = '{DLP_KEY}'; PRAGMA cipher_compatibility = 4;"
-    ))
-    .map_err(err)?;
+    ))?;
     Ok(conn)
 }
 
@@ -72,8 +70,7 @@ pub fn read_playlists(db_path: &Path) -> Result<DlpPlaylists, ReadError> {
         .prepare(
             "SELECT playlist_id, sequenceNo, name, attribute, playlist_id_parent \
              FROM playlist",
-        )
-        .map_err(|e| ReadError::Dlp(e.to_string()))?;
+        )?;
     let rows = stmt
         .query_map([], |r| {
             Ok(RbPlaylist {
@@ -83,8 +80,7 @@ pub fn read_playlists(db_path: &Path) -> Result<DlpPlaylists, ReadError> {
                 is_folder: r.get::<_, i64>(3).unwrap_or(0) == 1,
                 parent_id: r.get::<_, i64>(4).unwrap_or(0) as u32,
             })
-        })
-        .map_err(|e| ReadError::Dlp(e.to_string()))?;
+        })?;
     for row in rows.flatten() {
         out.playlists.push(row);
     }
@@ -98,13 +94,11 @@ pub fn read_playlists(db_path: &Path) -> Result<DlpPlaylists, ReadError> {
              FROM playlist_content pc \
              JOIN content c ON c.content_id = pc.content_id \
              ORDER BY pc.playlist_id, pc.sequenceNo",
-        )
-        .map_err(|e| ReadError::Dlp(e.to_string()))?;
+        )?;
     let rows = stmt
         .query_map([], |r| {
             Ok((r.get::<_, i64>(0)? as u32, r.get::<_, String>(1)?))
-        })
-        .map_err(|e| ReadError::Dlp(e.to_string()))?;
+        })?;
     for (playlist, path) in rows.flatten() {
         out.entries_by_path.entry(playlist).or_default().push(path);
     }
@@ -252,53 +246,45 @@ fn build_library(
     device_name: &str,
 ) -> Result<(), ReadError> {
     let conn = open(db_path, rusqlite::OpenFlags::default())?;
-    conn.execute_batch(DLP_SCHEMA)
-        .map_err(|e| ReadError::Dlp(e.to_string()))?;
+    conn.execute_batch(DLP_SCHEMA)?;
 
-    let err = |e: rusqlite::Error| ReadError::Dlp(e.to_string());
-    conn.execute_batch("BEGIN").map_err(err)?;
+    conn.execute_batch("BEGIN")?;
     {
         for (id, name) in &t.artists {
             conn.execute(
                 "INSERT INTO artist VALUES (?1, ?2, ?3)",
                 rusqlite::params![*id as i64, name, name.to_lowercase()],
-            )
-            .map_err(err)?;
+            )?;
         }
         for (id, name) in &t.albums {
             conn.execute(
                 "INSERT INTO album VALUES (?1, ?2, NULL, NULL, 0, ?3)",
                 rusqlite::params![*id as i64, name, name.to_lowercase()],
-            )
-            .map_err(err)?;
+            )?;
         }
         for (id, name) in &t.genres {
             conn.execute(
                 "INSERT INTO genre VALUES (?1, ?2)",
                 rusqlite::params![*id as i64, name],
-            )
-            .map_err(err)?;
+            )?;
         }
         for (id, name) in &t.labels {
             conn.execute(
                 "INSERT INTO label VALUES (?1, ?2)",
                 rusqlite::params![*id as i64, name],
-            )
-            .map_err(err)?;
+            )?;
         }
         for (id, name) in &t.keys {
             conn.execute(
                 "INSERT INTO key VALUES (?1, ?2)",
                 rusqlite::params![*id as i64, name],
-            )
-            .map_err(err)?;
+            )?;
         }
         for (i, name) in crate::pdbw::COLORS.iter().enumerate() {
             conn.execute(
                 "INSERT INTO color VALUES (?1, ?2)",
                 rusqlite::params![i as i64 + 1, name],
-            )
-            .map_err(err)?;
+            )?;
         }
         // Artwork mirrors: same ids as the pdb artwork table, but the DLP
         // references the b-named copies of the same JPEGs.
@@ -306,29 +292,25 @@ fn build_library(
             conn.execute(
                 "INSERT INTO image VALUES (?1, ?2)",
                 rusqlite::params![*id as i64, crate::artwork::dlp_path(*id)],
-            )
-            .map_err(err)?;
+            )?;
         }
         for (id, kind, name) in MENU_ITEMS {
             conn.execute(
                 "INSERT INTO menuItem VALUES (?1, ?2, ?3)",
                 rusqlite::params![id, kind, format!("\u{FFFA}{name}\u{FFFB}")],
-            )
-            .map_err(err)?;
+            )?;
         }
         for (id, mi, seq, vis) in CATEGORIES {
             conn.execute(
                 "INSERT INTO category VALUES (?1, ?2, ?3, ?4)",
                 rusqlite::params![id, mi, seq, vis],
-            )
-            .map_err(err)?;
+            )?;
         }
         for (id, mi, seq, vis, sub) in SORTS {
             conn.execute(
                 "INSERT INTO sort VALUES (?1, ?2, ?3, ?4, ?5)",
                 rusqlite::params![id, mi, seq, vis, sub],
-            )
-            .map_err(err)?;
+            )?;
         }
         let mut content = conn
             .prepare(
@@ -336,8 +318,7 @@ fn build_library(
                  ?8, ?29, ?30, ?31, 0, ?9, ?10, ?11, ?12, 0, ?28, \
                  ?13, ?14, ?15, NULL, ?16, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, \
                  0, 1, 1, NULL, ?25, ?26, ?27, 41, 788224, 0, NULL, 1, 1)",
-            )
-            .map_err(err)?;
+            )?;
         for tr in &t.tracks {
             content
                 .execute(rusqlite::params![
@@ -374,8 +355,7 @@ fn build_library(
                     zero_null(tr.remixer_id),
                     zero_null(tr.original_artist_id),
                     zero_null(tr.composer_id),
-                ])
-                .map_err(err)?;
+                ])?;
         }
         drop(content);
         for p in &t.playlists {
@@ -388,15 +368,13 @@ fn build_library(
                     p.is_folder as i64,
                     p.parent_id as i64,
                 ],
-            )
-            .map_err(err)?;
+            )?;
         }
         for (idx, track, playlist) in &t.playlist_entries {
             conn.execute(
                 "INSERT INTO playlist_content VALUES (?1, ?2, ?3)",
                 rusqlite::params![*playlist as i64, *track as i64, *idx as i64],
-            )
-            .map_err(err)?;
+            )?;
         }
         conn.execute(
             "INSERT INTO property VALUES (?1, '1000', ?2, ?3, 0, ?4)",
@@ -406,10 +384,9 @@ fn build_library(
                 t.created_date,
                 MASTER_DB_ID,
             ],
-        )
-        .map_err(err)?;
+        )?;
     }
-    conn.execute_batch("COMMIT").map_err(err)?;
+    conn.execute_batch("COMMIT")?;
     Ok(())
 }
 

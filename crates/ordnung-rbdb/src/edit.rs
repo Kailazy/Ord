@@ -490,15 +490,14 @@ fn with_local_dlp(
     f: impl FnOnce(&rusqlite::Connection) -> rusqlite::Result<()>,
 ) -> Result<(), ReadError> {
     let err_io = |e: std::io::Error| ReadError::Dlp(e.to_string());
-    let err = |e: rusqlite::Error| ReadError::Dlp(e.to_string());
     let tmp = crate::dlp::scratch_db_path("ordnung-dlp-edit");
     let _ = std::fs::remove_file(&tmp);
     std::fs::copy(db_path, &tmp).map_err(err_io)?;
     let result = (|| {
         let conn = crate::dlp::open(&tmp, rusqlite::OpenFlags::default())?;
-        conn.execute_batch("BEGIN").map_err(err)?;
-        f(&conn).map_err(err)?;
-        conn.execute_batch("COMMIT").map_err(err)?;
+        conn.execute_batch("BEGIN")?;
+        f(&conn)?;
+        conn.execute_batch("COMMIT")?;
         Ok(())
     })();
     if result.is_ok() {

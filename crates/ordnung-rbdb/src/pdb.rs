@@ -28,6 +28,12 @@ pub enum ReadError {
     Dlp(String),
 }
 
+impl From<rusqlite::Error> for ReadError {
+    fn from(e: rusqlite::Error) -> Self {
+        ReadError::Dlp(e.to_string())
+    }
+}
+
 impl ReadError {
     /// `map_err` adapter: an I/O error tagged with the path it happened on.
     pub(crate) fn io(path: &Path) -> impl FnOnce(std::io::Error) -> ReadError + '_ {
