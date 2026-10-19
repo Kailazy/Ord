@@ -206,8 +206,6 @@ struct ExportTrack {
     catalog_id: Id,
     row: TrackRow,
     source: PathBuf,
-    /// `/Contents/<name>` — volume-absolute, forward slashes.
-    usb_path: String,
     duration_ms: u64,
     beats: Vec<ordnung_core::model::Beat>,
     preview: Vec<u8>,
@@ -407,8 +405,6 @@ fn transcode_for(player: PlayerTarget, t: &Track) -> Option<(ConvertSpec, Option
 /// merge can preserve it verbatim (same id, same `/Contents` name, same ANLZ
 /// files) without re-copying anything.
 struct ExistingTrack {
-    id: u32,
-    usb_path: String,
     row: TrackRow,
     /// Interned names read back off the stick, re-interned into this
     /// export's tables when the row is carried over.
@@ -469,8 +465,6 @@ fn read_existing(dest_root: &Path) -> (Vec<ExistingTrack>, Vec<RbPlaylist>, Hash
             .map(|m| m.len().min(u32::MAX as u64) as u32)
             .unwrap_or(0);
         tracks.push(ExistingTrack {
-            id: *id,
-            usb_path: t.file_path.clone(),
             row,
             artist: t.artist.clone(),
             album: t.album.clone(),
@@ -687,9 +681,9 @@ fn export_impl(
     // reuses its slot instead of getting a duplicate.
     let existing_by_path: HashMap<String, u32> = existing_tracks
         .iter()
-        .map(|e| (e.usb_path.to_lowercase(), e.id))
+        .map(|e| (e.row.file_path.to_lowercase(), e.row.id))
         .collect();
-    let mut next_id = existing_tracks.iter().map(|e| e.id).max().unwrap_or(0) + 1;
+    let mut next_id = existing_tracks.iter().map(|e| e.row.id).max().unwrap_or(0) + 1;
 
     // ---- resolve tracks: filenames, interned ids, metadata ---------------
     let mut artists = Intern::default();
@@ -859,7 +853,7 @@ fn export_impl(
                 300,
             ),
             filename: name.clone(),
-            file_path: usb_path.clone(),
+            file_path: usb_path,
         };
         let dest = contents.join(&name);
         // A byte copy is current when the sizes agree; a conversion's size
@@ -873,7 +867,6 @@ fn export_impl(
             catalog_id: t.id,
             row,
             source,
-            usb_path,
             duration_ms,
             beats,
             preview: analysis.map(|a| a.waveform_preview.clone()).unwrap_or_default(),
@@ -883,7 +876,7 @@ fn export_impl(
             old_anlz_path: reuse_id.and_then(|id| {
                 existing_tracks
                     .iter()
-                    .find(|e| e.id == id)
+                    .find(|e| e.row.id == id)
                     .map(|e| e.row.analyze_path.clone())
             }),
             transcode,
@@ -899,7 +892,7 @@ fn export_impl(
     let mut carried: Vec<TrackRow> = Vec::new();
     let mut carried_art: Vec<(u32, String)> = Vec::new();
     for e in &existing_tracks {
-        if placed_ids.contains(&e.id) {
+        if placed_ids.contains(&e.row.id) {
             continue; // the new selection re-covered this track
         }
         let mut row = e.row.clone();
@@ -940,7 +933,7 @@ fn export_impl(
         }
     }
     for tr in &mut resolved {
-        let dir = anlz_dir(&tr.usb_path);
+        let dir = anlz_dir(&tr.row.file_path);
         let n = claimed.entry(dir.clone()).or_insert(0);
         tr.row.analyze_path = format!("/PIONEER/USBANLZ/{dir}/ANLZ{n:04}.DAT");
         *n += 1;
@@ -1079,7 +1072,7 @@ fn export_impl(
                     .map(|a| ordnung_core::analysis::waveform::scroll_bands(&a.samples, a.sample_rate))
                     .unwrap_or_default();
                 let inp = anlz::AnlzInput {
-                    usb_path: &tr.usb_path,
+                    usb_path: &tr.row.file_path,
                     beats: &tr.beats,
                     duration_ms: tr.duration_ms,
                     preview: &tr.preview,
