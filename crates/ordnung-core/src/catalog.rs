@@ -2339,40 +2339,26 @@ impl Catalog {
             .collect())
     }
 
-    /// Short "Artist — Title" labels for every track whose source file is gone,
-    /// in `source_path` order. Reads only the three columns a label needs (no
-    /// `Track` building), so it's cheap enough to refresh the toolbar's relocate
-    /// hover. Falls back to the file name
-    /// when artist/title are blank so a row is never an empty line.
+    /// Short "Artist — Title" labels for every track whose source file is gone
+    /// ([`Self::missing_tracks`]), in `source_path` order, for the toolbar's
+    /// relocate hover. Falls back to the file name when artist/title are blank
+    /// so a row is never an empty line.
     pub fn missing_track_labels(&self) -> Result<Vec<String>> {
-        let mut stmt = self
-            .conn
-            .prepare("SELECT source_path, artist, title FROM tracks ORDER BY source_path")?;
-        let rows = stmt
-            .query_map([], |r| {
-                Ok((
-                    r.get::<_, String>(0)?,
-                    r.get::<_, Option<String>>(1)?,
-                    r.get::<_, Option<String>>(2)?,
-                ))
-            })?
-            .collect::<rusqlite::Result<Vec<_>>>()?;
-        Ok(rows
+        let mut tracks = self.missing_tracks()?;
+        tracks.sort_by(|a, b| a.source_path.cmp(&b.source_path));
+        Ok(tracks
             .into_iter()
-            .filter(|(path, _, _)| !Path::new(path).exists())
-            .map(|(path, artist, title)| {
-                let artist = artist.unwrap_or_default();
-                let artist = artist.trim();
-                let title = title.unwrap_or_default();
-                let title = title.trim();
+            .map(|t| {
+                let artist = t.tags.artist.as_deref().unwrap_or("").trim();
+                let title = t.tags.title.as_deref().unwrap_or("").trim();
                 match (artist.is_empty(), title.is_empty()) {
                     (false, false) => format!("{artist} — {title}"),
                     (true, false) => title.to_string(),
                     (false, true) => artist.to_string(),
-                    (true, true) => Path::new(&path)
+                    (true, true) => Path::new(&t.source_path)
                         .file_name()
                         .map(|n| n.to_string_lossy().into_owned())
-                        .unwrap_or(path),
+                        .unwrap_or(t.source_path),
                 }
             })
             .collect())
