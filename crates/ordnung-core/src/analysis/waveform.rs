@@ -89,7 +89,7 @@ fn color_bin_count(n_samples: usize, sample_rate: u32) -> usize {
 ///   `OCCUPANCY_HI_HZ` FFT bins within `OCCUPANCY_FLOOR_DB` of the track's
 ///   hottest bin. Modern masters sit within a few dB of peak for the whole
 ///   track, so loudness alone is a structureless wall; occupancy recovers the
-///   intro/breakdown/drop shape (validated in `tests/energy_probe.rs`). Stored
+///   intro/breakdown/drop shape. Stored
 ///   as the cube root of `loud^1.2 · occ^0.6` (normalized to the track max) so
 ///   the GUI's gamma-3 energy curve reconstructs the validated hybrid at draw
 ///   time — and pre-v15 cached loudness bytes keep rendering as before.
@@ -345,7 +345,7 @@ impl Biquad {
 /// dilute hi-hat transients so the high band stops towering as spikes.
 const SCROLL_SMOOTH: usize = 2;
 /// Per-band display gains after global normalization, tuned against golden
-/// rekordbox PWV7 percentiles for the same audio (see `scrollstats` example).
+/// rekordbox PWV7 percentiles for the same audio.
 const SCROLL_GAIN: [f32; 3] = [1.4, 2.2, 0.75];
 
 /// Rekordbox-style detailed 3-band waveform: `[low, mid, high, amp, peak,

@@ -58,7 +58,7 @@ use std::path::Path;
 ///     `loud^1.2 · occ^0.6` so the GUI's existing gamma-3 curve reconstructs
 ///     it. Compressed masters sit within a few dB of peak throughout, so the
 ///     old loudness-only byte was a structureless wall; occupancy recovers the
-///     intro/breakdown/drop contour (see `tests/energy_probe.rs`).
+///     intro/breakdown/drop contour.
 /// v16: re-enable BPM/tempo (undoes v8). `tempo::detect` runs again and
 ///     `analyze_file` emits a constant-tempo (static) beatgrid: beats spaced
 ///     `60000/bpm` ms from the first detected beat, spanning the full track and

@@ -136,8 +136,6 @@ contributing to f/2, f/3… as candidate fundamentals) *lowered* accuracy — it
 spurious energy to the fourth/twelfth-below. Don't reintroduce without measuring.
 
 Diagnostics:
-- `cargo test -p ordnung-core --test chroma_debug --release -- --ignored --nocapture`
-  prints each track's chroma + peakedness. Peakedness near 1.0 = broken; 2+ = healthy.
 - `cargo test -p ordnung-core --test key_eval --release -- --ignored --nocapture` is
   the **accuracy regression test**: runs production `key::detect` over the 79-track
   labelled set (rekordbox ground truth in KEY_CHECK.md) and asserts exact/compatible
