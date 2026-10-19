@@ -8,7 +8,7 @@ use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 
 use ordnung_core::model::key::Key;
-use ordnung_core::model::{Analysis, AudioProperties, Beat, Beatgrid, Format, Tags, Track};
+use ordnung_core::model::{Analysis, AudioProperties, Beat, Beatgrid, Tags, Track};
 use ordnung_rbdb::export::{export_usb_with, ExportOptions};
 use ordnung_rbdb::golden::diff_pdb;
 use ordnung_rbdb::pdb::{read_export, RbTrack};
@@ -25,14 +25,7 @@ fn track_from_row(id: u64, dir: &std::path::Path, t: &RbTrack) -> Track {
     let name = t.file_path.rsplit('/').next().unwrap().to_string();
     let path = dir.join(&name);
     std::fs::write(&path, vec![0u8; 4096]).unwrap();
-    let format = match name.rsplit('.').next().map(|e| e.to_ascii_lowercase()).as_deref() {
-        Some("mp3") => Format::Mp3,
-        Some("flac") => Format::Flac,
-        Some("wav") => Format::Wav,
-        Some("aiff") | Some("aif") => Format::Aiff,
-        Some("m4a") => Format::Aac,
-        _ => Format::Other,
-    };
+    let format = ordnung_core::scan::format_from_ext(&path);
     Track {
         id,
         source_path: path.to_string_lossy().into_owned(),

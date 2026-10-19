@@ -446,7 +446,7 @@ fn read_existing(dest_root: &Path) -> (Vec<ExistingTrack>, Vec<RbPlaylist>, Hash
             bitrate_kbps: t.bitrate_kbps,
             sample_rate_hz: t.sample_rate_hz,
             year: t.year,
-            file_type: file_type_from_ext(&name),
+            file_type: file_type(ordnung_core::scan::format_from_ext(Path::new(&name))),
             analyze_path: t
                 .analyze_path
                 .clone()
@@ -482,18 +482,6 @@ fn read_existing(dest_root: &Path) -> (Vec<ExistingTrack>, Vec<RbPlaylist>, Hash
         });
     }
     (tracks, export.playlists, export.entries)
-}
-
-/// File-type enum from a filename extension (the read side doesn't store it).
-fn file_type_from_ext(name: &str) -> u16 {
-    match name.rsplit('.').next().map(|e| e.to_lowercase()).as_deref() {
-        Some("mp3") => 1,
-        Some("m4a") | Some("aac") => 4,
-        Some("flac") => 5,
-        Some("wav") => 11,
-        Some("aif") | Some("aiff") => 12,
-        _ => 0,
-    }
 }
 
 /// The ANLZ path older Ord exports gave track `id` (P-dir + 8-hex), kept only
