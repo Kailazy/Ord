@@ -412,49 +412,6 @@ mod imp {
         unsafe { app.setWindowsMenu(Some(&window)) };
 
         app.setMainMenu(Some(&bar));
-
-        // Verification hook: `ORDNUNG_DUMP_MENU=1` prints the installed menu
-        // bar as the app sees it. Cheap enough to keep — the menu bar is
-        // otherwise unobservable from a terminal, since reading it needs
-        // Accessibility permission the shell doesn't have.
-        if std::env::var_os("ORDNUNG_DUMP_MENU").is_some() {
-            dump(&app, mtm);
-        }
-    }
-
-    /// Print the live main menu (titles + key equivalents) to stdout.
-    fn dump(app: &NSApplication, _mtm: MainThreadMarker) {
-        let Some(bar) = (unsafe { app.mainMenu() }) else {
-            println!("MENU: none installed");
-            return;
-        };
-        for i in 0..unsafe { bar.numberOfItems() } {
-            let Some(top) = (unsafe { bar.itemAtIndex(i) }) else {
-                continue;
-            };
-            println!("MENU {}", unsafe { top.title() });
-            let Some(sub) = (unsafe { top.submenu() }) else {
-                continue;
-            };
-            for j in 0..unsafe { sub.numberOfItems() } {
-                let Some(it) = (unsafe { sub.itemAtIndex(j) }) else {
-                    continue;
-                };
-                if unsafe { it.isSeparatorItem() } {
-                    println!("  --");
-                    continue;
-                }
-                let key = unsafe { it.keyEquivalent() }.to_string();
-                let mask = unsafe { it.keyEquivalentModifierMask() }.0;
-                println!(
-                    "  {}  [key={:?} mask={:#x} tag={}]",
-                    unsafe { it.title() },
-                    key,
-                    mask,
-                    unsafe { it.tag() }
-                );
-            }
-        }
     }
 }
 

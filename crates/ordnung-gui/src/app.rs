@@ -1968,17 +1968,6 @@ impl eframe::App for App {
         // so the view answers a flick right away instead of easing in.
         let line_speed = ctx.options(|o| o.line_scroll_speed);
         crate::util::snap_wheel_events(&mut raw_input.events, line_speed);
-        // TEMP DEBUG: inject a synthetic hover at ORDNUNG_CURSOR_PROBE="x,y".
-        if let Some(path) = std::env::var_os("ORDNUNG_CURSOR_PROBE") {
-            let v = std::fs::read_to_string(path).unwrap_or_default();
-            if let Some((x, y)) = v.trim().split_once(',') {
-                if let (Ok(x), Ok(y)) = (x.trim().parse::<f32>(), y.trim().parse::<f32>()) {
-                    raw_input
-                        .events
-                        .push(egui::Event::PointerMoved(egui::pos2(x, y)));
-                }
-            }
-        }
     }
 
     fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
