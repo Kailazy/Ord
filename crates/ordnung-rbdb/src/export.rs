@@ -241,11 +241,7 @@ fn file_type(f: Format) -> u16 {
 /// title tag (liner notes pasted into a comment field) would otherwise
 /// overflow the page. CDJ browse screens show well under this many chars.
 fn clamp(s: &str, max_chars: usize) -> String {
-    if s.chars().count() <= max_chars {
-        s.to_string()
-    } else {
-        s.chars().take(max_chars).collect()
-    }
+    s.chars().take(max_chars).collect()
 }
 
 /// Replace FAT-hostile characters and trim what FAT dislikes at the edges.
