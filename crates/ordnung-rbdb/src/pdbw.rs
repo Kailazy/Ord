@@ -17,13 +17,17 @@
 
 use std::collections::HashMap;
 
-use crate::pdb::RbPlaylist;
+use crate::pdb::{RbPlaylist, PAGE_HEADER};
 
 pub(crate) const PAGE: usize = 4096;
-const PAGE_HEADER: usize = 0x28;
 /// Row-index cost at the page tail: 4 bytes per group of 16 + 2 per row slot.
 pub(crate) fn index_bytes(rows: usize) -> usize {
     rows.div_ceil(16) * 4 + rows * 2
+}
+/// Whether a row of `row_len` bytes still fits a page holding `used` heap
+/// bytes in `slot` rows (at most 255 rows a page).
+fn fits(used: usize, row_len: usize, slot: usize) -> bool {
+    PAGE_HEADER + used + row_len + index_bytes(slot + 1) <= PAGE && slot < 255
 }
 
 // ---------------------------------------------------------------------------
@@ -85,9 +89,7 @@ pub(crate) fn dsql_isrc(s: &str) -> Vec<u8> {
 /// strings unaligned has been tied to a CDJ-2000NXS freeze (E-8709).
 pub(crate) fn push_dsql(row: &mut Vec<u8>, enc: &[u8]) -> u16 {
     if enc.first().is_some_and(|b| b & 1 == 0) {
-        while row.len() % 4 != 0 {
-            row.push(0);
-        }
+        row.resize(row.len().next_multiple_of(4), 0);
     }
     let at = row.len() as u16;
     row.extend_from_slice(enc);
@@ -311,9 +313,7 @@ fn summary_row(num_contents: u32, created_date: &str, index_shift: u16) -> Vec<u
     r.push(0x1E);
     r.extend_from_slice(&dsql_string("1000"));
     r.push(0x03);
-    while r.len() < 40 {
-        r.push(0);
-    }
+    r.resize(r.len().max(40), 0);
     r
 }
 
@@ -405,9 +405,7 @@ const MENU_SORTS: &[&[u8]] = &[
 // ---------------------------------------------------------------------------
 
 pub(crate) fn pad4(mut row: Vec<u8>) -> Vec<u8> {
-    while row.len() % 4 != 0 {
-        row.push(0);
-    }
+    row.resize(row.len().next_multiple_of(4), 0);
     row
 }
 
@@ -417,9 +415,7 @@ pub(crate) fn paginate(rows: &[Vec<u8>]) -> Vec<Vec<Vec<u8>>> {
     let mut cur: Vec<Vec<u8>> = Vec::new();
     let mut used = 0usize;
     for row in rows {
-        let fits = PAGE_HEADER + used + row.len() + index_bytes(cur.len() + 1) <= PAGE
-            && cur.len() < 255;
-        if !fits && !cur.is_empty() {
+        if !fits(used, row.len(), cur.len()) && !cur.is_empty() {
             chunks.push(std::mem::take(&mut cur));
             used = 0;
         }
@@ -630,9 +626,7 @@ pub(crate) fn build_export_pdb(t: &PdbTables) -> Vec<u8> {
         for it in items {
             // Encode assuming current slot; check fit, else restart page.
             let mut row = pad4(enc(it, (slot as u16) * 32));
-            let fits =
-                PAGE_HEADER + used + row.len() + index_bytes(slot + 1) <= PAGE && slot < 255;
-            if !fits {
+            if !fits(used, row.len(), slot) {
                 slot = 0;
                 used = 0;
                 row = pad4(enc(it, 0));

@@ -109,11 +109,7 @@ pub fn read_beatgrid(dat_path: &std::path::Path) -> Vec<Beat> {
         return Vec::new();
     };
     // Body: u32 0, u32 0x00080000, u32 count, then 8-byte beat entries.
-    let Some(n) = body
-        .get(8..12)
-        .and_then(|b| b.try_into().ok())
-        .map(u32::from_be_bytes)
-    else {
+    let Some(n) = u32_at(body, 8) else {
         return Vec::new();
     };
     let Some(entries) = body.get(12..12 + n as usize * 8) else {
@@ -136,7 +132,7 @@ pub fn read_beatgrid(dat_path: &std::path::Path) -> Vec<Beat> {
 pub fn read_track_path(dat_path: &std::path::Path) -> Option<String> {
     let dat = std::fs::read(dat_path).ok()?;
     let body = find_section(&dat, b"PPTH")?;
-    let len = u32::from_be_bytes(body.get(0..4)?.try_into().ok()?) as usize;
+    let len = u32_at(body, 0)? as usize;
     let raw = body.get(4..4 + len)?;
     let units: Vec<u16> = raw
         .chunks_exact(2)
@@ -265,7 +261,7 @@ pub fn read_waveforms(dat_path: &std::path::Path) -> Option<AnlzWaveforms> {
     // RMS-based overview (31 ≈ −7.6 dBFS), so a mastered track reads back
     // around 168/255 rather than pinned at full scale.
     let body = find_section(&dat, b"PWAV")?;
-    let n = u32::from_be_bytes(body.get(0..4)?.try_into().ok()?) as usize;
+    let n = u32_at(body, 0)? as usize;
     let cols = body.get(8..8 + n)?;
     let preview: Vec<u8> = cols.iter().map(|b| (b & 0x1F) << 3).collect();
     if preview.iter().all(|&b| b == 0) {
@@ -278,7 +274,7 @@ pub fn read_waveforms(dat_path: &std::path::Path) -> Option<AnlzWaveforms> {
         .ok()
         .and_then(|ext| {
             let body = find_section(&ext, b"PWV5")?;
-            let n = u32::from_be_bytes(body.get(4..8)?.try_into().ok()?) as usize;
+            let n = u32_at(body, 4)? as usize;
             let cols = body.get(12..12 + n * 2)?;
             // Resample 150 cols/sec down to the GUI's 20 bins/sec.
             let bins = n * BANDS_PER_SEC as usize / SCROLL_PER_SEC as usize;
@@ -299,13 +295,6 @@ pub fn read_waveforms(dat_path: &std::path::Path) -> Option<AnlzWaveforms> {
     Some(AnlzWaveforms { preview, bands })
 }
 
-fn be16(v: u16) -> [u8; 2] {
-    v.to_be_bytes()
-}
-fn be32(v: u32) -> [u8; 4] {
-    v.to_be_bytes()
-}
-
 /// One tagged section: fourcc + len_header + len_tag, then body. `body` holds
 /// everything past the 12-byte prelude (the section's own header fields
 /// included), so `len_tag` — the full section size — is `12 + body.len()`;
@@ -313,8 +302,8 @@ fn be32(v: u32) -> [u8; 4] {
 fn section(tag: &[u8; 4], len_header: u32, body: &[u8]) -> Vec<u8> {
     let mut v = Vec::with_capacity(12 + body.len());
     v.extend_from_slice(tag);
-    v.extend_from_slice(&be32(len_header));
-    v.extend_from_slice(&be32(12 + body.len() as u32));
+    v.extend_from_slice(&len_header.to_be_bytes());
+    v.extend_from_slice(&(12 + body.len() as u32).to_be_bytes());
     v.extend_from_slice(body);
     v
 }
@@ -333,16 +322,16 @@ fn pmai(sections: Vec<Vec<u8>>) -> Vec<u8> {
     let body_len: usize = sections.iter().map(|s| s.len()).sum();
     let mut v = Vec::with_capacity(0x1C + body_len);
     v.extend_from_slice(b"PMAI");
-    v.extend_from_slice(&be32(0x1C));
-    v.extend_from_slice(&be32(0x1C + body_len as u32));
+    v.extend_from_slice(&0x1Cu32.to_be_bytes());
+    v.extend_from_slice(&(0x1C + body_len as u32).to_be_bytes());
     // Header words verified against all 1218 golden ANLZ files:
     // 1, 0x00010000, 0x00010000, 0 — the third word is 0x00010000 (a
     // version-like field), NOT 1; rekordbox silently ignores the analysis
     // (no waveform previews) when it doesn't match.
-    v.extend_from_slice(&be32(1));
-    v.extend_from_slice(&be32(0x0001_0000));
-    v.extend_from_slice(&be32(0x0001_0000));
-    v.extend_from_slice(&be32(0));
+    v.extend_from_slice(&1u32.to_be_bytes());
+    v.extend_from_slice(&0x0001_0000u32.to_be_bytes());
+    v.extend_from_slice(&0x0001_0000u32.to_be_bytes());
+    v.extend_from_slice(&0u32.to_be_bytes());
     for s in sections {
         v.extend_from_slice(&s);
     }
@@ -352,9 +341,9 @@ fn pmai(sections: Vec<Vec<u8>>) -> Vec<u8> {
 fn ppth(usb_path: &str) -> Vec<u8> {
     let mut body = Vec::new();
     let units: Vec<u16> = usb_path.encode_utf16().chain(std::iter::once(0)).collect();
-    body.extend_from_slice(&be32(units.len() as u32 * 2));
+    body.extend_from_slice(&(units.len() as u32 * 2).to_be_bytes());
     for u in units {
-        body.extend_from_slice(&be16(u));
+        body.extend_from_slice(&u.to_be_bytes());
     }
     section(b"PPTH", 0x10, &body)
 }
@@ -368,13 +357,13 @@ fn pvbr() -> Vec<u8> {
 
 fn pqtz(beats: &[Beat]) -> Vec<u8> {
     let mut body = Vec::with_capacity(12 + beats.len() * 8);
-    body.extend_from_slice(&be32(0));
-    body.extend_from_slice(&be32(0x0008_0000));
-    body.extend_from_slice(&be32(beats.len() as u32));
+    body.extend_from_slice(&0u32.to_be_bytes());
+    body.extend_from_slice(&0x0008_0000u32.to_be_bytes());
+    body.extend_from_slice(&(beats.len() as u32).to_be_bytes());
     for b in beats {
-        body.extend_from_slice(&be16(b.number.clamp(1, 4) as u16));
-        body.extend_from_slice(&be16((b.bpm * 100.0).round() as u16));
-        body.extend_from_slice(&be32(b.position_ms as u32));
+        body.extend_from_slice(&(b.number.clamp(1, 4) as u16).to_be_bytes());
+        body.extend_from_slice(&((b.bpm * 100.0).round() as u16).to_be_bytes());
+        body.extend_from_slice(&(b.position_ms as u32).to_be_bytes());
     }
     section(b"PQTZ", 0x18, &body)
 }
@@ -399,26 +388,27 @@ const DEFAULT_HOT_RGB: [u8; 3] = [255, 0, 23];
 fn pcob(list_type: u32, cues: &[Cue]) -> Vec<u8> {
     let list = cues_for_list(cues, list_type);
     let mut body = Vec::with_capacity(12 + list.len() * 0x38);
-    body.extend_from_slice(&be32(list_type));
-    body.extend_from_slice(&be16(0));
-    body.extend_from_slice(&be16(list.len() as u16));
+    body.extend_from_slice(&list_type.to_be_bytes());
+    body.extend_from_slice(&0u16.to_be_bytes());
+    body.extend_from_slice(&(list.len() as u16).to_be_bytes());
     body.extend_from_slice(&[0xFF; 4]);
     for c in list {
         let mut e = Vec::with_capacity(0x38 - 12);
-        e.extend_from_slice(&be32(c.hot_slot.map_or(0, |s| s as u32 + 1)));
+        e.extend_from_slice(&c.hot_slot.map_or(0, |s| s as u32 + 1).to_be_bytes());
         // status: 0 for a point (as rekordbox 7 writes), 4 for a loop (DS).
-        e.extend_from_slice(&be32(if c.is_loop() { 4 } else { 0 }));
-        e.extend_from_slice(&be32(0x0001_0000));
-        e.extend_from_slice(&be16(0xFFFF)); // order_first
-        e.extend_from_slice(&be16(0xFFFF)); // order_last
+        e.extend_from_slice(&(if c.is_loop() { 4u32 } else { 0 }).to_be_bytes());
+        e.extend_from_slice(&0x0001_0000u32.to_be_bytes());
+        e.extend_from_slice(&0xFFFFu16.to_be_bytes()); // order_first
+        e.extend_from_slice(&0xFFFFu16.to_be_bytes()); // order_last
         e.push(if c.is_loop() { 2 } else { 1 });
         e.push(0);
-        e.extend_from_slice(&be16(1000));
-        e.extend_from_slice(&be32(c.position_ms.min(u32::MAX as u64) as u32));
-        e.extend_from_slice(&be32(
-            c.loop_end_ms
-                .map_or(0xFFFF_FFFF, |v| v.min(u32::MAX as u64) as u32),
-        ));
+        e.extend_from_slice(&1000u16.to_be_bytes());
+        e.extend_from_slice(&(c.position_ms.min(u32::MAX as u64) as u32).to_be_bytes());
+        e.extend_from_slice(
+            &c.loop_end_ms
+                .map_or(0xFFFF_FFFF, |v| v.min(u32::MAX as u64) as u32)
+                .to_be_bytes(),
+        );
         e.extend_from_slice(&[0u8; 16]);
         body.extend_from_slice(&section(b"PCPT", 0x1C, &e));
     }
@@ -431,9 +421,9 @@ fn pcob(list_type: u32, cues: &[Cue]) -> Vec<u8> {
 fn pco2(list_type: u32, cues: &[Cue]) -> Vec<u8> {
     let list = cues_for_list(cues, list_type);
     let mut body = Vec::with_capacity(8 + list.len() * 0x58);
-    body.extend_from_slice(&be32(list_type));
-    body.extend_from_slice(&be16(list.len() as u16));
-    body.extend_from_slice(&be16(0));
+    body.extend_from_slice(&list_type.to_be_bytes());
+    body.extend_from_slice(&(list.len() as u16).to_be_bytes());
+    body.extend_from_slice(&0u16.to_be_bytes());
     for c in list {
         let comment: Vec<u8> = c
             .label
@@ -443,21 +433,22 @@ fn pco2(list_type: u32, cues: &[Cue]) -> Vec<u8> {
             .flat_map(|u| u.to_be_bytes())
             .collect();
         let mut e = Vec::with_capacity(0x58 - 12 + comment.len());
-        e.extend_from_slice(&be32(c.hot_slot.map_or(0, |s| s as u32 + 1)));
+        e.extend_from_slice(&c.hot_slot.map_or(0, |s| s as u32 + 1).to_be_bytes());
         e.push(if c.is_loop() { 2 } else { 1 });
         e.push(0);
-        e.extend_from_slice(&be16(1000));
-        e.extend_from_slice(&be32(c.position_ms.min(u32::MAX as u64) as u32));
-        e.extend_from_slice(&be32(
-            c.loop_end_ms
-                .map_or(0xFFFF_FFFF, |v| v.min(u32::MAX as u64) as u32),
-        ));
+        e.extend_from_slice(&1000u16.to_be_bytes());
+        e.extend_from_slice(&(c.position_ms.min(u32::MAX as u64) as u32).to_be_bytes());
+        e.extend_from_slice(
+            &c.loop_end_ms
+                .map_or(0xFFFF_FFFF, |v| v.min(u32::MAX as u64) as u32)
+                .to_be_bytes(),
+        );
         e.push(0); // memory cue colour id (palette index; 0 = none)
         e.push(1);
         e.extend_from_slice(&[0u8; 6]);
-        e.extend_from_slice(&be16(0)); // loop numerator
-        e.extend_from_slice(&be16(0)); // loop denominator
-        e.extend_from_slice(&be32(comment.len() as u32));
+        e.extend_from_slice(&0u16.to_be_bytes()); // loop numerator
+        e.extend_from_slice(&0u16.to_be_bytes()); // loop denominator
+        e.extend_from_slice(&(comment.len() as u32).to_be_bytes());
         e.extend_from_slice(&comment);
         let rgb = c.color.unwrap_or(if c.is_hot() { DEFAULT_HOT_RGB } else { [0, 0, 0] });
         e.push(0); // colour code (0 = custom RGB)
@@ -788,7 +779,7 @@ fn pwv6(inp: &AnlzInput) -> Vec<u8> {
 fn pwvc() -> Vec<u8> {
     let mut body = Vec::with_capacity(8);
     for w in [0u16, 0x63, 0x64, 0x120] {
-        body.extend_from_slice(&be16(w));
+        body.extend_from_slice(&w.to_be_bytes());
     }
     section(b"PWVC", 0x0E, &body)
 }
@@ -845,7 +836,7 @@ pub(crate) fn splice_sections(
         }
     }
     let total = out.len() as u32;
-    out[8..12].copy_from_slice(&be32(total));
+    out[8..12].copy_from_slice(&total.to_be_bytes());
     Some(out)
 }
 
@@ -855,12 +846,12 @@ pub(crate) fn splice_sections(
 /// player reads a stale extended grid.
 fn pqt2_for(beats: &[Beat]) -> Vec<u8> {
     let mut body = vec![0u8; 0x38 - 0x0C];
-    body[4..8].copy_from_slice(&be32(0x0100_0002));
+    body[4..8].copy_from_slice(&0x0100_0002u32.to_be_bytes());
     if let (Some(first), Some(last)) = (beats.first(), beats.last()) {
         for (i, b) in [(12usize, first), (20usize, last)] {
-            body[i..i + 2].copy_from_slice(&be16(b.number.clamp(1, 4) as u16));
-            body[i + 2..i + 4].copy_from_slice(&be16((b.bpm * 100.0).round() as u16));
-            body[i + 4..i + 8].copy_from_slice(&be32(b.position_ms as u32));
+            body[i..i + 2].copy_from_slice(&(b.number.clamp(1, 4) as u16).to_be_bytes());
+            body[i + 2..i + 4].copy_from_slice(&((b.bpm * 100.0).round() as u16).to_be_bytes());
+            body[i + 4..i + 8].copy_from_slice(&(b.position_ms as u32).to_be_bytes());
         }
     }
     section(b"PQT2", 0x38, &body)
