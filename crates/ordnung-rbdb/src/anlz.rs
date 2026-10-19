@@ -379,13 +379,6 @@ fn pqtz(beats: &[Beat]) -> Vec<u8> {
     section(b"PQTZ", 0x18, &body)
 }
 
-/// Header-only extended beatgrid (count 0) — a form rekordbox itself emits.
-fn pqt2() -> Vec<u8> {
-    let mut body = vec![0u8; 0x38 - 0x0C];
-    body[4..8].copy_from_slice(&be32(0x0100_0002));
-    section(b"PQT2", 0x38, &body)
-}
-
 /// The cues one list carries: hot cues (`list_type` 1) by pad, or memory
 /// cues (0) by time. Both files list hot cues first.
 fn cues_for_list(cues: &[Cue], list_type: u32) -> Vec<&Cue> {
@@ -950,7 +943,7 @@ pub(crate) fn build_ext(inp: &AnlzInput) -> Vec<u8> {
         pcob(0, inp.cues),
         pco2(1, inp.cues),
         pco2(0, inp.cues),
-        pqt2(),
+        pqt2_for(&[]),
         pwv5(inp),
         pwv4(inp),
     ])

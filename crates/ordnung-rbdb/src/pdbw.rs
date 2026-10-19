@@ -280,12 +280,6 @@ fn color_row(id: u16, name: &str) -> Vec<u8> {
     r
 }
 
-fn artwork_row(id: u32, path: &str) -> Vec<u8> {
-    let mut r = id.to_le_bytes().to_vec();
-    r.extend_from_slice(&dsql_string(path));
-    r
-}
-
 pub(crate) fn playlist_tree_row(p: &RbPlaylist) -> Vec<u8> {
     let mut r = p.parent_id.to_le_bytes().to_vec();
     r.extend_from_slice(&0u32.to_le_bytes());
@@ -626,14 +620,6 @@ fn build_dsql(tables: &[Vec<Vec<u8>>]) -> Vec<u8> {
 
 /// Build a complete `export.pdb`.
 pub(crate) fn build_export_pdb(t: &PdbTables) -> Vec<u8> {
-    let ishift = |i: usize| (i as u16 % 16) * 32; // per-page slot × 32; recomputed per chunk below
-
-    // NOTE on index_shift: rekordbox stores 32 × the row's slot *within its
-    // page*. Rows that overflow onto later pages restart at 0. `paginate`
-    // splits after encoding, so encode with the within-page slot by chunking
-    // tracks/artists/albums manually at the same capacity rule.
-    let _ = ishift;
-
     let mut tables: Vec<Vec<Vec<u8>>> = vec![Vec::new(); 20];
 
     // Encode with correct per-page index_shift: simulate pagination as we go.
@@ -684,7 +670,7 @@ pub(crate) fn build_export_pdb(t: &PdbTables) -> Vec<u8> {
     tables[13] = t
         .artwork
         .iter()
-        .map(|(id, p)| pad4(artwork_row(*id, p)))
+        .map(|(id, p)| pad4(genre_row(*id, p)))
         .collect();
     tables[16] = MENU_COLUMNS.iter().map(|r| pad4(r.to_vec())).collect();
     tables[17] = MENU_CATEGORIES.iter().map(|r| pad4(r.to_vec())).collect();
