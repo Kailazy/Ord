@@ -466,10 +466,7 @@ impl App {
         self.update_rx = Some(rx);
         thread::spawn(move || {
             let current = env!("CARGO_PKG_VERSION");
-            let found = match ordnung_core::update::check_latest(current) {
-                Ok(ordnung_core::update::UpdateOutcome::Update(info)) => Some(info),
-                _ => None,
-            };
+            let found = ordnung_core::update::check_latest(current).ok().flatten();
             // Ignore send errors — the app may have closed before the check returned.
             let _ = tx.send(found);
             ctx.request_repaint();

@@ -43,7 +43,7 @@ pub struct UpdateInfo {
 /// - `Ok(None)` when we're up to date (or the tag isn't newer / can't be parsed),
 /// - `Err(_)` only on a network/transport failure — the caller treats this as
 ///   "couldn't check" and stays silent rather than alarming the user.
-pub fn check_latest(current: &str) -> Result<UpdateOutcome> {
+pub fn check_latest(current: &str) -> Result<Option<UpdateInfo>> {
     let agent = ureq::AgentBuilder::new()
         .timeout(Duration::from_secs(10))
         .build();
@@ -63,7 +63,7 @@ pub fn check_latest(current: &str) -> Result<UpdateOutcome> {
         .unwrap_or_default();
     let latest = tag.trim_start_matches('v').trim();
     if latest.is_empty() {
-        return Ok(UpdateOutcome::UpToDate);
+        return Ok(None);
     }
     if is_newer(latest, current) {
         // Prefer the release page; fall back to the repo's releases listing.
@@ -84,13 +84,13 @@ pub fn check_latest(current: &str) -> Result<UpdateOutcome> {
                         .flatten()
                 })
             });
-        Ok(UpdateOutcome::Update(UpdateInfo {
+        Ok(Some(UpdateInfo {
             version: latest.to_string(),
             url,
             dmg_url,
         }))
     } else {
-        Ok(UpdateOutcome::UpToDate)
+        Ok(None)
     }
 }
 
@@ -209,14 +209,6 @@ fn run(tool: &str, flags: &[&str], paths: &[&Path]) -> Result<()> {
             String::from_utf8_lossy(&out.stderr).trim()
         )))
     }
-}
-
-/// Result of a successful check: either an available update or "you're current".
-/// Distinct from the `Err` case, which means the check itself failed to run.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum UpdateOutcome {
-    Update(UpdateInfo),
-    UpToDate,
 }
 
 /// True when `latest` is a strictly greater version than `current`. Both are
