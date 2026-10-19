@@ -1163,6 +1163,7 @@ mod tests {
         assert_eq!(InspectorDensity::from_key(&c.inspector_density), InspectorDensity::Expanded);
         assert_eq!(ReleaseAutoMatch::from_key(&c.discogs_auto_match), ReleaseAutoMatch::MostCollected);
         assert_eq!(StartupView::from_key(&c.startup_view), StartupView::Library);
+        #[cfg(feature = "usb-export")]
         assert_eq!(ExportComment::from_key(&c.export_comment), ExportComment::Notes);
         assert_eq!(NavPrimary::from_key(&c.nav_primary), NavPrimary::Digital);
         assert_eq!(WaveformColorMode::from_key(&c.waveform_color_mode), WaveformColorMode::Energy);
@@ -1244,6 +1245,7 @@ mod tests {
             ReleaseAutoMatch::MostCollected,
         );
         pin(&StartupView::ALL, StartupView::key, StartupView::from_key, StartupView::Library);
+        #[cfg(feature = "usb-export")]
         pin(&ExportComment::ALL, ExportComment::key, ExportComment::from_key, ExportComment::Notes);
         pin(
             &[WaveformColorMode::Energy, WaveformColorMode::Spectrum],
