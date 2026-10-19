@@ -319,6 +319,14 @@ fn section(tag: &[u8; 4], len_header: u32, body: &[u8]) -> Vec<u8> {
     v
 }
 
+/// A waveform section: `words` as big-endian header fields, then the column
+/// bytes.
+fn wave(tag: &[u8; 4], len_header: u32, words: &[u32], cols: impl IntoIterator<Item = u8>) -> Vec<u8> {
+    let mut body: Vec<u8> = words.iter().flat_map(|w| w.to_be_bytes()).collect();
+    body.extend(cols);
+    section(tag, len_header, &body)
+}
+
 /// Wrap sections in the `PMAI` file header (constants byte-identical to
 /// rekordbox 7 output).
 fn pmai(sections: Vec<Vec<u8>>) -> Vec<u8> {
@@ -575,15 +583,11 @@ fn mono_col(inp: &AnlzInput, f0: f64, f1: f64) -> u8 {
 const PWAV_HEIGHTS: std::ops::RangeInclusive<u8> = 2..=25;
 
 fn pwav(inp: &AnlzInput) -> Vec<u8> {
-    let mut body = Vec::with_capacity(8 + 400);
-    body.extend_from_slice(&be32(400));
-    body.extend_from_slice(&be32(0x0001_0000));
-    for i in 0..400 {
+    wave(b"PWAV", 0x14, &[400, 0x0001_0000], (0..400).map(|i| {
         let col = mono_col(inp, i as f64 / 400.0, (i + 1) as f64 / 400.0);
         let h = (col & 0x1F).clamp(*PWAV_HEIGHTS.start(), *PWAV_HEIGHTS.end());
-        body.push((col & 0xE0) | h);
-    }
-    section(b"PWAV", 0x14, &body)
+        (col & 0xE0) | h
+    }))
 }
 
 /// Tiny preview (the CDJ-900-era list waveform): 100 columns whose **four**
@@ -593,18 +597,14 @@ fn pwav(inp: &AnlzInput) -> Vec<u8> {
 /// a byte above 15 is out of spec for the firmware that draws it, and a zero
 /// column reads as an unfinished preview.
 fn pwv2(inp: &AnlzInput) -> Vec<u8> {
-    let mut body = Vec::with_capacity(8 + 100);
-    body.extend_from_slice(&be32(100));
-    body.extend_from_slice(&be32(0x0001_0000));
-    for i in 0..100 {
+    wave(b"PWV2", 0x14, &[100, 0x0001_0000], (0..100).map(|i| {
         let (f0, f1) = (i as f64 / 100.0, (i + 1) as f64 / 100.0);
         let h = match scroll_rms(inp, f0, f1) {
             Some(rms) => pwv2_height(rms),
             None => fallback_height(inp, f0),
         };
-        body.push((h & 0x0F).max(1));
-    }
-    section(b"PWV2", 0x14, &body)
+        (h & 0x0F).max(1)
+    }))
 }
 
 /// Columns of a 150 col/s scrolling waveform: the last, partial 1/150 s of
@@ -621,18 +621,13 @@ fn scroll_cols(duration_ms: u64) -> u32 {
 /// MP3). The linear peak the writer used before came out twice as tall.
 fn pwv3(inp: &AnlzInput) -> Vec<u8> {
     let n = scroll_cols(inp.duration_ms);
-    let mut body = Vec::with_capacity(12 + n as usize);
-    body.extend_from_slice(&be32(1));
-    body.extend_from_slice(&be32(n));
-    body.extend_from_slice(&be32(0x0096_0000));
-    for i in 0..n {
+    wave(b"PWV3", 0x18, &[1, n, 0x0096_0000], (0..n).map(|i| {
         let frac = i as f64 / n as f64;
-        body.push(match scroll_col(inp, i as usize) {
+        match scroll_col(inp, i as usize) {
             Some([l, m, h, amp, ..]) => (whiteness(&[l, m, h, 0]) << 5) | detail_height(amp),
             None => mono_col(inp, frac, (i + 1) as f64 / n as f64),
-        });
-    }
-    section(b"PWV3", 0x18, &body)
+        }
+    }))
 }
 
 /// A scrolling column's five-bit height: the square of the column peak, × 31
@@ -664,11 +659,7 @@ fn pwv5_colour(low: u8, mid: u8, high: u8) -> (u16, u16, u16) {
 /// Channel order follows the golden reference (bits 15–13 track the low band).
 fn pwv5(inp: &AnlzInput) -> Vec<u8> {
     let n = scroll_cols(inp.duration_ms);
-    let mut body = Vec::with_capacity(12 + n as usize * 2);
-    body.extend_from_slice(&be32(2));
-    body.extend_from_slice(&be32(n));
-    body.extend_from_slice(&be32(0x0096_0305));
-    for i in 0..n {
+    wave(b"PWV5", 0x18, &[2, n, 0x0096_0305], (0..n).flat_map(|i| {
         let frac = i as f64 / n as f64;
         let (l, m, hb, amp) = match scroll_col(inp, i as usize) {
             Some([l, m, hb, amp, ..]) => (l, m, hb, amp),
@@ -679,9 +670,8 @@ fn pwv5(inp: &AnlzInput) -> Vec<u8> {
         };
         let (low, mid, high) = pwv5_colour(l, m, hb);
         let h = detail_height(amp) as u16;
-        body.extend_from_slice(&be16((low << 13) | (mid << 10) | (high << 7) | (h << 2)));
-    }
-    section(b"PWV5", 0x18, &body)
+        ((low << 13) | (mid << 10) | (high << 7) | (h << 2)).to_be_bytes()
+    }))
 }
 
 /// Color preview: 1200 columns × 6 bytes. The byte semantics are our own
@@ -690,11 +680,7 @@ fn pwv5(inp: &AnlzInput) -> Vec<u8> {
 /// derivation is unknown, but these render a faithful preview.
 fn pwv4(inp: &AnlzInput) -> Vec<u8> {
     const N: usize = 1200;
-    let mut body = Vec::with_capacity(12 + N * 6);
-    body.extend_from_slice(&be32(6));
-    body.extend_from_slice(&be32(N as u32));
-    body.extend_from_slice(&be32(0));
-    for i in 0..N {
+    wave(b"PWV4", 0x18, &[6, N as u32, 0], (0..N).flat_map(|i| {
         let f0 = i as f64 / N as f64;
         let f1 = (i + 1) as f64 / N as f64;
         // Aggregate the window [f0, f1).
@@ -714,14 +700,15 @@ fn pwv4(inp: &AnlzInput) -> Vec<u8> {
         }
         let mean = sum / cnt.max(1);
         let bright = (wsum * 127 / (7 * cnt.max(1))).min(127) as u8;
-        body.push((peak / 2).min(127) as u8); // peak height
-        body.push(0x80 | bright); // brightness / color hint
-        body.push((peak * 9 / 20).min(127) as u8); // back fill
-        body.push((mean / 2).min(127) as u8); // front fill
-        body.push((mid / 2).min(127) as u8); // mid level
-        body.push((high / 6).min(41) as u8); // high level
-    }
-    section(b"PWV4", 0x18, &body)
+        [
+            (peak / 2).min(127) as u8,        // peak height
+            0x80 | bright,                    // brightness / color hint
+            (peak * 9 / 20).min(127) as u8,   // back fill
+            (mean / 2).min(127) as u8,        // front fill
+            (mid / 2).min(127) as u8,         // mid level
+            (high / 6).min(41) as u8,         // high level
+        ]
+    }))
 }
 
 /// The scroll column `[low, mid, high, amp, peak, rms]` at column index `i`
@@ -773,14 +760,7 @@ fn band3_col(inp: &AnlzInput, i: usize, frac: f64) -> [u8; 3] {
 /// CDJ-3000's): 3 bytes/column (low/mid/high, 0–127) at 150 col/s.
 fn pwv7(inp: &AnlzInput) -> Vec<u8> {
     let n = scroll_cols(inp.duration_ms);
-    let mut body = Vec::with_capacity(12 + n as usize * 3);
-    body.extend_from_slice(&be32(3));
-    body.extend_from_slice(&be32(n));
-    body.extend_from_slice(&be32(0x0096_0000));
-    for i in 0..n {
-        body.extend_from_slice(&band3_col(inp, i as usize, i as f64 / n as f64));
-    }
-    section(b"PWV7", 0x18, &body)
+    wave(b"PWV7", 0x18, &[3, n, 0x0096_0000], (0..n).flat_map(|i| band3_col(inp, i as usize, i as f64 / n as f64)))
 }
 
 /// 3-band preview: 1200 columns × 3 bytes. Golden files normalize each band
@@ -794,12 +774,9 @@ fn pwv6(inp: &AnlzInput) -> Vec<u8> {
     // fixed scale keeps quiet sections quiet -- normalizing each band's mean
     // instead turned sparse high bands into a forest of full-height spikes.
     const SCALE: [f64; 3] = [0.55, 0.7, 2.0];
-    let mut body = Vec::with_capacity(8 + N * 3);
-    body.extend_from_slice(&be32(3));
-    body.extend_from_slice(&be32(N as u32));
     let steps = 8;
     let cols = inp.scroll.len() / SCROLL_STRIDE;
-    for i in 0..N {
+    wave(b"PWV6", 0x14, &[3, N as u32], (0..N).flat_map(|i| {
         // Window mean of the detail columns this preview column spans.
         let mut col = [0f64; 3];
         for s in 0..steps {
@@ -809,11 +786,8 @@ fn pwv6(inp: &AnlzInput) -> Vec<u8> {
                 col[k] += b[k] as f64 / steps as f64;
             }
         }
-        for k in 0..3 {
-            body.push((col[k] * SCALE[k]).round().min(127.0) as u8);
-        }
-    }
-    section(b"PWV6", 0x14, &body)
+        [0, 1, 2].map(|k| (col[k] * SCALE[k]).round().min(127.0) as u8)
+    }))
 }
 
 /// 3-band scale metadata stub — semantics unresolved; a mid-range observed
