@@ -1602,13 +1602,12 @@ impl Client {
         }
         let page = page.max(1).to_string();
         let per_page = per_page.clamp(1, 100).to_string();
-        let body: SearchResponse = self.get_json("search response", || {
-            self.authed(self.agent.get(SEARCH_URL))
-                .query("q", query)
-                .query("type", "release")
-                .query("per_page", &per_page)
-                .query("page", &page)
-        })?;
+        let body = self.search_release(&[
+            ("q", query),
+            ("type", "release"),
+            ("per_page", &per_page),
+            ("page", &page),
+        ])?;
         Ok(RecordSearchPage {
             pages: body.pagination.pages,
             items: body.pagination.items,
@@ -1755,7 +1754,7 @@ impl Client {
             if !params.iter().any(|(k, _)| *k == "per_page") {
                 params.push(("per_page", "12"));
             }
-            let hits = self.search_release(&params)?;
+            let hits = self.search_release(&params)?.results;
             if !hits.is_empty() {
                 return Ok(hits.into_iter().map(candidate_from_hit).collect());
             }
@@ -2175,7 +2174,7 @@ impl Client {
                     ("release_title", a),
                     ("type", "release"),
                     ("per_page", "10"),
-                ])?;
+                ])?.results;
                 if !hits.is_empty() {
                     return Ok(hits);
                 }
@@ -2189,7 +2188,7 @@ impl Client {
                     ("track", t),
                     ("type", "release"),
                     ("per_page", "10"),
-                ])?;
+                ])?.results;
                 if !hits.is_empty() {
                     return Ok(hits);
                 }
@@ -2369,16 +2368,14 @@ impl Client {
     /// label browse so a dig can spend it the same way.
     fn search_page(&self, facets: &[(&str, &str)], page: u32) -> Result<BrowsePage> {
         let page = page.max(1).to_string();
-        let body: SearchResponse = self.get_json("search response", || {
-            let mut req = self.authed(self.agent.get(SEARCH_URL));
-            for (k, v) in facets {
-                req = req.query(k, v);
-            }
-            req.query("format", "Vinyl")
-                .query("type", "release")
-                .query("per_page", "100")
-                .query("page", &page)
-        })?;
+        let mut params = facets.to_vec();
+        params.extend([
+            ("format", "Vinyl"),
+            ("type", "release"),
+            ("per_page", "100"),
+            ("page", page.as_str()),
+        ]);
+        let body = self.search_release(&params)?;
         Ok(BrowsePage {
             pages: body.pagination.pages.max(1),
             items: body.pagination.items,
@@ -2409,15 +2406,14 @@ impl Client {
         })
     }
 
-    fn search_release(&self, params: &[(&str, &str)]) -> Result<Vec<SearchHit>> {
-        let body: SearchResponse = self.get_json("search response", || {
+    fn search_release(&self, params: &[(&str, &str)]) -> Result<SearchResponse> {
+        self.get_json("search response", || {
             let mut req = self.authed(self.agent.get(SEARCH_URL));
             for (k, v) in params {
                 req = req.query(k, v);
             }
             req
-        })?;
-        Ok(body.results)
+        })
     }
 
     fn download(&self, url: &str) -> Result<Vec<u8>> {
