@@ -10,10 +10,10 @@ use std::path::PathBuf;
 /// Finder/Dock, which inherit none of the shell environment. Currently just the
 /// Discogs token; extend in place as more settings appear.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct Config {
     /// Discogs personal access token. Empty means "not set" — callers then fall
     /// back to the `DISCOGS_TOKEN` environment variable.
-    #[serde(default)]
     pub discogs_token: String,
     /// Release carriers to hide in the Discogs release picker, as stable
     /// [`ReleaseMedium`] keys. Empty (the default, and what older configs get)
@@ -24,7 +24,6 @@ pub struct Config {
     /// needing a config migration. A collector who only buys records hides
     /// `cd`/`digital`/`cassette` and stops scrolling past pressings they'd
     /// never want.
-    #[serde(default)]
     pub hidden_release_mediums: Vec<String>,
     /// Match each new import to a Discogs release automatically, with no picker:
     /// the imported track is searched as soon as it lands (after auto-analysis)
@@ -32,17 +31,14 @@ pub struct Config {
     /// release link, cover art, and empty tag fields. On by default; does
     /// nothing until a Discogs token is configured. The right-click menu's
     /// "Find Discogs release" picker remains the manual override and re-pick.
-    #[serde(default = "default_true")]
     pub discogs_auto_fetch: bool,
     /// Which candidate the automatic match commits to, as a stable
     /// [`ReleaseAutoMatch`] key. Defaults to `"most_collected"` — the release
     /// the most Discogs users own, the strongest signal for "the normal one".
-    #[serde(default = "default_discogs_auto_match")]
     pub discogs_auto_match: String,
     /// Discogs username of the token owner, captured on the first collection
     /// sync. Lets the "Vinyl Collection" view link to the user's collection
     /// page across launches without re-resolving it. Empty until a sync runs.
-    #[serde(default)]
     pub discogs_username: String,
     /// The folder the user's music library lives in — the persistent answer to
     /// "where does my music come from?". Picked in the welcome tour (or
@@ -51,127 +47,104 @@ pub struct Config {
     /// every time. `None` — the default, and what every config predating the
     /// field gets — means no root is set and music arrives only via
     /// "Add songs…" or drag-drop, exactly as before.
-    #[serde(default)]
     pub library_root: Option<PathBuf>,
     /// Track-table column order as stable column keys (see `TableColumn::key`).
     /// Empty means "use the default order". Tolerant of unknown or missing keys
     /// on load, so a config from an older build keeps working as columns change.
-    #[serde(default)]
     pub column_order: Vec<String>,
     /// Track-table columns the user has hidden, as stable column keys.
-    #[serde(default)]
     pub hidden_columns: Vec<String>,
     /// Track-table column widths in points, keyed by stable column key (see
     /// `TableColumn::key`). Shared across every view (library and all playlists)
     /// and durable across rebuilds — unlike egui's own per-layout width memory,
     /// whose id shifts when the surrounding UI changes. Missing keys fall back to
     /// the per-column default width. A `BTreeMap` so the saved TOML is stable.
-    #[serde(default)]
     pub column_widths: BTreeMap<String, f32>,
     /// Sort applied to the track table on launch, as a stable column key (see
     /// `TableColumn::key`). Empty (the default) means "natural order" — catalog
     /// or playlist order, the prior behavior. Unknown or unsortable keys also
     /// fall back to natural order.
-    #[serde(default)]
     pub default_sort: String,
     /// Direction for `default_sort` (`true` = ascending). Ignored when
     /// `default_sort` is empty.
-    #[serde(default = "default_true")]
     pub default_sort_ascending: bool,
     /// How the "Vinyl Collection" grid is ordered: `"added"` (Discogs date
     /// added), `"price"` (lowest marketplace listing), or `"artist"`. Unknown
     /// values fall back to artist, the original fixed order. See `VinylSort`.
-    #[serde(default = "default_vinyl_sort")]
     pub vinyl_sort: String,
     /// Direction for `vinyl_sort` (`true` = ascending: oldest / cheapest / A–Z
     /// first). Defaults to descending, so the default view is newest first.
-    #[serde(default)]
     pub vinyl_sort_ascending: bool,
     /// How the vinyl tabs lay their records out: `"grid"` (a wall of covers,
     /// the default) or `"list"` (compact rows — more records per screen, with
     /// the caption fields readable at a glance). One choice covers all three
     /// tabs: collection, wantlist and a seller's crates are the same kind of
     /// browsing. Unknown values fall back to grid.
-    #[serde(default = "default_vinyl_view")]
     pub vinyl_view: String,
     /// Where the radio bar sits on the map: `"top"` (the default), `"bottom"`,
     /// `"left"` or `"right"`. Set by dragging the bar; at a side it stands
     /// upright with the cover on top.
-    #[serde(default = "default_radio_dock")]
     pub radio_dock: String,
     /// How the record map gathers its records: `"artists"` (hubs are
     /// artists, the default) or `"genres"` (hubs are styles, so the map
     /// reads as genre clouds). Unknown values fall back to artists.
-    #[serde(default)]
     pub graph_arrange: String,
     /// Kinds of record the map leaves out: any of `"owned"`, `"wanted"`
     /// and `"dug"` (see `graph::Status::key`). Empty shows everything. A
     /// long dig fills the map with discovered records; hiding them brings
     /// the shelves back into view without forgetting the finds.
-    #[serde(default)]
     pub graph_hide: Vec<String>,
     /// Which library sits at the top of the left navigation sidebar:
     /// `"digital"` (Library / New / playlists first, the default) or
     /// `"vinyl"` (the Discogs vinyl collection first). A vinyl-led collector
     /// gets their shelf up top and the digital library pinned below. Unknown
     /// values fall back to `"digital"`. See `NavPrimary`.
-    #[serde(default = "default_nav_primary")]
     pub nav_primary: String,
     /// USB exports convert FLAC and anything above 48 kHz to AIFF on the
     /// stick, for players that can't play them (CDJ-2000/NXS/900 and
     /// older). Remembered from the export confirm's checkbox; maps to
     /// `ordnung_rbdb::export::PlayerTarget::Classic`.
-    #[serde(default)]
     pub export_convert_for_older_players: bool,
     /// What a USB export writes into each track's comment, the field a CDJ
     /// shows under the song info: `"notes"` (the track's Notes tag, the
     /// default), `"tags"` (its Ordnung tags, `dub, dark`), `"notes_tags"`
     /// (both, notes first) or `"none"`. Remembered from the export
     /// confirm's dropdown. See `ExportComment`.
-    #[serde(default = "default_export_comment")]
     pub export_comment: String,
     /// Which of the sidebar's three width tiers is in force: `"icon"`,
     /// `"narrow"` or `"wide"` (the default). The sidebar snaps between designed
     /// layouts rather than resizing freely, so what persists is the chosen tier,
     /// not a pixel width. Unknown values fall back to `"wide"`. See `NavDensity`.
-    #[serde(default = "default_nav_density")]
     pub nav_density: String,
     /// The sidebar lists folded shut by their caption's chevron:
     /// `"playlists"`, `"crates"`, `"tags"`. Stored as what is hidden so the
     /// default, and every older config, shows every list.
-    #[serde(default)]
     pub nav_collapsed: Vec<String>,
     /// Which of the inspector drawer's two width tiers is in force:
     /// `"narrow"` or `"regular"` (the default). Like `nav_density`, a tier
     /// rather than a pixel width. See `InspectorDensity`.
-    #[serde(default = "default_inspector_density")]
     pub inspector_density: String,
     /// Whether the right-hand track inspector drawer is showing. Mirrors the
     /// pull tab's toggle so the drawer comes back the way it was left. Off by
     /// default (and for older configs that predate the field): a fresh install
     /// opens on the full-width table, with the pull tab there to discover.
-    #[serde(default)]
     pub inspector_open: bool,
     /// Which section the app opens on: `"library"` (Library, the default),
     /// `"vinyl"` (the vinyl collection), or `"recent"` (new imports). Unknown
     /// values fall back to `"library"`. See `StartupView`.
-    #[serde(default = "default_startup_view")]
     pub startup_view: String,
     /// Run analysis (BPM, key, waveform) automatically on each track as it's
     /// imported, instead of waiting for the explicit "Analyze" action. On by
     /// default; defaults to on for older configs that predate the field too.
-    #[serde(default = "default_true")]
     pub auto_analyze: bool,
     /// The cue bar (hot cue pads, loop, memory cues) is showing above the
     /// player's zoom lane. Mirrors the lane's CUES tab so it comes back the
     /// way it was left. Hidden by default: the player stays a bar until a
     /// DJ asks for pads.
-    #[serde(default)]
     pub cue_bar_open: bool,
     /// Quantize: new cues and loops snap to the track's beatgrid, and beat
     /// loops are exact beat multiples, the way rekordbox's Q button works.
     /// Off, cues land exactly where the playhead is.
-    #[serde(default = "default_true")]
     pub cue_quantize: bool,
     /// Write tag edits straight into the source files instead of parking them
     /// behind the toolbar's "Write N edited to files" button. When on, the
@@ -186,139 +159,114 @@ pub struct Config {
     /// Only ever touches the tag block of tracks the user actually edited, and
     /// turning it off restores the explicit two-step. Older configs that predate
     /// the field get the new default too.
-    #[serde(default = "default_true")]
     pub auto_write_tags: bool,
     /// Version of the first-run welcome tour this install has completed (see
     /// `onboarding::TOUR_VERSION`). `0` — the default, and what every config
     /// predating the tour gets — means "never seen it", which is what opens the
     /// tour on a fresh install. Storing a version rather than a bool lets a
     /// materially changed tour show once more to existing users.
-    #[serde(default)]
     pub onboarding_completed_version: u32,
     /// Default target format pre-selected in the convert dialogs, as a stable
     /// lowercase key (`mp3`/`aac`/`flac`/`wav`/`aiff`; see `util::format_key`).
     /// Empty or unknown falls back to AIFF, the prior hard-coded default.
-    #[serde(default = "default_convert_format")]
     pub convert_format: String,
     /// Bitrate (kbps) prefilled for lossy convert targets (MP3/AAC), as the text
     /// shown in the field. Empty means "use the per-format hint" (320 / 256).
-    #[serde(default)]
     pub convert_bitrate_kbps: String,
     /// Default output folder for conversions. `None` (the default) means
     /// "alongside each source file".
-    #[serde(default)]
     pub convert_out_dir: Option<PathBuf>,
     /// Whether the convert dialogs default to replacing the source file in place.
     /// On by default, preserving the prior hard-coded behavior.
-    #[serde(default = "default_true")]
     pub convert_in_place: bool,
     /// Convert files automatically as they enter the library (scan, drag-drop,
     /// USB transfer), using the convert defaults above. **Off by default** —
     /// like `auto_analyze`/`auto_write_tags` this is GUI policy the user
     /// switches on explicitly; core's convert engine stays explicit-only and
     /// is only ever driven from here with a snapshotted spec.
-    #[serde(default)]
     pub auto_convert: bool,
     /// Which source formats auto-convert applies to, as stable lowercase keys
     /// (see `util::format_key`). Empty — the default — means every format;
     /// e.g. `["flac"]` converts only imported FLACs. Files already in the
     /// target format are always skipped regardless of this filter.
-    #[serde(default)]
     pub auto_convert_sources: Vec<String>,
     /// Master playback volume as a linear amplitude factor, `0.0`–`1.0`. Driven
     /// by the toolbar knob and restored at startup so the app comes back at the
     /// level it was left at.
-    #[serde(default = "default_volume")]
     pub volume: f32,
     /// Key lock (a CDJ's master tempo) for the player's pitch fader: on, the
     /// fader changes the tempo and keeps the musical key; off, it behaves
     /// like a turntable's and shifts both. Remembered like a deck setting.
-    #[serde(default)]
     pub key_lock: bool,
     /// Start a record's videos part-way in rather than at the top, so a
     /// preview of a release lands past the intro and the build. The
     /// fraction is `playback::MID_START_FRACTION`. Carries the old single
     /// `mid_start` key forward, which covered both engines.
-    #[serde(default, alias = "mid_start")]
+    #[serde(alias = "mid_start")]
     pub mid_start_videos: bool,
     /// The same for library files in the player, on its own switch: a
     /// record you are sizing up wants the drop, a track you own is one you
     /// may want to hear whole.
-    #[serde(default)]
     pub mid_start_files: bool,
     /// How the player's waveform is colored: `"energy"` (cool→hot gradient by
     /// each section's energy — perceived loudness × spectral occupancy) or
     /// `"spectrum"` (additive RGB from the low/mid/high band balance, like
     /// rekordbox/Serato). Unknown values fall back to `"energy"`. See
     /// `WaveformColorMode`.
-    #[serde(default = "default_waveform_color_mode")]
     pub waveform_color_mode: String,
     /// Render-time height companding for the waveform. `1.0` keeps the stored
     /// sqrt-companded amplitude (most compressed); `2.0` cancels the sqrt back to
     /// linear amplitude (least compressed, rekordbox-like). See `wave_height`.
-    #[serde(default = "default_waveform_height_exp")]
     pub waveform_height_exp: f32,
     /// Per-band visual height gain for spectrum mode `[low, mid, high]`. The bass
     /// band swamps the others, so the default trims it and lifts mid/high.
-    #[serde(default = "default_waveform_band_gain")]
     pub waveform_band_gain: [f32; 3],
     /// Visual height gain for the single envelope in energy mode. `1.0` keeps the
     /// stored amplitude; lower trims, higher lifts. The spectrum-mode equivalent
     /// is `waveform_band_gain`.
-    #[serde(default = "default_waveform_energy_gain")]
     pub waveform_energy_gain: f32,
     /// RGB colors for the three spectrum bands `[low, mid, high]`. Defaults to the
     /// Serato/rekordbox convention (low = red, mid = green, high = light blue).
-    #[serde(default = "default_waveform_band_colors")]
     pub waveform_band_colors: [[u8; 3]; 3],
     /// RGB stops for the energy-mode cool→hot gradient, quiet → loudest (5 stops).
-    #[serde(default = "default_waveform_energy_colors")]
     pub waveform_energy_colors: [[u8; 3]; 5],
     /// Low/mid band crossover (Hz) for the zoom detail lane's live hi-res bands.
     /// Lower it toward kick + sub so low-mid energy stays out of the bass band.
     /// Only the zoom lane honors this live; the full-track overview uses the split
     /// baked in at analysis time. See `compute_hires_bands`.
-    #[serde(default = "default_waveform_low_hz")]
     pub waveform_low_hz: f32,
     /// Mid/high band crossover (Hz) for the zoom detail lane's live hi-res bands.
     /// Everything above this reads as the high band. See `compute_hires_bands`.
-    #[serde(default = "default_waveform_mid_hz")]
     pub waveform_mid_hz: f32,
     /// Waveform smoothing strength `[0, 1]`: scales the attack/release time
     /// constants below from `0` (raw envelope) to their full values, so one knob
     /// sweeps raw → fully smoothed. See `smooth_source` and
     /// `WaveformStyle::smoothing`.
-    #[serde(default = "default_waveform_smoothing")]
     pub waveform_smoothing: f32,
     /// Waveform smoothing attack time constant (ms of audio) at full smoothing:
     /// how much a *rising* edge is rounded. A few ms irons out pixel-scale
     /// jaggies while keeping transient onsets crisp. See `smooth_source`.
-    #[serde(default = "default_waveform_smooth_attack_ms")]
     pub waveform_smooth_attack_ms: f32,
     /// Waveform smoothing release time constant (ms of audio) at full smoothing:
     /// how long a *falling* tail rings out. Beat-scale (~450 ms) keeps a kick's
     /// tail standing until the next kick so the envelope reads as a connected
     /// silhouette; short values let it pinch to the centerline between beats
     /// (separate petals). See `smooth_source`.
-    #[serde(default = "default_waveform_smooth_release_ms")]
     pub waveform_smooth_release_ms: f32,
     /// Bass floor threshold `[0, 1]` (fraction of full scale): low-band content
     /// quieter than this is treated as sustained sub (the tail lingering under a
     /// kick) rather than a transient peak, and is dimmed by
     /// `waveform_bass_floor_amount`. Louder bass (kick attacks) is kept at full
     /// height. See `bass_floor_gain`.
-    #[serde(default = "default_waveform_bass_floor_threshold")]
     pub waveform_bass_floor_threshold: f32,
     /// How much to dim sustained sub below `waveform_bass_floor_threshold`:
     /// `0` keeps it (no change), `1` removes it entirely, leaving only bass
     /// transients. See `bass_floor_gain`.
-    #[serde(default = "default_waveform_bass_floor_amount")]
     pub waveform_bass_floor_amount: f32,
     /// Saved snapshots of the Waveform settings tab (Settings → Waveform →
     /// Presets), keyed by their 1-based `slot`. At most one entry per slot; a
     /// plain `Vec` (not `[Option<_>; 5]`) because TOML can't represent `None`
     /// holes in an array.
-    #[serde(default)]
     pub waveform_presets: Vec<WaveformPreset>,
 }
 
@@ -343,59 +291,6 @@ pub struct WaveformPreset {
     pub smooth_release_ms: f32,
     pub bass_floor_threshold: f32,
     pub bass_floor_amount: f32,
-}
-
-fn default_true() -> bool {
-    true
-}
-
-fn default_discogs_auto_match() -> String {
-    "most_collected".to_string()
-}
-
-fn default_convert_format() -> String {
-    "aiff".to_string()
-}
-
-fn default_vinyl_sort() -> String {
-    "added".to_string()
-}
-
-fn default_vinyl_view() -> String {
-    "grid".to_string()
-}
-
-fn default_radio_dock() -> String {
-    "top".to_string()
-}
-
-fn default_nav_density() -> String {
-    "wide".into()
-}
-
-fn default_inspector_density() -> String {
-    "regular".into()
-}
-
-fn default_nav_primary() -> String {
-    "digital".to_string()
-}
-
-
-fn default_startup_view() -> String {
-    "library".to_string()
-}
-
-pub(crate) fn default_volume() -> f32 {
-    1.0
-}
-
-fn default_export_comment() -> String {
-    ExportComment::Notes.key().to_string()
-}
-
-fn default_waveform_color_mode() -> String {
-    "energy".to_string()
 }
 
 pub(crate) fn default_waveform_height_exp() -> f32 {
@@ -808,7 +703,7 @@ impl Default for Config {
         Self {
             discogs_token: String::new(),
             discogs_auto_fetch: true,
-            discogs_auto_match: default_discogs_auto_match(),
+            discogs_auto_match: "most_collected".to_string(),
             discogs_username: String::new(),
             hidden_release_mediums: Vec::new(),
             library_root: None,
@@ -817,36 +712,36 @@ impl Default for Config {
             column_widths: BTreeMap::new(),
             default_sort: String::new(),
             default_sort_ascending: true,
-            vinyl_sort: default_vinyl_sort(),
+            vinyl_sort: "added".to_string(),
             vinyl_sort_ascending: false,
-            vinyl_view: default_vinyl_view(),
-            radio_dock: default_radio_dock(),
+            vinyl_view: "grid".to_string(),
+            radio_dock: "top".to_string(),
             graph_arrange: String::new(),
             graph_hide: Vec::new(),
-            nav_primary: default_nav_primary(),
+            nav_primary: "digital".to_string(),
             export_convert_for_older_players: false,
-            export_comment: default_export_comment(),
-            nav_density: default_nav_density(),
+            export_comment: ExportComment::Notes.key().to_string(),
+            nav_density: "wide".into(),
             nav_collapsed: Vec::new(),
-            inspector_density: default_inspector_density(),
+            inspector_density: "regular".into(),
             inspector_open: false,
-            startup_view: default_startup_view(),
+            startup_view: "library".to_string(),
             auto_analyze: true,
             cue_bar_open: false,
             cue_quantize: true,
             auto_write_tags: true,
             onboarding_completed_version: 0,
-            convert_format: default_convert_format(),
+            convert_format: "aiff".to_string(),
             convert_bitrate_kbps: String::new(),
             convert_out_dir: None,
             convert_in_place: true,
             auto_convert: false,
             auto_convert_sources: Vec::new(),
-            volume: default_volume(),
+            volume: 1.0,
             key_lock: false,
             mid_start_videos: false,
             mid_start_files: false,
-            waveform_color_mode: default_waveform_color_mode(),
+            waveform_color_mode: "energy".to_string(),
             waveform_height_exp: default_waveform_height_exp(),
             waveform_band_gain: default_waveform_band_gain(),
             waveform_energy_gain: default_waveform_energy_gain(),
