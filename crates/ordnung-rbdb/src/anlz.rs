@@ -105,9 +105,11 @@ pub fn read_beatgrid(dat_path: &std::path::Path) -> Vec<Beat> {
     let Ok(dat) = std::fs::read(dat_path) else {
         return Vec::new();
     };
-    let Some(body) = find_section(&dat, b"PQTZ") else {
-        return Vec::new();
-    };
+    find_section(&dat, b"PQTZ").map(parse_pqtz_body).unwrap_or_default()
+}
+
+/// The beats of one `PQTZ` section body (past its 12-byte prelude).
+pub(crate) fn parse_pqtz_body(body: &[u8]) -> Vec<Beat> {
     // Body: u32 0, u32 0x00080000, u32 count, then 8-byte beat entries.
     let Some(n) = u32_at(body, 8) else {
         return Vec::new();
@@ -131,7 +133,11 @@ pub fn read_beatgrid(dat_path: &std::path::Path) -> Vec<Beat> {
 /// when the file is missing or carries no path.
 pub fn read_track_path(dat_path: &std::path::Path) -> Option<String> {
     let dat = std::fs::read(dat_path).ok()?;
-    let body = find_section(&dat, b"PPTH")?;
+    parse_ppth_body(find_section(&dat, b"PPTH")?)
+}
+
+/// The path of one `PPTH` section body (past its 12-byte prelude).
+pub(crate) fn parse_ppth_body(body: &[u8]) -> Option<String> {
     let len = u32_at(body, 0)? as usize;
     let raw = body.get(4..4 + len)?;
     let units: Vec<u16> = raw

@@ -147,6 +147,7 @@ fn diff_section(field: &str, g: &Section, o: &Section, out: &mut AnlzDiff) {
     }
     match g.tag.as_str() {
         "PPTH" => {
+            let ppth = |s: &Section| crate::anlz::parse_ppth_body(s.after_prelude()).unwrap_or_default();
             let (a, b) = (ppth(g), ppth(o));
             let why = (crate::pdb::basename(&a) == crate::pdb::basename(&b))
                 .then_some("Ordnung keeps /Contents flat; rekordbox mirrors the source tree");
@@ -156,7 +157,10 @@ fn diff_section(field: &str, g: &Section, o: &Section, out: &mut AnlzDiff) {
             if g.header() != o.header() {
                 out.deltas.push(delta(&format!("{field}.header"), hex(g.header()), hex(o.header()), None));
             }
-            let (a, b) = (beats(g), beats(o));
+            let (a, b) = (
+                crate::anlz::parse_pqtz_body(g.after_prelude()),
+                crate::anlz::parse_pqtz_body(o.after_prelude()),
+            );
             if a == b {
                 out.deltas.push(first_byte_diff(field, g, o));
             } else {
@@ -216,32 +220,6 @@ fn diff_section(field: &str, g: &Section, o: &Section, out: &mut AnlzDiff) {
         }
         _ => out.deltas.push(first_byte_diff(field, g, o)),
     }
-}
-
-fn ppth(s: &Section) -> String {
-    let body = s.body();
-    let n = be32(s.header(), 0).unwrap_or(0) as usize;
-    let raw = body.get(..n.min(body.len())).unwrap_or(&[]);
-    let units: Vec<u16> = raw
-        .chunks_exact(2)
-        .map(|c| u16::from_be_bytes([c[0], c[1]]))
-        .take_while(|&u| u != 0)
-        .collect();
-    String::from_utf16_lossy(&units)
-}
-
-fn beats(s: &Section) -> Vec<Beat> {
-    // Header: u32 0, u32 0x00080000, u32 count; body: 8-byte beats.
-    let n = be32(s.header(), 8).unwrap_or(0) as usize;
-    s.body()
-        .chunks_exact(8)
-        .take(n)
-        .map(|e| Beat {
-            number: u32::from(u16::from_be_bytes([e[0], e[1]])),
-            bpm: f32::from(u16::from_be_bytes([e[2], e[3]])) / 100.0,
-            position_ms: u64::from(u32::from_be_bytes([e[4], e[5], e[6], e[7]])),
-        })
-        .collect()
 }
 
 fn beat_str(b: &Beat) -> String {
