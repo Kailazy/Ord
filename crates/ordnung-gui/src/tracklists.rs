@@ -24,6 +24,7 @@ use super::*;
 use crate::jobs::MatchScope;
 use crate::records::SearchScope;
 use crate::song_rows::center_two;
+use crate::ui::text::truncated;
 use crate::ui::tokens::{color, font, space};
 use egui_extras::{Column, TableBuilder};
 use ordnung_core::model::{ChosenBy, DugRelease};
@@ -91,14 +92,6 @@ fn list_menu(ui: &mut egui::Ui, busy: bool, with_match: bool) -> Option<ListAct>
         ui.close_menu();
     }
     act
-}
-
-/// One line of text cut to `max_w` with an ellipsis, for painting where a
-/// label can't go.
-fn truncated(ui: &egui::Ui, text: &str, font: egui::FontId, ink: egui::Color32, max_w: f32) -> std::sync::Arc<egui::Galley> {
-    let mut job = egui::text::LayoutJob::simple_singleline(text.to_owned(), font, ink);
-    job.wrap = egui::text::TextWrapping::truncate_at_width(max_w.max(0.0));
-    ui.fonts(|f| f.layout_job(job))
 }
 
 /// `17 Sep 2026` from unix seconds, without a date crate: the civil-date
@@ -539,7 +532,7 @@ impl App {
                     let ink = if active || resp.hovered() { color::LABEL } else { color::LABEL_2 };
                     // Cut to the bar, not spilling past it.
                     let inner_w = w - 2.0 * space::S3;
-                    let name = truncated(ui, &t.name, font::strong(font::body().size), ink, inner_w);
+                    let name = truncated(ui, &t.name, font::strong(font::body().size), ink, inner_w, true);
                     ui.painter().galley(egui::pos2(rect.left() + space::S3, rect.top() + 6.0), name, ink);
                     let sub = truncated(
                         ui,
@@ -547,6 +540,7 @@ impl App {
                         font::caption(),
                         color::LABEL_3,
                         inner_w,
+                        true,
                     );
                     let sub_h = sub.size().y;
                     ui.painter().galley(egui::pos2(rect.left() + space::S3, rect.bottom() - 6.0 - sub_h), sub, color::LABEL_3);

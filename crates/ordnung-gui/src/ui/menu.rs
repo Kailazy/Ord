@@ -525,13 +525,7 @@ impl MenuUi<'_> {
             - detail_galley
                 .as_ref()
                 .map_or(0.0, |g| g.size().x + ROW_PAD);
-        let mut job = egui::text::LayoutJob::simple_singleline(
-            label,
-            font::body(),
-            text_color.gamma_multiply(enter),
-        );
-        job.wrap = egui::text::TextWrapping::truncate_at_width(label_max.max(0.0));
-        let label_galley = painter.layout_job(job);
+        let label_galley = super::text::truncated(self.ui, label, font::body(), text_color.gamma_multiply(enter), label_max, true);
         painter.galley(
             egui::pos2(x, rect.center().y - label_galley.size().y / 2.0),
             label_galley,

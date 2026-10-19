@@ -38,14 +38,7 @@ pub struct Chip {
 
 /// Lay out the name, truncated past `max_name_w`, and size the pill.
 pub fn measure(ui: &egui::Ui, name: &str, max_name_w: f32) -> Chip {
-    let name = ui.fonts(|f| {
-        let mut job =
-            egui::text::LayoutJob::simple_singleline(name.to_string(), font::body(), color::LABEL);
-        job.wrap.max_width = max_name_w;
-        job.wrap.max_rows = 1;
-        job.wrap.break_anywhere = false;
-        f.layout_job(job)
-    });
+    let name = super::text::truncated(ui, name, font::body(), color::LABEL, max_name_w, false);
     let width = PAD_FACE + FACE + GAP + name.size().x + PAD_NAME;
     Chip { name, width }
 }

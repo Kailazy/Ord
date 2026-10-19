@@ -147,17 +147,7 @@ pub fn caption_row(ui: &mut egui::Ui, title: &str, add_action: impl FnOnce(&mut 
     } else {
         row.width()
     };
-    let galley = ui.fonts(|f| {
-        let mut job = egui::text::LayoutJob::simple_singleline(
-            title.to_uppercase(),
-            font::strong(font::caption().size),
-            color::LABEL_3,
-        );
-        job.wrap.max_width = cap.max(0.0);
-        job.wrap.max_rows = 1;
-        job.wrap.break_anywhere = true;
-        f.layout_job(job)
-    });
+    let galley = super::text::truncated(ui, title.to_uppercase(), font::strong(font::caption().size), color::LABEL_3, cap, true);
     ui.painter().galley(
         egui::pos2(row.left(), row.center().y - galley.size().y / 2.0),
         galley,
