@@ -410,9 +410,8 @@ impl App {
                     let alt_drag = ui.input(|i| i.modifiers.alt);
                     let cancelled = crate::drag_cancelled(ui.ctx());
                     // Armed every dragged frame (not just drag start) so a
-                    // missed session start retries and a mid-drag ⌥ press
-                    // still promotes to the file drag-out. Esc cancels the
-                    // grab for the rest of the gesture.
+                    // mid-drag ⌥ press still promotes to the file drag-out.
+                    // Esc cancels the grab for the rest of the gesture.
                     if (art_resp.drag_started() || art_resp.dragged()) && alt_drag && !cancelled {
                         native_drag = true;
                     }

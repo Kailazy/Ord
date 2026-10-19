@@ -97,6 +97,7 @@ objc2-app-kit = { version = "0.2.2", features = [
     "NSDraggingItem",
     "NSDraggingSession",
     "NSEvent",
+    "NSGraphicsContext",
     "NSImage",
     "NSApplication",
     "NSWindow",

@@ -9,11 +9,15 @@
 
 use std::path::Path;
 
-/// Begin a native drag carrying `paths` as file URLs. Returns true if a session
-/// actually started; false if the window handle or the initiating mouse event
-/// wasn't available this frame (the caller can simply let the user drag again).
+/// Begin a native drag carrying `paths` as file URLs, their Finder icons
+/// stacked under the cursor. Returns true once the gesture is AppKit's; false
+/// only if the window handle wasn't available this frame (the caller can
+/// simply let the user drag again).
 ///
-/// Must be called on the UI thread — eframe's `update` always is.
+/// Must be called on the UI thread — eframe's `update` always is. Returns as
+/// soon as the session starts: AppKit then tracks the drag to the drop on its
+/// own, consuming the mouse events — the mouse-up included — so the window
+/// never hears the gesture end.
 #[cfg(target_os = "macos")]
 pub fn begin_file_drag(frame: &eframe::Frame, paths: &[&Path]) -> bool {
     imp::begin_file_drag(frame, paths)
@@ -50,7 +54,8 @@ mod imp {
     use objc2::{declare_class, msg_send_id, mutability, ClassType, DeclaredClass};
     use objc2_app_kit::{
         NSApplication, NSDragOperation, NSDraggingContext, NSDraggingItem, NSDraggingSession,
-        NSDraggingSource, NSEventType, NSImage, NSPasteboardWriting, NSView, NSWorkspace,
+        NSDraggingSource, NSEvent, NSEventModifierFlags, NSEventType, NSImage,
+        NSPasteboardWriting, NSView, NSWorkspace,
     };
     use objc2_foundation::{
         MainThreadMarker, NSArray, NSObject, NSObjectProtocol, NSPoint, NSRect, NSSize, NSString,
@@ -107,22 +112,46 @@ mod imp {
                 None => return false,
             }
         };
-
-        // beginDraggingSession requires the live mouse event that started the
-        // drag. eframe fires our drag_started() in the same frame it processed
-        // that event, so currentEvent is almost always the matching
-        // LeftMouseDragged; guard on the type so a rare miss is a harmless no-op
-        // (the user just keeps dragging and the next frame carries a valid event).
-        let app = NSApplication::sharedApplication(mtm);
-        let Some(event) = app.currentEvent() else {
+        let Some(window) = view.window() else {
             return false;
         };
-        let ty = unsafe { event.r#type() };
-        if ty != NSEventType::LeftMouseDown && ty != NSEventType::LeftMouseDragged {
-            return false;
-        }
 
-        let items = build_drag_items(paths);
+        // beginDraggingSession wants the mouse event that started the drag.
+        // `NSApp.currentEvent` is not reliably that: egui's frame runs once
+        // the run loop goes idle, after AppKit dequeued everything pending,
+        // so by then it is just as often the ⌥ flagsChanged, a trackpad
+        // pressure change or a wake-up — and a session keyed on it only
+        // started on the frames it happened to be the mouse. Synthesize the
+        // drag event instead (as Chromium does): all AppKit takes from it is
+        // the window and where the drag image appears, and the live cursor
+        // is always at hand.
+        let win_pt = unsafe { window.mouseLocationOutsideOfEventStream() };
+        let app = NSApplication::sharedApplication(mtm);
+        let time = app
+            .currentEvent()
+            .map(|e| unsafe { e.timestamp() })
+            .unwrap_or_default();
+        let event = unsafe {
+            NSEvent::mouseEventWithType_location_modifierFlags_timestamp_windowNumber_context_eventNumber_clickCount_pressure(
+                NSEventType::LeftMouseDragged,
+                win_pt,
+                NSEventModifierFlags::empty(),
+                time,
+                window.windowNumber(),
+                None,
+                0,
+                1,
+                1.0,
+            )
+        };
+        let Some(event) = event else {
+            return false;
+        };
+
+        // Drag images are placed in the view's coordinates; winit's view is
+        // flipped, so this is the cursor in top-left-origin points.
+        let cursor = view.convertPoint_fromView(win_pt, None);
+        let items = build_drag_items(paths, cursor);
         if items.is_empty() {
             return false;
         }
@@ -131,9 +160,8 @@ mod imp {
         let source = DragSource::new(mtm);
         let source: &ProtocolObject<dyn NSDraggingSource> = ProtocolObject::from_ref(&*source);
 
-        // Blocks on a nested AppKit modal loop until the drop completes, then
-        // returns. AppKit retains `source` for the session's lifetime, so it's
-        // fine that our local drops right after.
+        // AppKit retains `source` for the session's lifetime, so it's fine
+        // that our local drops right after.
         unsafe {
             view.beginDraggingSessionWithItems_event_source(&items, &event, source);
         }
@@ -141,9 +169,10 @@ mod imp {
     }
 
     /// One `NSDraggingItem` per file: each writes a file URL to the drag
-    /// pasteboard and shows the file's Finder icon. Items are staggered so a
-    /// multi-file drag reads as a small stack under the cursor.
-    fn build_drag_items(paths: &[&Path]) -> Vec<Retained<NSDraggingItem>> {
+    /// pasteboard and shows the file's Finder icon, centred on `cursor` (view
+    /// coordinates). Items are staggered so a multi-file drag reads as a small
+    /// stack under the pointer; past a few the stack stops growing.
+    fn build_drag_items(paths: &[&Path], cursor: NSPoint) -> Vec<Retained<NSDraggingItem>> {
         let workspace = unsafe { NSWorkspace::sharedWorkspace() };
         let mut items = Vec::with_capacity(paths.len());
         for (i, path) in paths.iter().enumerate() {
@@ -156,11 +185,15 @@ mod imp {
                 NSDraggingItem::initWithPasteboardWriter(NSDraggingItem::alloc(), writer)
             };
 
-            // Finder icon as the drag image, staggered per item.
+            // Finder icon as the drag image, under the pointer, staggered per item.
             let icon: Retained<NSImage> = unsafe { workspace.iconForFile(&path_str) };
             let size: NSSize = unsafe { icon.size() };
-            let off = (i as f64) * 16.0;
-            let frame = NSRect::new(NSPoint::new(off, -off), size);
+            let off = (i.min(4) as f64) * 6.0;
+            let origin = NSPoint::new(
+                cursor.x - size.width / 2.0 + off,
+                cursor.y - size.height / 2.0 + off,
+            );
+            let frame = NSRect::new(origin, size);
             let contents: &AnyObject = &icon;
             unsafe { item.setDraggingFrame_contents(frame, Some(contents)) };
 

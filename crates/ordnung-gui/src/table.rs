@@ -1610,11 +1610,9 @@ impl App {
                                         if resp.drag_started() && !over_play_btn {
                                             drag = true;
                                         }
-                                        // Arm on every dragged frame, not only drag start:
-                                        // the AppKit session can miss its start frame (no
-                                        // matching currentEvent), and ⌥ pressed mid-drag
-                                        // should still promote to the file drag-out.
-                                        // Re-arming retries until the session begins.
+                                        // Arm on every dragged frame, not only drag start,
+                                        // so ⌥ pressed mid-drag still promotes to the file
+                                        // drag-out (the dispatch latches once it starts).
                                         if !over_play_btn
                                             && alt_drag
                                             && !cancelled
@@ -1770,9 +1768,8 @@ impl App {
                                     if resp.drag_started() {
                                         drag = true;
                                     }
-                                    // Re-armed every dragged frame (see the cover cell):
-                                    // retries a missed session start and honours ⌥
-                                    // pressed after the drag began.
+                                    // Re-armed every dragged frame (see the cover cell)
+                                    // so ⌥ pressed after the drag began still counts.
                                     if alt_drag
                                         && !cancelled
                                         && (resp.drag_started() || resp.dragged())

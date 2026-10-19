@@ -394,6 +394,7 @@ impl App {
             player_native_drag: None,
             native_drag_spent: false,
             native_drag_paths: Vec::new(),
+            native_drag_release: None,
             pending_pick: None,
             scrub: None,
             wave_grab: None,
@@ -1955,6 +1956,16 @@ impl eframe::App for App {
         // so the view answers a flick right away instead of easing in.
         let line_speed = ctx.options(|o| o.line_scroll_speed);
         crate::util::snap_wheel_events(&mut raw_input.events, line_speed);
+        // A native drag-out took the gesture: AppKit keeps its mouse-up, so
+        // give egui the release here (see the dispatch in `update_inner`).
+        if let Some(pos) = self.native_drag_release.take() {
+            raw_input.events.push(egui::Event::PointerButton {
+                pos,
+                button: egui::PointerButton::Primary,
+                pressed: false,
+                modifiers: raw_input.modifiers,
+            });
+        }
     }
 
     fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
@@ -4054,19 +4065,15 @@ impl App {
             });
 
         // Native drag-out to rekordbox/Finder. A ⌥-drag in the table (any
-        // dragged frame — `draw_table` returned its files) starts an
-        // `NSDraggingSession` *now*, while a live mouse event AppKit accepts is
-        // in flight; a frame where none is available simply retries next frame,
-        // since the drag sources keep re-arming while the button is held. The
-        // session then tracks the drag itself all the way to the drop.
-        // `begin_file_drag` blocks on AppKit's nested loop until the drop
-        // completes, so at most one session starts per gesture (the `spent`
-        // latch below). A plain (non-⌥) drag carries an egui payload for
-        // in-window reorder / sidebar drops — until it leaves the window, at
-        // which point it too promotes to the native drag-out (see below).
-        // The now-playing bar's artwork drag, taken from where `draw_player`
-        // parked it earlier this frame. Same dispatch point as the table's, so
-        // AppKit's nested loop is entered once, with no borrows outstanding.
+        // dragged frame — `draw_table` returned its files) hands the gesture
+        // to an `NSDraggingSession` *now*; AppKit then tracks it to the drop
+        // on its own, and the `spent` latch below keeps the still-armed drag
+        // sources from starting a second one. A plain (non-⌥) drag carries an
+        // egui payload for in-window reorder / sidebar drops — until it leaves
+        // the window, at which point it too promotes to the native drag-out
+        // (see below). The now-playing bar's artwork drag, taken from where
+        // `draw_player` parked it earlier this frame, goes through this same
+        // dispatch point.
         // A fresh press begins a new gesture, so the previous gesture's
         // latches (session spent, Esc-cancelled, self-drop paths) no longer
         // apply.
@@ -4114,17 +4121,22 @@ impl App {
             if !self.native_drag_spent {
                 let refs: Vec<&Path> = paths.iter().map(PathBuf::as_path).collect();
                 if !refs.is_empty() {
-                    // Latch BEFORE starting: the session's nested AppKit loop
-                    // can re-enter update(), and the re-armed drag sources
-                    // must not start a second session from inside it. The
-                    // recorded paths also let handle_file_drop recognise (and
-                    // ignore) these files dropped back onto our own window.
+                    // Latch before starting, and record the paths so
+                    // handle_file_drop recognises (and ignores) these files
+                    // dropped back onto our own window.
                     self.native_drag_spent = true;
                     self.native_drag_paths = paths.clone();
-                    if !macos_drag::begin_file_drag(frame, &refs) {
-                        // No session this frame (the initiating mouse event
-                        // wasn't available): un-latch so the re-armed drag
-                        // retries, and ask for the next frame promptly.
+                    if macos_drag::begin_file_drag(frame, &refs) {
+                        // AppKit owns the gesture from here and never delivers
+                        // its mouse-up to the window; egui gets one from
+                        // `raw_input_hook` next pass, so the button is not
+                        // left down until the next click.
+                        self.native_drag_release = macos_drag::pointer_pos(frame)
+                            .or_else(|| ctx.input(|i| i.pointer.latest_pos()));
+                    } else {
+                        // No window handle this frame: un-latch so the
+                        // re-armed drag retries, and ask for the next frame
+                        // promptly.
                         self.native_drag_spent = false;
                         self.native_drag_paths.clear();
                         ctx.request_repaint();

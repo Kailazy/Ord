@@ -2182,17 +2182,21 @@ struct App {
     /// the frame's `begin_file_drag` dispatch, so the path parks here and is
     /// taken alongside the table's own drag (see `update`).
     player_native_drag: Option<PathBuf>,
-    /// True once a native drag-out session has run for the current mouse
-    /// gesture. The session's nested AppKit loop swallows the mouse-up, so
-    /// egui can keep reporting the drag as live afterwards; this latch stops
-    /// the (re-armed) drag sources from starting a second session. Cleared on
-    /// the next mouse press.
+    /// True once a native drag-out session has started for the current mouse
+    /// gesture, so the drag sources (still armed in the frame it started)
+    /// cannot start a second one. Cleared on the next mouse press.
     native_drag_spent: bool,
     /// Files carried by the most recent native drag-out session. A drop of
     /// (only) these back onto our own window is the user abandoning the drag,
     /// not a Finder import — the tracks are already in the library — so
     /// `handle_file_drop` ignores it. Cleared on the next mouse press.
     native_drag_paths: Vec<PathBuf>,
+    /// Where the pointer was when a native drag-out session took the
+    /// gesture. AppKit consumes the rest of its mouse events, the mouse-up
+    /// included, so egui would hold the button down until the next click
+    /// (no hover anywhere, the row still "dragging"); `raw_input_hook`
+    /// feeds it the release itself, here, next pass.
+    native_drag_release: Option<egui::Pos2>,
     /// The file panel that is up, if any, and what to do with its answer.
     /// Panels never run on the frame (see [`pick`]); one at a time.
     pending_pick: Option<pick::Pending>,
