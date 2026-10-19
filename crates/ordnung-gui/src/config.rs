@@ -1194,7 +1194,6 @@ mod tests {
         use crate::inspector::InspectorDensity;
         use crate::radio::RadioDock;
         use crate::sidebar::NavDensity;
-        use crate::ui::nav::Tier;
         use crate::util::format_from_key;
         use crate::TableColumn;
 
@@ -1260,9 +1259,9 @@ mod tests {
             RadioDock::Top,
         );
         pin(&[Arrange::Artists, Arrange::Genres], Arrange::key, Arrange::from_key, Arrange::Artists);
-        pin(<NavDensity as Tier>::ALL, NavDensity::key, NavDensity::from_key, NavDensity::Narrow);
+        pin(&NavDensity::ALL, NavDensity::key, NavDensity::from_key, NavDensity::Narrow);
         pin(
-            <InspectorDensity as Tier>::ALL,
+            &InspectorDensity::ALL,
             InspectorDensity::key,
             InspectorDensity::from_key,
             InspectorDensity::Expanded,

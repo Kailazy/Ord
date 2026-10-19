@@ -1,6 +1,6 @@
 //! The nav: a panel docked to a screen edge that snaps between designed
 //! widths. The library nav on the left is one, the track inspector on the
-//! right another. A nav does not resize freely: it has a few [`Tier`]s,
+//! right another. A nav does not resize freely: it has a few tiers,
 //! each a layout the panel was designed for, and dragging its edge picks
 //! one of them.
 //!
@@ -18,14 +18,6 @@
 
 use eframe::egui;
 
-/// One designed width of a nav. Implemented by the caller's own tier enum.
-pub trait Tier: Copy + PartialEq + std::fmt::Debug + 'static {
-    /// Every tier, narrowest first.
-    const ALL: &'static [Self];
-    /// The panel's width at this tier, in points.
-    fn width(self) -> f32;
-}
-
 /// The tier a drag to width `w` selects, given the tier `current` in force.
 ///
 /// The panel is pinned to a tier width at every instant, so the pointer sits
@@ -42,7 +34,7 @@ pub trait Tier: Copy + PartialEq + std::fmt::Debug + 'static {
 /// a symmetric 33% meant pulling 130pt off a 56pt rail, more than twice the
 /// panel's own width, before anything happened. So widening commits just
 /// past the panel's own edge, while narrowing keeps the full hold.
-pub fn dragged_to<T: Tier>(current: T, w: f32) -> T {
+pub fn dragged_to(widths: &[f32], current: usize, w: f32) -> usize {
     /// Fraction of the gap past the midpoint needed to narrow, the
     /// destructive direction, held deliberately far.
     const STICK_SHRINK: f32 = 0.33;
@@ -54,18 +46,16 @@ pub fn dragged_to<T: Tier>(current: T, w: f32) -> T {
     // narrow tier than the wide one, which an early `nearest == current`
     // return would swallow. Each direction is tested against its own
     // threshold instead.
-    let cur = current.width();
-    let wider = T::ALL.iter().copied().find(|t| t.width() > cur);
-    let narrower = T::ALL.iter().copied().rev().find(|t| t.width() < cur);
-    if let Some(t) = wider {
-        let gap = t.width() - cur;
+    let cur = widths[current];
+    if let Some(t) = widths.iter().position(|&t| t > cur) {
+        let gap = widths[t] - cur;
         if w > cur + gap * REACH_GROW {
             return t;
         }
     }
-    if let Some(t) = narrower {
-        let gap = cur - t.width();
-        let midpoint = (cur + t.width()) / 2.0;
+    if let Some(t) = widths.iter().rposition(|&t| t < cur) {
+        let gap = cur - widths[t];
+        let midpoint = (cur + widths[t]) / 2.0;
         if w < midpoint - gap * STICK_SHRINK {
             return t;
         }
@@ -77,28 +67,30 @@ pub fn dragged_to<T: Tier>(current: T, w: f32) -> T {
 /// is held; this is only what the ghost line draws and what the drop will
 /// commit.
 #[derive(Clone, Copy, Debug)]
-struct Drag<T: Tier> {
+struct Drag {
     /// Live pointer x, in screen space: where the ghost line is painted.
     x: f32,
     /// The tier this drag would land on, run through the same hysteresis
     /// the commit uses, so the ghost previews the real outcome rather than
     /// a nearest-match the drop would then disagree with.
-    target: T,
+    target: usize,
 }
 
 /// What a caller keeps between frames: the tier in force, and the drag if
 /// the edge is held. `Copy`, so a caller whose panel body borrows the rest
 /// of its state can take a copy out and put it back after the frame.
 #[derive(Clone, Copy, Debug)]
-pub struct NavState<T: Tier> {
-    /// The tier in force. Only a drop changes it.
-    pub tier: T,
-    drag: Option<Drag<T>>,
+pub struct NavState {
+    /// The panel's width at every tier, in points, narrowest first.
+    widths: &'static [f32],
+    /// The tier in force, an index into the widths. Only a drop changes it.
+    pub tier: usize,
+    drag: Option<Drag>,
 }
 
-impl<T: Tier> NavState<T> {
-    pub fn new(tier: T) -> Self {
-        Self { tier, drag: None }
+impl NavState {
+    pub fn new(widths: &'static [f32], tier: usize) -> Self {
+        Self { widths, tier, drag: None }
     }
 }
 
@@ -110,11 +102,11 @@ pub enum Side {
 }
 
 /// A nav for one frame: the panel at its tier, its edge drag, and the ghost.
-pub struct Nav<'a, T: Tier> {
+pub struct Nav<'a> {
     id: egui::Id,
     side: Side,
-    state: &'a mut NavState<T>,
-    shown: Option<T>,
+    state: &'a mut NavState,
+    shown: Option<usize>,
     slide: f32,
 }
 
@@ -129,16 +121,16 @@ pub struct NavResponse<R> {
     pub committed: bool,
 }
 
-impl<'a, T: Tier> Nav<'a, T> {
-    pub fn left(id: impl Into<egui::Id>, state: &'a mut NavState<T>) -> Self {
+impl<'a> Nav<'a> {
+    pub fn left(id: impl Into<egui::Id>, state: &'a mut NavState) -> Self {
         Self::new(id.into(), Side::Left, state)
     }
 
-    pub fn right(id: impl Into<egui::Id>, state: &'a mut NavState<T>) -> Self {
+    pub fn right(id: impl Into<egui::Id>, state: &'a mut NavState) -> Self {
         Self::new(id.into(), Side::Right, state)
     }
 
-    fn new(id: egui::Id, side: Side, state: &'a mut NavState<T>) -> Self {
+    fn new(id: egui::Id, side: Side, state: &'a mut NavState) -> Self {
         Self {
             id,
             side,
@@ -151,7 +143,7 @@ impl<'a, T: Tier> Nav<'a, T> {
     /// Lay the panel out at `tier` this frame without changing the tier in
     /// force: a width borrowed for a moment (the rail promoted to fit a
     /// rename field), not the user's choice.
-    pub fn shown(mut self, tier: T) -> Self {
+    pub fn shown(mut self, tier: usize) -> Self {
         self.shown = Some(tier);
         self
     }
@@ -186,7 +178,7 @@ impl<'a, T: Tier> Nav<'a, T> {
                 // landing the release refuses.
                 self.state.drag = Some(Drag {
                     x: pos.x,
-                    target: dragged_to(self.state.tier, w),
+                    target: dragged_to(self.state.widths, self.state.tier, w),
                 });
                 // The panel is frozen for the duration, so nothing else is
                 // asking for frames. Without this the ghost would only
@@ -215,7 +207,7 @@ impl<'a, T: Tier> Nav<'a, T> {
         add: impl FnOnce(&mut egui::Ui) -> R,
     ) -> NavResponse<R> {
         let committed = self.poll(ctx);
-        let target = self.shown.unwrap_or(self.state.tier).width();
+        let target = self.state.widths[self.shown.unwrap_or(self.state.tier)];
         // Ease between tiers so the change of layout reads as a deliberate
         // lock into place rather than a hard cut. `animate_value` repaints
         // until it settles; the width it produces is only ever *travelling
@@ -268,7 +260,7 @@ impl<'a, T: Tier> Nav<'a, T> {
     /// would land on. Painted in a foreground layer after the panel so it
     /// reads on top of the panel's own content rather than being clipped
     /// by it.
-    fn paint_ghost(&self, ctx: &egui::Context, drag: Drag<T>) {
+    fn paint_ghost(&self, ctx: &egui::Context, drag: Drag) {
         let screen = ctx.screen_rect();
         let painter = ctx.layer_painter(egui::LayerId::new(
             egui::Order::Foreground,
@@ -277,8 +269,8 @@ impl<'a, T: Tier> Nav<'a, T> {
         // Where the panel would settle if released now. Drawn solid, in the
         // accent, so the eye reads the landing rather than the pointer.
         let snap_x = match self.side {
-            Side::Left => screen.left() + drag.target.width(),
-            Side::Right => screen.right() - drag.target.width(),
+            Side::Left => screen.left() + self.state.widths[drag.target],
+            Side::Right => screen.right() - self.state.widths[drag.target],
         };
         painter.rect_filled(
             egui::Rect::from_min_max(
@@ -311,35 +303,23 @@ const ACCENT: egui::Color32 = super::tokens::color::ACCENT;
 mod tests {
     use super::*;
 
-    #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-    enum Two {
-        Narrow,
-        Wide,
-    }
-
-    impl Tier for Two {
-        const ALL: &'static [Self] = &[Two::Narrow, Two::Wide];
-        fn width(self) -> f32 {
-            match self {
-                Two::Narrow => 56.0,
-                Two::Wide => 212.0,
-            }
-        }
-    }
+    const TWO: &[f32] = &[56.0, 212.0];
+    const NARROW: usize = 0;
+    const WIDE: usize = 1;
 
     /// Widening commits a quarter of the gap out; narrowing only well past
     /// the midpoint. In between, the tier in force holds.
     #[test]
     fn hysteresis_is_asymmetric() {
-        let gap = Two::Wide.width() - Two::Narrow.width();
-        assert_eq!(dragged_to(Two::Narrow, 56.0 + gap * 0.2), Two::Narrow);
-        assert_eq!(dragged_to(Two::Narrow, 56.0 + gap * 0.3), Two::Wide);
+        let gap = TWO[WIDE] - TWO[NARROW];
+        assert_eq!(dragged_to(TWO, NARROW, 56.0 + gap * 0.2), NARROW);
+        assert_eq!(dragged_to(TWO, NARROW, 56.0 + gap * 0.3), WIDE);
         let mid = (56.0 + 212.0) / 2.0;
-        assert_eq!(dragged_to(Two::Wide, mid - gap * 0.2), Two::Wide);
-        assert_eq!(dragged_to(Two::Wide, mid - gap * 0.4), Two::Narrow);
+        assert_eq!(dragged_to(TWO, WIDE, mid - gap * 0.2), WIDE);
+        assert_eq!(dragged_to(TWO, WIDE, mid - gap * 0.4), NARROW);
         // Past either end there is nowhere further to go.
-        assert_eq!(dragged_to(Two::Wide, 900.0), Two::Wide);
-        assert_eq!(dragged_to(Two::Narrow, -50.0), Two::Narrow);
+        assert_eq!(dragged_to(TWO, WIDE, 900.0), WIDE);
+        assert_eq!(dragged_to(TWO, NARROW, -50.0), NARROW);
     }
 
     /// A right-hand nav lays out at its tier's width from the right edge,
@@ -347,7 +327,7 @@ mod tests {
     #[test]
     fn right_nav_sits_at_its_tier_and_slides_away() {
         let ctx = egui::Context::default();
-        let mut state = NavState::new(Two::Wide);
+        let mut state = NavState::new(TWO, WIDE);
         let mut rect = None;
         let _ = ctx.run(egui::RawInput::default(), |ctx| {
             let r = Nav::right("side", &mut state).show(ctx, |p| p, |ui| ui.label("x"));

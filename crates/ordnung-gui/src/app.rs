@@ -382,9 +382,10 @@ impl App {
             usb_analysis_rx: None,
             usb_analysis_progress: (0, 0),
             usb_analysis_cancel: None,
-            nav: crate::ui::nav::NavState::new(NavDensity::Narrow),
+            nav: crate::ui::nav::NavState::new(NavDensity::WIDTHS, NavDensity::Narrow as usize),
             inspector_nav: crate::ui::nav::NavState::new(
-                crate::inspector::InspectorDensity::Expanded,
+                crate::inspector::InspectorDensity::WIDTHS,
+                crate::inspector::InspectorDensity::Expanded as usize,
             ),
             view: LibraryView::Library,
             renaming: None,
@@ -431,9 +432,9 @@ impl App {
             StartupView::Recent => LibraryView::RecentlyAdded,
         };
         // Restore the sidebar to the width tier it was left at.
-        app.nav.tier = NavDensity::from_key(&app.config.nav_density);
+        app.nav.tier = NavDensity::from_key(&app.config.nav_density) as usize;
         app.inspector_nav.tier =
-            crate::inspector::InspectorDensity::from_key(&app.config.inspector_density);
+            crate::inspector::InspectorDensity::from_key(&app.config.inspector_density) as usize;
         // And the inspector drawer to the open/closed state it was left in.
         app.inspector_open = app.config.inspector_open;
         app.load_column_layout();
@@ -3086,7 +3087,8 @@ impl App {
         );
         self.inspector_nav = inspector_nav;
         if shown.committed {
-            self.config.inspector_density = self.inspector_nav.tier.key().to_string();
+            self.config.inspector_density =
+                crate::inspector::InspectorDensity::ALL[self.inspector_nav.tier].key().to_string();
             let _ = self.config.save();
         }
         let width = shown.width;
@@ -3129,13 +3131,12 @@ impl App {
         // of the rail; it drops back the moment the edit resolves. The stored
         // tier is untouched, so this borrows the width rather than changing the
         // user's choice.
-        let density = if self.renaming.is_some() && nav_state.tier.icons_only() {
-            NavDensity::Narrow
-        } else {
-            nav_state.tier
-        };
+        let mut density = NavDensity::ALL[nav_state.tier];
+        if self.renaming.is_some() && density.icons_only() {
+            density = NavDensity::Narrow;
+        }
         let nav_panel = crate::ui::nav::Nav::left("library_nav", &mut nav_state)
-            .shown(density)
+            .shown(density as usize)
             .show(ctx, |panel| panel, |ui| {
                 // The nav's scroll bars stay hairlines under the pointer too.
                 // egui's floating bar grows to `bar_width` on hover and paints
@@ -3709,7 +3710,7 @@ impl App {
             });
         self.nav = nav_state;
         if nav_panel.committed {
-            self.config.nav_density = self.nav.tier.key().to_string();
+            self.config.nav_density = NavDensity::ALL[self.nav.tier].key().to_string();
             let _ = self.config.save();
         }
         self.nav_screen_rect = nav_panel.inner.as_ref().map(|p| p.response.rect);

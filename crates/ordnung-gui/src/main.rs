@@ -2158,10 +2158,10 @@ struct App {
     /// edge drag while one is held. The panel snaps between designed layouts
     /// instead of resizing freely, so the tier, not a pixel width, is the
     /// resize state, and it persists via `Config::nav_density`.
-    nav: ui::nav::NavState<NavDensity>,
+    nav: ui::nav::NavState,
     /// The inspector drawer's nav state, the same way: its tier persists via
     /// `Config::inspector_density`. Open/closed is `inspector_open`.
-    inspector_nav: ui::nav::NavState<inspector::InspectorDensity>,
+    inspector_nav: ui::nav::NavState,
     /// Which track set the table shows — the whole library or one playlist.
     view: LibraryView,
     /// Inline rename in progress for a sidebar entry, or `None` when no row is

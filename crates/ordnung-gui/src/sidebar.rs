@@ -1404,16 +1404,13 @@ pub(crate) enum NavDensity {
 }
 
 impl NavDensity {
-    /// Snapped panel width for this tier, in points.
-    pub(crate) fn width(self) -> f32 {
-        match self {
-            // 56 = 40pt target + 8pt gutter each side. Narrower than the old
-            // 64 and deliberately so: it reads as a rail rather than as a
-            // sidebar that lost an argument with the drag handle.
-            NavDensity::Icon => 56.0,
-            NavDensity::Narrow => 212.0,
-        }
-    }
+    /// Every tier, narrowest first; a tier's index is its `as usize`.
+    pub(crate) const ALL: [Self; 2] = [NavDensity::Icon, NavDensity::Narrow];
+    /// Snapped panel width of each tier in [`Self::ALL`], in points. The
+    /// rail's 56 = 40pt target + 8pt gutter each side. Narrower than the
+    /// old 64 and deliberately so: it reads as a rail rather than as a
+    /// sidebar that lost an argument with the drag handle.
+    pub(crate) const WIDTHS: &[f32] = &[56.0, 212.0];
 
     /// Side length of the square target in the rail tier, and the row height
     /// every rail tile shares. One constant so the rail is a single uniform
@@ -1442,15 +1439,6 @@ impl NavDensity {
             NavDensity::Icon => "icon",
             NavDensity::Narrow => "narrow",
         }
-    }
-}
-
-/// The sidebar snaps between its tiers through the shared nav component;
-/// the hysteresis a drag runs through lives there (see `ui::nav`).
-impl crate::ui::nav::Tier for NavDensity {
-    const ALL: &'static [Self] = &[NavDensity::Icon, NavDensity::Narrow];
-    fn width(self) -> f32 {
-        NavDensity::width(self)
     }
 }
 

@@ -13,7 +13,7 @@
 //! the edge never cuts. [`section`] opens each titled block below it with
 //! the same caption over a hairline; [`rule`] is that hairline on its own.
 
-use super::nav::{Nav, NavResponse, NavState, Tier};
+use super::nav::{Nav, NavResponse, NavState};
 use super::tokens::{color, font, space};
 use super::window;
 use eframe::egui;
@@ -60,10 +60,10 @@ impl Sidebar {
     /// Show the sidebar at the tier in `state`, its edge snapping between
     /// the tiers on a drag, with `slide` the 0..=1 factor the caller eases
     /// to slide it in and out; under half a point it is not shown.
-    pub fn show<T: Tier, R>(
+    pub fn show<R>(
         self,
         ctx: &egui::Context,
-        state: &mut NavState<T>,
+        state: &mut NavState,
         slide: f32,
         add: impl FnOnce(&mut egui::Ui) -> R,
     ) -> NavResponse<R> {
@@ -167,16 +167,6 @@ pub fn rule(ui: &mut egui::Ui) {
 mod tests {
     use super::*;
 
-    #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-    struct One;
-
-    impl Tier for One {
-        const ALL: &'static [Self] = &[One];
-        fn width(self) -> f32 {
-            320.0
-        }
-    }
-
     /// The header's action ends at the content's edge, inside the panel,
     /// and the caption stops short of it.
     #[test]
@@ -185,7 +175,7 @@ mod tests {
         super::super::theme::install(&ctx);
         let mut button = None;
         let mut content_right = 0.0;
-        let mut state = NavState::new(One);
+        let mut state = NavState::new(&[320.0], 0);
         let _ = ctx.run(egui::RawInput::default(), |ctx| {
             Sidebar::right("side").show(ctx, &mut state, 1.0, |ui| {
                 content_right = ui.max_rect().right();

@@ -1161,13 +1161,10 @@ pub(crate) enum InspectorDensity {
 }
 
 impl InspectorDensity {
-    /// Snapped panel width for this tier, in points.
-    pub(crate) fn width(self) -> f32 {
-        match self {
-            InspectorDensity::Compact => 200.0,
-            InspectorDensity::Expanded => 320.0,
-        }
-    }
+    /// Every tier, narrowest first; a tier's index is its `as usize`.
+    pub(crate) const ALL: [Self; 2] = [InspectorDensity::Compact, InspectorDensity::Expanded];
+    /// Snapped panel width of each tier in [`Self::ALL`], in points.
+    pub(crate) const WIDTHS: &[f32] = &[200.0, 320.0];
 
     /// Parse the persisted `Config::inspector_density` key; anything
     /// unrecognised falls back to the designed default. The retired
@@ -1186,12 +1183,5 @@ impl InspectorDensity {
             InspectorDensity::Compact => "narrow",
             InspectorDensity::Expanded => "regular",
         }
-    }
-}
-
-impl crate::ui::nav::Tier for InspectorDensity {
-    const ALL: &'static [Self] = &[InspectorDensity::Compact, InspectorDensity::Expanded];
-    fn width(self) -> f32 {
-        InspectorDensity::width(self)
     }
 }
