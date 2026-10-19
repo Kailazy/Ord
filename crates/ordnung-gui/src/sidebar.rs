@@ -407,18 +407,13 @@ pub(crate) fn draw_playlist_nodes(
 
 /// Shared "Export to <device>…" items: one per mounted volume, or a disabled
 /// hint when nothing is plugged in. Used by both playlist and folder menus.
+#[cfg(feature = "usb-export")]
 fn export_menu_items(
     ui: &mut egui::Ui,
     id: Id,
     volumes: &[ordnung_core::usb::UsbVolume],
     action: &mut Option<SidebarAction>,
 ) {
-    // Builds without the USB export (every distribution build while the
-    // export is in beta) don't even show the disabled hint: the export isn't
-    // "unavailable right now", it doesn't exist in this build.
-    if !crate::USB_EXPORT {
-        return;
-    }
     if volumes.is_empty() {
         ui.add_enabled(false, egui::Button::new("Export to device (none mounted)"));
         return;
@@ -448,6 +443,18 @@ fn export_menu_items(
             );
         }
     }
+}
+
+/// Builds without the USB export (every distribution build while the export
+/// is in beta) don't even show the disabled hint: the export isn't
+/// "unavailable right now", it doesn't exist in this build.
+#[cfg(not(feature = "usb-export"))]
+fn export_menu_items(
+    _: &mut egui::Ui,
+    _: Id,
+    _: &[ordnung_core::usb::UsbVolume],
+    _: &mut Option<SidebarAction>,
+) {
 }
 
 /// If `p` is the entry currently being renamed, draw its inline text editor and

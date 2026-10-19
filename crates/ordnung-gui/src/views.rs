@@ -3139,7 +3139,7 @@ impl App {
                 })
                 .weak(),
             )
-            .on_hover_note(match (is_rb, crate::USB_EXPORT) {
+            .on_hover_note(match (is_rb, cfg!(feature = "usb-export")) {
                 (true, true) => "Carries a rekordbox export. CDJs read it, and library exports can target it",
                 (true, false) => "Carries a rekordbox export. CDJs read it",
                 (false, true) => "Just files. Exports never touch it unless you set it up for rekordbox",
@@ -3180,8 +3180,8 @@ impl App {
                 // (via its confirmation) ever writes rekordbox structure onto
                 // a device. Until it's used, a music bank on a hard drive
                 // stays exactly as it is and export menus won't target it.
-                if crate::USB_EXPORT
-                    && !is_rb
+                #[cfg(feature = "usb-export")]
+                if !is_rb
                     && ui
                         .button("⇪ Set up for rekordbox…")
                         .on_hover_note(

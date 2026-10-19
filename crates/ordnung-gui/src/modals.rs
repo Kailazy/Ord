@@ -1952,6 +1952,7 @@ impl App {
     /// "Export the library to this stick?" confirmation. The export rewrites
     /// the destination's `PIONEER/rekordbox` databases (a rekordbox-made
     /// export there is replaced by Ordnung's), so it never runs un-confirmed.
+    #[cfg(feature = "usb-export")]
     pub(crate) fn draw_export_confirm(&mut self, ctx: &egui::Context) {
         let Some(confirm) = self.export_confirm.clone() else {
             return;
@@ -2117,6 +2118,7 @@ Ord tags, as in the table's Tags column.",
     /// "Set up this volume as a rekordbox device?" confirmation. This is the
     /// only path that ever converts plain storage into an export target, so it
     /// spells out exactly what gets written before anything touches the device.
+    #[cfg(feature = "usb-export")]
     pub(crate) fn draw_usb_setup_confirm(&mut self, ctx: &egui::Context) {
         let Some(dest) = self.usb_setup_confirm.clone() else {
             return;

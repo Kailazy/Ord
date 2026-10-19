@@ -169,6 +169,7 @@ impl App {
             // `usb_loaded_for` so `poll_usb` re-scans it next frame and the new
             // playlists appear — otherwise the view keeps the pre-export tree
             // until a manual rescan or app restart.
+            #[cfg(feature = "usb-export")]
             if let Some(dest) = self.export_running_to.take() {
                 if self.usb_loaded_for.as_deref() == Some(dest.as_path()) {
                     self.usb_loaded_for = None;
@@ -281,6 +282,7 @@ impl App {
     /// via its confirmation modal. Explicit-only: rewrites the destination's
     /// `PIONEER/rekordbox` databases and adds under `/Contents`, never touches
     /// library source files.
+    #[cfg(feature = "usb-export")]
     pub(crate) fn spawn_export(
         &mut self,
         ctx: egui::Context,
@@ -309,6 +311,7 @@ impl App {
     /// volume into an export target; nothing else ever writes rekordbox
     /// structure to a device that lacks one. Existing files on the volume are
     /// untouched (the empty merge only creates folders and databases).
+    #[cfg(feature = "usb-export")]
     pub(crate) fn spawn_usb_setup(&mut self, ctx: egui::Context, dest: PathBuf) {
         let name = dest
             .file_name()
@@ -1177,6 +1180,7 @@ pub(crate) fn run_scan(
 /// (`/Contents`, `/PIONEER/rekordbox`, `/PIONEER/USBANLZ`) and writes
 /// empty-but-valid databases, going through the exporter's own atomic
 /// placement and validation, so a device is never left half set up.
+#[cfg(feature = "usb-export")]
 fn run_usb_setup(
     dest: PathBuf,
     name: String,
@@ -1199,12 +1203,14 @@ fn run_usb_setup(
 /// comment: each track's matched record (part of its song key), the tag
 /// sets, and the tag ids under each song key. The same three reads the
 /// track table makes for its Tags column.
+#[cfg(feature = "usb-export")]
 type SongTagWords = (
     std::collections::HashMap<Id, u64>,
     Vec<ordnung_core::model::CrateSet>,
     std::collections::HashMap<String, Vec<Id>>,
 );
 
+#[cfg(feature = "usb-export")]
 fn song_tag_words(catalog: &Catalog) -> Result<SongTagWords, String> {
     use ordnung_core::model::CrateKind;
     let release_of = catalog
@@ -1229,7 +1235,7 @@ fn song_tag_words(catalog: &Catalog) -> Result<SongTagWords, String> {
 /// files skip the copy), analysis is serialized to ANLZ files, and playlists
 /// land in both `export.pdb` and `exportLibrary.db` so every CDJ generation
 /// sees them. Library sources are read, never written.
-#[allow(clippy::too_many_arguments)]
+#[cfg(feature = "usb-export")]
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn run_export(
     db: PathBuf,

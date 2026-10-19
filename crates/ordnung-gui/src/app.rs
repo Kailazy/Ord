@@ -326,7 +326,9 @@ impl App {
             confirm_clear_db: false,
             confirm_clear_dug: false,
             look_editor: None,
+            #[cfg(feature = "usb-export")]
             export_confirm: None,
+            #[cfg(feature = "usb-export")]
             usb_setup_confirm: None,
             failure_report_title: String::new(),
             failure_report: Vec::new(),
@@ -348,6 +350,7 @@ impl App {
             confirm_bulk_write: false,
             confirm_delete: None,
             write_edits_running: false,
+            #[cfg(feature = "usb-export")]
             export_running_to: None,
             auto_write_stalled_at: None,
             auto_write_job: false,
@@ -1647,6 +1650,7 @@ impl App {
     /// Everything exporting playlist `id` would put on a stick, computed from
     /// the loaded sidebar tree: (ids to pass to the exporter, human label,
     /// unique track count, playlist-node count). Folders count descendants.
+    #[cfg(feature = "usb-export")]
     pub(crate) fn playlist_export_scope(&self, id: Id) -> (Vec<Id>, String, usize, usize) {
         let mut nodes = vec![id];
         let mut i = 0;
@@ -3713,6 +3717,7 @@ impl App {
             Some(SidebarAction::ImportUsbTracks(ids)) => {
                 self.usb_add_to_library(ctx.clone(), ids);
             }
+            #[cfg(feature = "usb-export")]
             Some(SidebarAction::ExportPlaylist(id, dest)) => {
                 let (playlist_ids, scope, n_tracks, n_playlists) = self.playlist_export_scope(id);
                 self.export_confirm = Some(ExportConfirm {
@@ -4301,7 +4306,9 @@ impl App {
         self.draw_browse_page(ctx);
         self.draw_failure_report(ctx);
         self.draw_hidden_format_notice(ctx);
+        #[cfg(feature = "usb-export")]
         self.draw_export_confirm(ctx);
+        #[cfg(feature = "usb-export")]
         self.draw_usb_setup_confirm(ctx);
         // Drawn last so the welcome tour sits above every other window on a
         // first launch.

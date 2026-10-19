@@ -85,18 +85,6 @@ use ui::hover::HoverNoteExt;
 use util::*;
 use vinyl_sheet::{SheetFetched, VinylSheet};
 
-/// Compile-time switch for *writing* a native rekordbox export: the
-/// "Export to <device>" menus and the device view's "Set up for rekordbox"
-/// button. The export is in beta, so distribution builds compile it out
-/// (`tools/build-app.sh --dist` passes `--no-default-features`) while
-/// `make run` / `make app` keep it for hardware testing.
-///
-/// Everything else on a plugged-in stick stays available in every build:
-/// browsing and playing its tracks, importing them to the library, and the
-/// in-place edits (`ordnung_rbdb::edit`) that touch only playlist tables or
-/// one track's analysis files and back up the pristine files first.
-pub(crate) const USB_EXPORT: bool = cfg!(feature = "usb-export");
-
 /// Smallest the main window can be resized to, in points. The layout is
 /// designed for a desktop-sized window and does not reflow below this: the
 /// toolbar keeps every control on one row, the sidebar rail, track table and
@@ -110,7 +98,8 @@ const MIN_WINDOW_H: f32 = 640.0;
 /// The mounted volumes every device entry point keys off. One wrapper so the
 /// GUI has a single place to filter what counts as a device; today it is
 /// exactly [`ordnung_core::usb::detect_volumes`] in every build (see
-/// [`USB_EXPORT`] for what a beta-off build hides instead).
+/// the `usb-export` feature in Cargo.toml for what a beta-off build hides
+/// instead).
 pub(crate) fn detect_usb_volumes() -> Vec<ordnung_core::usb::UsbVolume> {
     ordnung_core::usb::detect_volumes()
 }
@@ -1976,11 +1965,13 @@ struct App {
     confirm_clear_dug: bool,
     /// USB export pending confirmation. The modal either spawns the export
     /// job or clears this.
+    #[cfg(feature = "usb-export")]
     export_confirm: Option<ExportConfirm>,
     /// Plain volume waiting for the "set up as rekordbox device?" confirmation
     /// (its mount path). Only setting up a device — an explicit, per-device
     /// commitment — makes it an export target; until then a volume is plain
     /// storage that exports never touch.
+    #[cfg(feature = "usb-export")]
     usb_setup_confirm: Option<PathBuf>,
     /// Title of the failure report (which job produced it).
     failure_report_title: String,
@@ -2047,6 +2038,7 @@ struct App {
     /// finishes, its completion handler forces a re-scan of that stick (by
     /// clearing `usb_loaded_for`) so the freshly written playlists appear in
     /// the device view without the user having to rescan or restart the app.
+    #[cfg(feature = "usb-export")]
     export_running_to: Option<PathBuf>,
     /// Backstop for auto-write (`config.auto_write_tags`): the pending-edit count
     /// left over after an automatic write finished. Tracks whose files can't be
@@ -2465,6 +2457,7 @@ enum SidebarAction {
     ImportUsbTracks(Vec<Id>),
     /// Right-click on a local playlist/folder: export it (and, for a folder,
     /// its descendants) to the given mounted volume as a rekordbox stick.
+    #[cfg(feature = "usb-export")]
     ExportPlaylist(Id, PathBuf),
     /// Right-click on a local playlist: save its track list as a text file.
     SavePlaylistText(Id),
@@ -2499,6 +2492,7 @@ enum RenameTree {
 /// A pending USB export awaiting the user's confirmation. `playlist_ids`
 /// empty = the whole library; otherwise the selected playlist/folder.
 /// Counts are computed once when the menu item / button is clicked.
+#[cfg(feature = "usb-export")]
 #[derive(Clone)]
 struct ExportConfirm {
     dest: PathBuf,

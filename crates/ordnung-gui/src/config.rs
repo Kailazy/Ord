@@ -595,6 +595,7 @@ impl StartupView {
 /// What a USB export puts in the comment a CDJ shows under the song info.
 /// Parsed from `Config::export_comment`; export policy, so it lives in the
 /// GUI boundary and the exporter only ever sees a finished comment.
+#[cfg(feature = "usb-export")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ExportComment {
     /// The track's Notes tag, as it is.
@@ -607,6 +608,7 @@ pub enum ExportComment {
     None,
 }
 
+#[cfg(feature = "usb-export")]
 impl ExportComment {
     pub const ALL: [ExportComment; 4] = [
         ExportComment::Notes,
@@ -720,7 +722,10 @@ impl Default for Config {
             graph_hide: Vec::new(),
             nav_primary: "digital".to_string(),
             export_convert_for_older_players: false,
-            export_comment: ExportComment::Notes.key().to_string(),
+            // `ExportComment::Notes.key()`, spelled out: the beta-off build
+            // compiles the export and its `ExportComment` out but still reads
+            // the config.
+            export_comment: "notes".to_string(),
             nav_density: "wide".into(),
             nav_collapsed: Vec::new(),
             inspector_density: "regular".into(),
@@ -878,6 +883,7 @@ mod tests {
     /// The exported comment follows the choice, drops empty parts, and an
     /// old config without the key still means "notes".
     #[test]
+    #[cfg(feature = "usb-export")]
     fn export_comment_composes_per_choice() {
         use ExportComment::*;
         assert_eq!(Notes.compose(" late night ", "dub, dark"), "late night");
