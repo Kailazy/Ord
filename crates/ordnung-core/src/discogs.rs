@@ -575,13 +575,8 @@ impl ReleaseTrack {
     /// Grouped by role in listing order, each as `"Roman Flügel Remix"`,
     /// `"A, B Remix [Dub]"`. A credit whose name the title already carries
     /// (`"Drifting (Roman Flügel Remix)"`) is left out: it would only
-    /// repeat the title.
-    pub fn version_credits(&self) -> Vec<String> {
-        self.version_credit_refs().iter().map(VersionCredit::text).collect()
-    }
-
-    /// [`Self::version_credits`] with the ids kept: each line's names carry
-    /// the artist id their page opens on (`0` when Discogs lists none).
+    /// repeat the title. Each line's names carry the artist id their page
+    /// opens on (`0` when Discogs lists none).
     pub fn version_credit_refs(&self) -> Vec<VersionCredit> {
         let title = self.title.to_lowercase();
         let mut groups: Vec<VersionCredit> = Vec::new();
@@ -4657,6 +4652,11 @@ mod tests {
         }
     }
 
+    /// The version lines as text, for asserting on what a DJ reads.
+    fn version_credits(t: &ReleaseTrack) -> Vec<String> {
+        t.version_credit_refs().iter().map(VersionCredit::text).collect()
+    }
+
     fn track(position: &str, title: &str) -> ReleaseTrack {
         ReleaseTrack {
             position: position.into(),
@@ -4900,8 +4900,8 @@ mod tests {
                 vec![(30, "Maurizio", "remix"), (20, "Mark Ernestus", "Mixed By")],
             ]
         );
-        assert_eq!(detail.tracklist[0].version_credits(), vec!["Maurizio Remix"]);
-        assert_eq!(detail.tracklist[1].version_credits(), vec!["Maurizio remix"]);
+        assert_eq!(version_credits(&detail.tracklist[0]), vec!["Maurizio Remix"]);
+        assert_eq!(version_credits(&detail.tracklist[1]), vec!["Maurizio remix"]);
     }
 
     /// The version line groups names under one role, keeps Discogs's
@@ -4925,15 +4925,15 @@ mod tests {
             ..track("A1", "Drifting")
         };
         assert_eq!(
-            t.version_credits(),
+            version_credits(&t),
             vec!["Roman Flügel, Ricardo Villalobos Remix", "Theo Parrish Rework [Ugly Edit]"]
         );
         let t = ReleaseTrack {
             credits: vec![credit(1, "Roman Flügel", "Remix")],
             ..track("A1", "Drifting (Roman Flügel Remix)")
         };
-        assert!(t.version_credits().is_empty(), "title already names the remixer");
-        assert!(track("B1", "Plain").version_credits().is_empty());
+        assert!(t.version_credit_refs().is_empty(), "title already names the remixer");
+        assert!(track("B1", "Plain").version_credit_refs().is_empty());
     }
 
     /// Artist and label pages decode to just their kin; a member with no
