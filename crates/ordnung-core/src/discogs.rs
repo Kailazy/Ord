@@ -2005,16 +2005,10 @@ impl Client {
         release_id: u64,
         instance_id: u64,
     ) -> Result<(Option<VinylRecord>, ReleaseDetail)> {
-        let url = format!("{RELEASE_URL}/{release_id}");
-        let body: serde_json::Value =
-            self.get_json("release response", || self.authed(self.agent.get(&url)))?;
-        let parse = || {
-            serde_json::from_value::<ReleaseResponse>(body.clone())
-                .map_err(|e| Error::Network(format!("decoding Discogs release response: {e}")))
-        };
+        let body = self.get_release(release_id)?;
         Ok((
-            parse()?.into_vinyl_record(instance_id, Some(UNCATEGORIZED_FOLDER)),
-            parse()?.into_detail(),
+            body.clone().into_vinyl_record(instance_id, Some(UNCATEGORIZED_FOLDER)),
+            body.into_detail(),
         ))
     }
 
@@ -2895,7 +2889,7 @@ struct CollectionArtist {
     name: String,
 }
 
-#[derive(Debug, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize)]
 struct CollectionFormat {
     #[serde(default, deserialize_with = "null_as_default")]
     name: String,
@@ -3657,7 +3651,7 @@ pub(crate) fn strip_discogs_number(name: &str) -> &str {
     s
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 struct ReleaseResponse {
     #[serde(default, deserialize_with = "null_as_default")]
     id: u64,
@@ -3708,7 +3702,7 @@ struct ReleaseResponse {
 }
 
 /// One `extraartists` credit, on a release or on a track.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 struct CreditEntry {
     #[serde(default, deserialize_with = "null_as_default")]
     id: u64,
@@ -3720,7 +3714,7 @@ struct CreditEntry {
 
 /// One `companies` entry. `entity_type_name` is the relation
 /// ("Distributed By"); the id is in the label namespace.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 struct CompanyEntry {
     #[serde(default, deserialize_with = "null_as_default")]
     id: u64,
@@ -3783,7 +3777,7 @@ impl RefEntry {
 /// One entry of a release's image gallery. Discogs marks the cover
 /// `"primary"` and the rest (back sleeve, labels, inserts) `"secondary"`; the
 /// listing endpoints' `cover_image` is the first of these, at 600px.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 struct ReleaseImage {
     #[serde(default, rename = "type", deserialize_with = "null_as_default")]
     kind: String,
@@ -3791,7 +3785,7 @@ struct ReleaseImage {
     uri: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 struct ReleaseLabel {
     #[serde(default, deserialize_with = "null_as_default")]
     id: u64,
@@ -3806,7 +3800,7 @@ struct ReleaseLabel {
 ///
 /// The same shape is reused for a *track's* own credit on a compilation, where
 /// `name` and `join` are what matter instead: see [`TracklistEntry::artists`].
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 struct ReleaseArtist {
     #[serde(default, deserialize_with = "null_as_default")]
     id: u64,
@@ -3819,7 +3813,7 @@ struct ReleaseArtist {
     join: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 struct TracklistEntry {
     /// `"track"` for a real track; `"heading"` and `"index"` rows are section
     /// titles ("Side A", a medley header) with nothing to play, and are dropped.
@@ -3843,7 +3837,7 @@ struct TracklistEntry {
     extraartists: Vec<CreditEntry>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 struct VideoEntry {
     #[serde(default, deserialize_with = "null_as_default")]
     uri: String,
