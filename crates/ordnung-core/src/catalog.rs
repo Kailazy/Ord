@@ -1535,19 +1535,25 @@ impl Catalog {
         Ok(())
     }
 
+    /// One column (or expression) of `track_id`'s `track_external_artwork`
+    /// row: `None` for both "no row" and "NULL".
+    fn ext_art<T: rusqlite::types::FromSql>(&self, track_id: Id, col: &str) -> Result<Option<T>> {
+        Ok(self
+            .conn
+            .query_row(
+                &format!("SELECT {col} FROM track_external_artwork WHERE track_id=?1"),
+                params![track_id as i64],
+                |r| r.get::<_, Option<T>>(0),
+            )
+            .optional()?
+            .flatten())
+    }
+
     /// External-source artwork (PNG bytes) for `track_id`, if a successful
     /// fetch is on record. Returns `None` for both "no row" and "row records a
     /// no-match attempt".
     pub fn get_external_artwork(&self, track_id: Id) -> Result<Option<Vec<u8>>> {
-        Ok(self
-            .conn
-            .query_row(
-                "SELECT png_bytes FROM track_external_artwork WHERE track_id=?1",
-                params![track_id as i64],
-                |r| r.get::<_, Option<Vec<u8>>>(0),
-            )
-            .optional()?
-            .flatten())
+        self.ext_art(track_id, "png_bytes")
     }
 
     /// Full-resolution external artwork (PNG bytes) for `track_id`, suitable for
@@ -1555,15 +1561,7 @@ impl Catalog {
     /// when there's no row, a no-match row, or only a legacy thumbnail (older
     /// catalogs fetched before full-res storage existed — re-fetch to populate).
     pub fn get_external_artwork_full(&self, track_id: Id) -> Result<Option<Vec<u8>>> {
-        Ok(self
-            .conn
-            .query_row(
-                "SELECT full_bytes FROM track_external_artwork WHERE track_id=?1",
-                params![track_id as i64],
-                |r| r.get::<_, Option<Vec<u8>>>(0),
-            )
-            .optional()?
-            .flatten())
+        self.ext_art(track_id, "full_bytes")
     }
 
     /// Discogs release id recorded for `track_id`'s external artwork, if any.
@@ -1571,15 +1569,7 @@ impl Catalog {
     /// can deep-link back to that exact release page. Returns `None` when there
     /// is no row, or the row logged a no-match attempt (no id).
     pub fn external_release_id(&self, track_id: Id) -> Result<Option<String>> {
-        Ok(self
-            .conn
-            .query_row(
-                "SELECT external_id FROM track_external_artwork WHERE track_id=?1",
-                params![track_id as i64],
-                |r| r.get::<_, Option<String>>(0),
-            )
-            .optional()?
-            .flatten())
+        self.ext_art(track_id, "external_id")
     }
 
     /// The cover URL recorded alongside a track's external release match, if the
@@ -1592,14 +1582,7 @@ impl Catalog {
     /// image at all. `None` is fine — the sheet simply opens without art.
     pub fn external_cover_url(&self, track_id: Id) -> Result<Option<String>> {
         Ok(self
-            .conn
-            .query_row(
-                "SELECT url FROM track_external_artwork WHERE track_id=?1",
-                params![track_id as i64],
-                |r| r.get::<_, Option<String>>(0),
-            )
-            .optional()?
-            .flatten()
+            .ext_art::<String>(track_id, "url")?
             .filter(|u| !u.trim().is_empty()))
     }
 
@@ -1954,13 +1937,7 @@ impl Catalog {
     /// (`typeof` skips the blob; `IS NOT NULL` would read it).
     pub fn has_external_artwork_full(&self, track_id: Id) -> Result<bool> {
         Ok(self
-            .conn
-            .query_row(
-                "SELECT typeof(full_bytes)='blob' FROM track_external_artwork WHERE track_id=?1",
-                params![track_id as i64],
-                |r| r.get::<_, bool>(0),
-            )
-            .optional()?
+            .ext_art(track_id, "typeof(full_bytes)='blob'")?
             .unwrap_or(false))
     }
 
@@ -2034,15 +2011,7 @@ impl Catalog {
     /// Callers use it to order the cover sources (external first when true).
     pub fn prefers_external_artwork(&self, track_id: Id) -> Result<bool> {
         Ok(self
-            .conn
-            .query_row(
-                "SELECT prefer_external FROM track_external_artwork
-                 WHERE track_id = ?1 AND png_bytes IS NOT NULL",
-                params![track_id as i64],
-                |r| r.get::<_, i64>(0),
-            )
-            .optional()?
-            .map(|v| v != 0)
+            .ext_art(track_id, "prefer_external <> 0 AND png_bytes IS NOT NULL")?
             .unwrap_or(false))
     }
 
