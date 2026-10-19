@@ -460,7 +460,7 @@ mod tests {
             labels: vec![],
             keys: vec![(1, "8A".into())],
             artwork: vec![(1, "/PIONEER/Artwork/00001/a1.jpg".into())],
-            playlists: vec![crate::pdbw::PlaylistRow {
+            playlists: vec![RbPlaylist {
                 id: 1,
                 parent_id: 0,
                 sort_order: 1,

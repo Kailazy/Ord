@@ -556,15 +556,7 @@ fn rewrite_pdb_playlist_tables(
     // the full-export writer produces.
     let tree_rows: Vec<Vec<u8>> = playlists
         .iter()
-        .map(|p| {
-            pdbw::pad4(pdbw::playlist_tree_row(&pdbw::PlaylistRow {
-                id: p.id,
-                parent_id: p.parent_id,
-                sort_order: p.sort_order,
-                is_folder: p.is_folder,
-                name: p.name.clone(),
-            }))
-        })
+        .map(|p| pdbw::pad4(pdbw::playlist_tree_row(p)))
         .collect();
     let mut entry_rows: Vec<Vec<u8>> = Vec::new();
     for p in playlists.iter().filter(|p| !p.is_folder) {

@@ -26,7 +26,8 @@ use ordnung_core::convert::ConvertSpec;
 use ordnung_core::model::{Cue, Format, Id, Playlist, Track};
 
 use crate::anlz;
-use crate::pdbw::{self, PdbTables, PlaylistRow, TrackRow};
+use crate::pdb::RbPlaylist;
+use crate::pdbw::{self, PdbTables, TrackRow};
 
 #[derive(Debug, thiserror::Error)]
 pub enum ExportError {
@@ -426,7 +427,7 @@ struct ExistingTrack {
 /// Read the export already at `dest_root` for a merge. Returns the existing
 /// tracks (keyed for path lookup) and playlist nodes. A stick with no export
 /// (or an unreadable one) merges as if empty.
-fn read_existing(dest_root: &Path) -> (Vec<ExistingTrack>, Vec<PlaylistRow>) {
+fn read_existing(dest_root: &Path) -> (Vec<ExistingTrack>, Vec<RbPlaylist>) {
     let pdb = dest_root
         .join("PIONEER")
         .join("rekordbox")
@@ -486,18 +487,7 @@ fn read_existing(dest_root: &Path) -> (Vec<ExistingTrack>, Vec<PlaylistRow>) {
                 .map(|p| (t.artwork_id, p)),
         });
     }
-    let playlists = export
-        .playlists
-        .iter()
-        .map(|p| PlaylistRow {
-            id: p.id,
-            parent_id: p.parent_id,
-            sort_order: p.sort_order,
-            is_folder: p.is_folder,
-            name: p.name.clone(),
-        })
-        .collect();
-    (tracks, playlists)
+    (tracks, export.playlists)
 }
 
 /// File-type enum from a filename extension (the read side doesn't store it).
@@ -1158,7 +1148,7 @@ fn export_impl(
     // playlists on by name: an incoming name that already exists replaces that
     // node's membership; a new name is appended. In Replace mode the existing
     // tree is empty, so this reduces to numbering the incoming playlists 1..M.
-    let mut playlist_rows: Vec<PlaylistRow> = existing_playlists.clone();
+    let mut playlist_rows: Vec<RbPlaylist> = existing_playlists.clone();
     let mut entries: Vec<(u32, u32, u32)> = Vec::new();
     // Existing memberships are read straight back onto their (unchanged) track
     // ids, except for any node an incoming playlist is about to replace.
@@ -1216,7 +1206,7 @@ fn export_impl(
                 existing.name = clamped;
                 existing.is_folder = p.is_folder;
             }
-            None => playlist_rows.push(PlaylistRow {
+            None => playlist_rows.push(RbPlaylist {
                 id,
                 parent_id,
                 sort_order: id,
@@ -1438,7 +1428,7 @@ mod tests {
             analyze_path: "/PIONEER/USBANLZ/P000/00000001/ANLZ0000.DAT".into(),
             ..Default::default()
         });
-        tables.playlists.push(crate::pdbw::PlaylistRow {
+        tables.playlists.push(RbPlaylist {
             id: 1,
             parent_id: 0,
             sort_order: 1,

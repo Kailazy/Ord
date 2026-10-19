@@ -17,6 +17,8 @@
 
 use std::collections::HashMap;
 
+use crate::pdb::RbPlaylist;
+
 pub(crate) const PAGE: usize = 4096;
 const PAGE_HEADER: usize = 0x28;
 /// Row-index cost at the page tail: 4 bytes per group of 16 + 2 per row slot.
@@ -135,15 +137,6 @@ pub(crate) struct TrackRow {
     pub file_path: String,
 }
 
-#[derive(Debug, Clone)]
-pub(crate) struct PlaylistRow {
-    pub id: u32,
-    pub parent_id: u32,
-    pub sort_order: u32,
-    pub is_folder: bool,
-    pub name: String,
-}
-
 /// Everything `build_export_pdb` needs. Interned tables are `(id, name)` in
 /// id order; ids are 1-based and dense.
 #[derive(Debug, Clone, Default)]
@@ -155,7 +148,7 @@ pub(crate) struct PdbTables {
     pub labels: Vec<(u32, String)>,
     pub keys: Vec<(u32, String)>,
     pub artwork: Vec<(u32, String)>,
-    pub playlists: Vec<PlaylistRow>,
+    pub playlists: Vec<RbPlaylist>,
     /// `(entry_index, track_id, playlist_id)` — entry_index is 0-based within
     /// its playlist, matching rekordbox.
     pub playlist_entries: Vec<(u32, u32, u32)>,
@@ -293,7 +286,7 @@ fn artwork_row(id: u32, path: &str) -> Vec<u8> {
     r
 }
 
-pub(crate) fn playlist_tree_row(p: &PlaylistRow) -> Vec<u8> {
+pub(crate) fn playlist_tree_row(p: &RbPlaylist) -> Vec<u8> {
     let mut r = p.parent_id.to_le_bytes().to_vec();
     r.extend_from_slice(&0u32.to_le_bytes());
     r.extend_from_slice(&p.sort_order.to_le_bytes());
