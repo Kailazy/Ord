@@ -214,7 +214,7 @@ impl App {
                 SortColumn::Title => ci(&a.title, &b.title),
                 SortColumn::Album => ci(&a.album, &b.album),
                 SortColumn::Genre => ci(&a.genre, &b.genre),
-                SortColumn::Format => ci(&a.format_label, &b.format_label),
+                SortColumn::Format => ci(format_label(a.format), format_label(b.format)),
                 SortColumn::Duration => a.dur_ms.cmp(&b.dur_ms),
                 SortColumn::Bitrate => a.bitrate_val.cmp(&b.bitrate_val),
                 SortColumn::Notes => ci(&a.notes, &b.notes),
@@ -1647,7 +1647,7 @@ impl App {
                                     TableColumn::Duration => &r.duration,
                                     TableColumn::Bpm => &r.bpm,
                                     TableColumn::Key => &r.key,
-                                    TableColumn::Format => &r.format_label,
+                                    TableColumn::Format => format_label(r.format),
                                     TableColumn::Bitrate => &r.bitrate,
                                     TableColumn::Notes => &r.notes,
                                     TableColumn::Tags => &r.tags,
@@ -3128,17 +3128,6 @@ pub(crate) fn load_rows(
             TranscodeVerdict::Suspect => 2,
             TranscodeVerdict::LikelyLossy => 3,
         });
-        let dur_ms = t.properties.as_ref().map(|p| p.duration_ms);
-        let bitrate_val = t.properties.as_ref().and_then(|p| p.bitrate_kbps);
-        let (duration, bitrate) = match &t.properties {
-            Some(p) => (
-                fmt_duration(p.duration_ms),
-                p.bitrate_kbps
-                    .map(|b| b.to_string())
-                    .unwrap_or_else(|| "—".into()),
-            ),
-            None => ("—".into(), "—".into()),
-        };
         // Share the cached envelopes — an `Arc` clone, not a copy.
         // Only show waveform data that spans the full track (v13+). Earlier
         // versions covered just the first 150 s, so the renderer — which maps
@@ -3153,18 +3142,8 @@ pub(crate) fn load_rows(
             _ => (Arc::new(Vec::new()), Arc::new(Vec::new())),
         };
         rows.push(TrackRow {
-            id: t.id,
-            artist: t.tags.artist.unwrap_or_default(),
-            title: t.tags.title.unwrap_or_default(),
-            album: t.tags.album.unwrap_or_default(),
-            genre: t.tags.genre.unwrap_or_default(),
-            duration,
             bpm,
             key,
-            format: t.format,
-            format_label: format_label(t.format).into(),
-            bitrate,
-            notes: t.tags.comment.unwrap_or_default(),
             tags,
             added: added_at
                 .get(&t.id)
@@ -3173,19 +3152,16 @@ pub(crate) fn load_rows(
             added_at: added_at.get(&t.id).copied().unwrap_or(0),
             waveform,
             waveform_bands,
-            source_path: PathBuf::from(t.source_path),
             has_cover: t.tags.has_cover,
             has_external_cover: ext_art.contains(&t.id),
-            natural: 0,
-            dur_ms,
             bpm_val,
-            bitrate_val,
             key_sort,
             camelot,
             quality,
             quality_cut_hz,
             quality_src,
             quality_sort,
+            ..TrackRow::from_tags(t.id, t.format, t.tags, t.properties.as_ref(), t.source_path)
         });
     }
     // The time-based listing ages out on its own, so only the stable ones

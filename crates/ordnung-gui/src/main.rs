@@ -59,7 +59,8 @@ use ordnung_core::genredb;
 use ordnung_core::library_index::LibraryIndex;
 use ordnung_core::model::key::Camelot;
 use ordnung_core::model::{
-    Analysis, CrateKind, CrateSet, Cue, Format, Id, Playlist, SongPin, SellerListing, SellerShop, Tags, Track,
+    Analysis, AudioProperties, CrateKind, CrateSet, Cue, Format, Id, Playlist, SongPin, SellerListing,
+    SellerShop, Tags, Track,
     Tracklist, TracklistEntry, TranscodeVerdict, VinylList, VinylRecord,
 };
 use ordnung_core::search::{ScoredHit, SearchHit};
@@ -176,7 +177,6 @@ struct TrackRow {
     bpm: String,
     key: String,
     format: Format,
-    format_label: String,
     bitrate: String,
     /// Free-text comment from the file's tag (ID3 COMM / Vorbis COMMENT), shown
     /// read-only in the Notes column. Empty string when the track has no comment.
@@ -233,6 +233,55 @@ struct TrackRow {
 }
 
 impl TrackRow {
+    /// A row with the columns every source fills the same way, from the
+    /// file's tags, audio properties, format and path. The caller sets the
+    /// rest: the analysis-derived columns, user tags, age, waveform and
+    /// cover flags.
+    fn from_tags(
+        id: Id,
+        format: Format,
+        tags: Tags,
+        props: Option<&AudioProperties>,
+        source_path: String,
+    ) -> TrackRow {
+        TrackRow {
+            id,
+            artist: tags.artist.unwrap_or_default(),
+            title: tags.title.unwrap_or_default(),
+            album: tags.album.unwrap_or_default(),
+            genre: tags.genre.unwrap_or_default(),
+            duration: props
+                .map(|p| fmt_duration(p.duration_ms))
+                .unwrap_or_else(|| "—".into()),
+            bpm: String::new(),
+            key: String::new(),
+            format,
+            bitrate: props
+                .and_then(|p| p.bitrate_kbps)
+                .map(|b| b.to_string())
+                .unwrap_or_else(|| "—".into()),
+            notes: tags.comment.unwrap_or_default(),
+            tags: String::new(),
+            added: String::new(),
+            added_at: 0,
+            waveform: Arc::new(Vec::new()),
+            waveform_bands: Arc::new(Vec::new()),
+            source_path: PathBuf::from(source_path),
+            has_cover: false,
+            has_external_cover: false,
+            natural: 0,
+            dur_ms: props.map(|p| p.duration_ms),
+            bpm_val: None,
+            bitrate_val: props.and_then(|p| p.bitrate_kbps),
+            key_sort: None,
+            camelot: None,
+            quality: None,
+            quality_cut_hz: None,
+            quality_src: None,
+            quality_sort: None,
+        }
+    }
+
     /// The text the per-column filter matches against for `col` — the same value
     /// the cell shows. Returns `""` for columns without filterable text (Cover),
     /// and the chip label for the Quality column (so e.g. "lossy" matches).
@@ -247,7 +296,7 @@ impl TrackRow {
             TableColumn::Duration => &self.duration,
             TableColumn::Bpm => &self.bpm,
             TableColumn::Key => &self.key,
-            TableColumn::Format => &self.format_label,
+            TableColumn::Format => format_label(self.format),
             TableColumn::Bitrate => &self.bitrate,
             TableColumn::Quality => self.quality.map_or("—", |v| quality_chip(v).0),
             TableColumn::Notes => &self.notes,

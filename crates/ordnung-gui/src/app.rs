@@ -1812,13 +1812,13 @@ impl App {
             .into_iter()
             .filter_map(|i| {
                 let t = self.usb_tracks.get(i)?;
-                let artist = t.tags.artist.clone().unwrap_or_default();
-                let title = t.tags.title.clone().unwrap_or_default();
-                let album = t.tags.album.clone().unwrap_or_default();
-                let genre = t.tags.genre.clone().unwrap_or_default();
                 if !filter.is_empty() {
                     let hay = format!(
-                        "{artist} {title} {album} {genre} {}",
+                        "{} {} {} {} {}",
+                        t.tags.artist.as_deref().unwrap_or_default(),
+                        t.tags.title.as_deref().unwrap_or_default(),
+                        t.tags.album.as_deref().unwrap_or_default(),
+                        t.tags.genre.as_deref().unwrap_or_default(),
                         t.source_path.to_lowercase()
                     )
                     .to_lowercase();
@@ -1851,28 +1851,13 @@ impl App {
                     .or(t.tags.bpm_tag)
                     .or_else(|| analyzed.and_then(|a| a.bpm));
                 Some(TrackRow {
-                    id: usb_track_id(i),
-                    artist,
-                    title,
-                    album,
-                    genre,
-                    duration: fmt_duration(t.properties.duration_ms),
                     bpm: bpm_val
                         .map(|b| format!("{b:.2}"))
                         .unwrap_or_else(|| "—".into()),
                     key,
-                    format: t.format,
-                    format_label: format_label(t.format).into(),
-                    bitrate: t
-                        .properties
-                        .bitrate_kbps
-                        .map(|b| b.to_string())
-                        .unwrap_or_else(|| "—".into()),
-                    notes: t.tags.comment.clone().unwrap_or_default(),
-                    // Device tracks aren't in the catalog, so they carry no tags.
-                    tags: String::new(),
+                    // Device tracks aren't in the catalog, so they carry no
+                    // tags and no added date.
                     added: "—".into(),
-                    added_at: 0,
                     // The stick's own ANLZ waveform first (free, matches what
                     // the player draws); our analyzer's when the export never
                     // had one.
@@ -1888,7 +1873,6 @@ impl App {
                             .or_else(|| analyzed.map(|a| a.waveform_bands.clone()))
                             .unwrap_or_default(),
                     ),
-                    source_path: PathBuf::from(&t.source_path),
                     // The scan already extracted the file's embedded art into
                     // `cover_thumb`; the cover cell decodes it straight from
                     // there (see `load_usb_thumb`) instead of the catalog. On
@@ -1896,17 +1880,16 @@ impl App {
                     // ARTWORK JPEG stands in until the file scan lands.
                     has_cover: t.cover_thumb.is_some()
                         || pdb.is_some_and(|p| p.artwork_path.is_some()),
-                    has_external_cover: false,
-                    natural: 0,
-                    dur_ms: Some(t.properties.duration_ms),
                     bpm_val,
-                    bitrate_val: t.properties.bitrate_kbps,
                     key_sort: camelot.map(|c| u16::from(c.number) * 2 + u16::from(c.major)),
                     camelot,
-                    quality: None,
-                    quality_cut_hz: None,
-                    quality_src: None,
-                    quality_sort: None,
+                    ..TrackRow::from_tags(
+                        usb_track_id(i),
+                        t.format,
+                        t.tags.clone(),
+                        Some(&t.properties),
+                        t.source_path.clone(),
+                    )
                 })
             })
             .collect()
