@@ -91,22 +91,11 @@ fn encoder_args(spec: &ConvertSpec) -> Vec<String> {
     }
 }
 
-/// Compute the default output path for a source: same directory (or `out_dir`
-/// when given), same stem, with the target extension.
-pub fn output_path_for(src: &Path, target: Format, out_dir: Option<&Path>) -> PathBuf {
-    let stem = src.file_stem().unwrap_or_default();
-    let dir = out_dir
-        .map(Path::to_path_buf)
-        .unwrap_or_else(|| src.parent().map(Path::to_path_buf).unwrap_or_default());
-    let mut name = PathBuf::from(stem);
-    name.set_extension(target_extension(target));
-    dir.join(name)
-}
-
-/// Like [`output_path_for`], but names the file with an explicit `stem` (e.g. one
-/// derived from a track's metadata) instead of the source's filename. The stem
-/// must already be a single, filesystem-safe path component — see
-/// [`metadata_stem`], which produces exactly that.
+/// Compute the output path for a source: same directory (or `out_dir` when
+/// given), named `stem` (the source's own stem, or e.g. one derived from a
+/// track's metadata) with the target extension. The stem must already be a
+/// single, filesystem-safe path component — see [`metadata_stem`], which
+/// produces exactly that.
 pub fn output_path_with_stem(
     src: &Path,
     stem: &str,
@@ -169,24 +158,6 @@ fn sanitize_filename(s: &str) -> String {
         .to_string()
 }
 
-/// Convert `src` to `spec`.
-///
-/// - When `in_place` is false, writes a new file at `dest` and leaves the source
-///   untouched. Refuses to overwrite an existing `dest` or the source itself.
-/// - When `in_place` is true, encodes to a temp file in the source's directory,
-///   then atomically replaces: the new file takes `dest`'s path and the original
-///   source is removed if its path differs. The catalog is the caller's concern.
-///
-/// The output is verified with `ffmpeg -i` to actually carry the target codec.
-pub fn convert_file(
-    src: &Path,
-    spec: &ConvertSpec,
-    dest: &Path,
-    in_place: bool,
-) -> Result<ConvertOutcome> {
-    convert_file_resampled(src, spec, dest, in_place, None)
-}
-
 /// Is `ffmpeg` runnable from here? The USB export asks before it commits to
 /// a player target that needs on-the-fly conversion, so a missing tool is a
 /// clean refusal rather than a half-written stick.
@@ -198,8 +169,17 @@ pub fn ffmpeg_available() -> bool {
         .unwrap_or(false)
 }
 
-/// [`convert_file`] with an optional output sample rate (`-ar`), for targets
-/// such as older CDJs that stop at 48 kHz. `None` keeps the source rate.
+/// Convert `src` to `spec`, with an optional output sample rate (`-ar`) for
+/// targets such as older CDJs that stop at 48 kHz (`None` keeps the source
+/// rate).
+///
+/// - When `in_place` is false, writes a new file at `dest` and leaves the source
+///   untouched. Refuses to overwrite an existing `dest` or the source itself.
+/// - When `in_place` is true, encodes to a temp file in the source's directory,
+///   then atomically replaces: the new file takes `dest`'s path and the original
+///   source is removed if its path differs. The catalog is the caller's concern.
+///
+/// The output is verified with `ffmpeg -i` to actually carry the target codec.
 pub fn convert_file_resampled(
     src: &Path,
     spec: &ConvertSpec,
@@ -428,9 +408,10 @@ mod tests {
     #[test]
     fn output_path_swaps_extension_and_honors_out_dir() {
         let src = Path::new("/music/01 - Artist - Title.flac");
-        let same_dir = output_path_for(src, Format::Mp3, None);
+        let stem = src.file_stem().unwrap().to_str().unwrap();
+        let same_dir = output_path_with_stem(src, stem, Format::Mp3, None);
         assert_eq!(same_dir, Path::new("/music/01 - Artist - Title.mp3"));
-        let out = output_path_for(src, Format::Aac, Some(Path::new("/tmp/conv")));
+        let out = output_path_with_stem(src, stem, Format::Aac, Some(Path::new("/tmp/conv")));
         assert_eq!(out, Path::new("/tmp/conv/01 - Artist - Title.m4a"));
     }
 

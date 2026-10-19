@@ -3902,7 +3902,12 @@ pub(crate) fn convert_dest_for(track: &Track, target: Format, out_dir: Option<&P
     let base =
         match convert::metadata_stem(track.tags.artist.as_deref(), track.tags.title.as_deref()) {
             Some(stem) => convert::output_path_with_stem(src, &stem, target, out_dir),
-            None => convert::output_path_for(src, target, out_dir),
+            None => convert::output_path_with_stem(
+                src,
+                &src.file_stem().unwrap_or_default().to_string_lossy(),
+                target,
+                out_dir,
+            ),
         };
     unique_dest(base, src)
 }
@@ -3964,7 +3969,8 @@ pub(crate) fn convert_track(
             .flatten()
             .map(tag::CoverArt::from_png)
     });
-    let outcome = convert::convert_file(&src, spec, &dest, in_place).map_err(|e| e.to_string())?;
+    let outcome = convert::convert_file_resampled(&src, spec, &dest, in_place, None)
+        .map_err(|e| e.to_string())?;
     // embed_full builds a fresh tag, so the output carries exactly the catalog's
     // set (superseding whatever the transcoder copied).
     let embedded = tag::embed_full(&outcome.output_path, &track.tags, cover.as_ref()).is_ok();
