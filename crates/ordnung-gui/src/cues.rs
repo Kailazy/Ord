@@ -35,8 +35,12 @@ fn cue_rgb(c: &Cue) -> egui::Color32 {
     egui::Color32::from_rgb(r, g, b)
 }
 
-/// Memory cues draw in rekordbox's orange.
-const MEMORY_COLOR: egui::Color32 = egui::Color32::from_rgb(255, 159, 10);
+/// Is `c` the loop `active` (start, end in ms) is circling? A couple of
+/// milliseconds either way still counts, since a loop is set on a grid.
+fn is_active_loop(c: &Cue, active: Option<(u64, u64)>) -> bool {
+    matches!((active, c.loop_end_ms), (Some((a, b)), Some(end))
+        if a.abs_diff(c.position_ms) <= 2 && b.abs_diff(end) <= 2)
+}
 
 /// The active loop draws in white over the lanes and on the pad that holds it.
 const ACTIVE_LOOP_COLOR: egui::Color32 = egui::Color32::from_rgb(245, 245, 250);
@@ -120,15 +124,11 @@ pub(crate) fn draw_cue_markers(
     };
     // The loop playback is circling gets the one white wash below; the cue
     // it came from skips its own, so the two never stack into a glare.
-    let is_active = |c: &Cue| {
-        matches!((active, c.loop_end_ms), (Some((a, b)), Some(end))
-            if a.abs_diff(c.position_ms) <= 2 && b.abs_diff(end) <= 2)
-    };
     for c in cues {
-        let color = if c.is_hot() { cue_rgb(c) } else { MEMORY_COLOR };
+        let color = if c.is_hot() { cue_rgb(c) } else { crate::ui::tokens::color::ORANGE };
         let x = x_of(c.position_ms);
         // Loop body first, so the markers sit on top of the wash.
-        if let Some(end) = c.loop_end_ms.filter(|_| !is_active(c)) {
+        if let Some(end) = c.loop_end_ms.filter(|_| !is_active_loop(c, active)) {
             wash(painter, c.position_ms, end, color, 30);
         }
         if x < rect.left() || x > rect.right() {
@@ -556,10 +556,6 @@ impl App {
         let quantize = self.config.cue_quantize;
         let beat = self.beat_ms();
         let beats = LOOP_BEATS[self.loop_beats.min(LOOP_BEATS.len() - 1)];
-        let same_loop = |c: &Cue| -> bool {
-            matches!((active, c.loop_end_ms), (Some((a, b)), Some(end))
-                if a.abs_diff(c.position_ms) <= 2 && b.abs_diff(end) <= 2)
-        };
         let loop_beats_of = |start: u64, end: u64| -> Option<String> {
             beat.map(|p| {
                 let n = (end - start) as f64 / p;
@@ -683,7 +679,7 @@ impl App {
                 match found {
                     Some((idx, c)) => {
                         let col = cue_rgb(c);
-                        let lit = same_loop(c);
+                        let lit = is_active_loop(c, active);
                         // The ✕ is a widget every frame, not only while the
                         // pad is hovered: the pointer moving onto it leaves
                         // the pad, and a ✕ that vanished then would flicker
@@ -996,7 +992,7 @@ impl App {
                                 }
                                 let label = c.label.as_deref().filter(|l| !l.is_empty());
                                 let g_time = ui.fonts(|f| {
-                                    f.layout_no_wrap(text.clone(), font::mono_small(), MEMORY_COLOR)
+                                    f.layout_no_wrap(text.clone(), font::mono_small(), color::ORANGE)
                                 });
                                 let g_label = label.map(|l| {
                                     ui.fonts(|f| {
@@ -1023,7 +1019,7 @@ impl App {
                                         .on_hover_note("Remove this memory cue")
                                 });
                                 let hot = resp.hovered() || x_resp.as_ref().map_or(false, |x| x.hovered());
-                                let lit = same_loop(c);
+                                let lit = is_active_loop(c, active);
                                 ui.painter().rect_filled(
                                     rect,
                                     egui::Rounding::same(radius::SM),
@@ -1034,14 +1030,14 @@ impl App {
                                     egui::Rounding::same(radius::SM),
                                     egui::Stroke::new(
                                         1.0,
-                                        if lit { MEMORY_COLOR } else { color::OUTLINE },
+                                        if lit { color::ORANGE } else { color::OUTLINE },
                                     ),
                                 );
                                 let mut x = rect.left() + pad_x;
                                 ui.painter().galley(
                                     egui::pos2(x, rect.center().y - g_time.size().y / 2.0),
                                     g_time.clone(),
-                                    MEMORY_COLOR,
+                                    color::ORANGE,
                                 );
                                 x += g_time.size().x;
                                 if let Some(g) = &g_label {
