@@ -260,29 +260,25 @@ const BAR: u32 = 4;
 /// steady 4/4 club material wants and what rekordbox emits by default. `number`
 /// cycles 1..=4 as the position within the bar, starting from `first_beat_number`
 /// (the detected bar position of the first beat) so downbeats land on the true "1".
+/// The expansion is [`Beatgrid::expand_to`] from a single anchor; a lock with no
+/// beat inside the track is an empty grid rather than the lone anchor.
 fn build_static_grid(
     bpm: f32,
     first_beat_ms: u64,
     duration_ms: u64,
     first_beat_number: u32,
 ) -> Beatgrid {
-    if bpm <= 0.0 || duration_ms == 0 {
+    if bpm <= 0.0 || duration_ms == 0 || first_beat_ms > duration_ms {
         return Beatgrid::default();
     }
-    let period_ms = 60_000.0 / bpm as f64;
-    let mut beats = Vec::new();
-    let mut pos = first_beat_ms as f64;
-    let mut number: u32 = first_beat_number.clamp(1, BAR);
-    while pos.round() as u64 <= duration_ms {
-        beats.push(Beat {
-            number,
-            position_ms: pos.round() as u64,
-            bpm,
-        });
-        number = if number == BAR { 1 } else { number + 1 };
-        pos += period_ms;
+    let anchor = Beat {
+        number: first_beat_number,
+        position_ms: first_beat_ms,
+        bpm,
+    };
+    Beatgrid {
+        beats: Beatgrid { beats: vec![anchor] }.expand_to(duration_ms),
     }
-    Beatgrid { beats }
 }
 
 #[cfg(test)]
@@ -314,6 +310,33 @@ mod grid_tests {
     fn static_grid_degenerate_inputs() {
         assert!(build_static_grid(0.0, 0, 4_000, 1).beats.is_empty());
         assert!(build_static_grid(120.0, 0, 0, 1).beats.is_empty());
+    }
+
+    #[test]
+    fn static_grid_literal_beats() {
+        let beat = |number, position_ms, bpm| Beat { number, position_ms, bpm };
+        // Bar numbers start from the given position and wrap after 4.
+        assert_eq!(
+            build_static_grid(120.0, 250, 1_500, 3).beats,
+            vec![beat(3, 250, 120.0), beat(4, 750, 120.0), beat(1, 1250, 120.0)]
+        );
+        // A fractional period rounds each position, half away from zero.
+        assert_eq!(
+            build_static_grid(128.0, 0, 1_900, 1).beats,
+            vec![
+                beat(1, 0, 128.0),
+                beat(2, 469, 128.0),
+                beat(3, 938, 128.0),
+                beat(4, 1406, 128.0),
+                beat(1, 1875, 128.0),
+            ]
+        );
+        // An anchor on the last millisecond is a one-beat grid; one past it is none.
+        assert_eq!(build_static_grid(120.0, 1_500, 1_500, 1).beats, vec![beat(1, 1500, 120.0)]);
+        assert!(build_static_grid(120.0, 1_501, 1_500, 1).beats.is_empty());
+        // Out-of-range bar positions clamp into 1..=4.
+        assert_eq!(build_static_grid(120.0, 0, 600, 0).beats, vec![beat(1, 0, 120.0), beat(2, 500, 120.0)]);
+        assert_eq!(build_static_grid(120.0, 0, 600, 9).beats, vec![beat(4, 0, 120.0), beat(1, 500, 120.0)]);
     }
 }
 
