@@ -84,9 +84,7 @@ pub fn edit_stick_playlists(
 /// pre-Ordnung database can always be restored. Best-effort: a failed backup
 /// (full stick) doesn't block the edit.
 fn backup_once(path: &Path) {
-    let mut orig = path.as_os_str().to_owned();
-    orig.push(".orig");
-    let orig = std::path::PathBuf::from(orig);
+    let orig = orig_path(path);
     if !orig.exists() {
         let _ = std::fs::copy(path, &orig);
     }
@@ -390,10 +388,7 @@ fn rewrite_track_row(
         return Err(ReadError::Format("unsupported page size"));
     }
     let mut hit: Option<(usize, usize)> = None; // (page_off, row)
-    for &(ty, first, last) in &tables.dir {
-        if ty != TYPE_TRACKS {
-            continue;
-        }
+    if let Some((_, first, last)) = tables.find(TYPE_TRACKS) {
         for page_off in table_pages(&data, page_size, first, last) {
             if u32_at(&data, page_off + 8) != Some(TYPE_TRACKS) || data[page_off + 0x1B] & 0x40 != 0 {
                 continue;
@@ -435,7 +430,7 @@ fn rewrite_track_row(
         }
     }
     let groups = slots.len().div_ceil(16);
-    let index_bytes = 4 * groups + 2 * slots.len();
+    let index_bytes = pdbw::index_bytes(slots.len());
     let Some(free) = (pdbw::PAGE - PAGE_HEADER)
         .checked_sub(heap.len())
         .and_then(|v| v.checked_sub(index_bytes))
@@ -650,9 +645,7 @@ fn rewrite_pdb_playlist_tables(
 
     // Atomic replace: a yanked stick mid-write leaves either the old database
     // or the new one, never a torn page.
-    let tmp = pdb_path.with_extension("pdb.tmp");
-    crate::export::write_synced(&tmp, &data).map_err(ReadError::io(pdb_path))?;
-    std::fs::rename(&tmp, pdb_path).map_err(ReadError::io(pdb_path))?;
+    crate::export::write_atomic(pdb_path, &data).map_err(ReadError::io(pdb_path))?;
     Ok(())
 }
 

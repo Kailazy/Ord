@@ -22,7 +22,7 @@ use crate::pdb::RbPlaylist;
 pub(crate) const PAGE: usize = 4096;
 const PAGE_HEADER: usize = 0x28;
 /// Row-index cost at the page tail: 4 bytes per group of 16 + 2 per row slot.
-fn index_bytes(rows: usize) -> usize {
+pub(crate) fn index_bytes(rows: usize) -> usize {
     rows.div_ceil(16) * 4 + rows * 2
 }
 
