@@ -32,6 +32,25 @@ impl App {
         Some((tx, cancel))
     }
 
+    /// Claim the job slot (see [`Self::start_job`]), put `status` in the bar
+    /// and run `work` on a worker thread with the catalog path, the cancel
+    /// flag, the job channel and the context. `false` when the slot is busy.
+    fn spawn_job(
+        &mut self,
+        ctx: egui::Context,
+        status: impl Into<String>,
+        cancellable: bool,
+        work: impl FnOnce(PathBuf, Arc<AtomicBool>, Sender<JobMsg>, egui::Context) + Send + 'static,
+    ) -> bool {
+        let Some((tx, cancel)) = self.start_job(cancellable) else {
+            return false;
+        };
+        self.status = status.into();
+        let db = self.db_path.clone();
+        thread::spawn(move || work(db, cancel, tx, ctx));
+        true
+    }
+
     /// The Discogs token, or `None` after pointing the user at Settings.
     pub(crate) fn require_token(&mut self) -> Option<String> {
         let token = self.discogs_token();
@@ -271,29 +290,17 @@ impl App {
         replace: bool,
         player: ordnung_rbdb::export::PlayerTarget,
     ) {
-        let Some((tx, cancel)) = self.start_job(true) else {
-            return;
-        };
         let verb = if replace { "Exporting" } else { "Adding" };
-        self.status = format!("{verb} {scope} to {}…", dest.display());
-        // Remember where we're exporting so the completion handler can refresh
-        // the device view (the stick's on-disk playlists just changed).
-        self.export_running_to = Some(dest.clone());
-        let db = self.db_path.clone();
+        let status = format!("{verb} {scope} to {}…", dest.display());
         let comment = crate::config::ExportComment::from_key(&self.config.export_comment);
-        thread::spawn(move || {
-            run_export(
-                db,
-                dest,
-                playlist_ids,
-                replace,
-                player,
-                comment,
-                cancel,
-                tx,
-                ctx,
-            )
-        });
+        let to = dest.clone();
+        if self.spawn_job(ctx, status, true, move |db, cancel, tx, ctx| {
+            run_export(db, dest, playlist_ids, replace, player, comment, cancel, tx, ctx)
+        }) {
+            // Remember where we're exporting so the completion handler can refresh
+            // the device view (the stick's on-disk playlists just changed).
+            self.export_running_to = Some(to);
+        }
     }
 
     /// Write an empty rekordbox export structure onto `dest` — the flow behind
@@ -303,18 +310,19 @@ impl App {
     /// structure to a device that lacks one. Existing files on the volume are
     /// untouched (the empty merge only creates folders and databases).
     pub(crate) fn spawn_usb_setup(&mut self, ctx: egui::Context, dest: PathBuf) {
-        let Some((tx, cancel)) = self.start_job(true) else {
-            return;
-        };
         let name = dest
             .file_name()
             .map(|n| n.to_string_lossy().into_owned())
             .unwrap_or_else(|| dest.display().to_string());
-        self.status = format!("Setting up {name} for rekordbox…");
-        // Reuse the export-completion hook: when the job lands, the device
-        // view re-scans and the new (empty) rekordbox tree appears.
-        self.export_running_to = Some(dest.clone());
-        thread::spawn(move || run_usb_setup(dest, name, cancel, tx, ctx));
+        let status = format!("Setting up {name} for rekordbox…");
+        let to = dest.clone();
+        if self.spawn_job(ctx, status, true, move |_, cancel, tx, ctx| {
+            run_usb_setup(dest, name, cancel, tx, ctx)
+        }) {
+            // Reuse the export-completion hook: when the job lands, the device
+            // view re-scans and the new (empty) rekordbox tree appears.
+            self.export_running_to = Some(to);
+        }
     }
 
     /// Import paths dropped onto the window from Finder (folders are walked,
@@ -581,12 +589,8 @@ impl App {
     /// Catalog-only; source files are never touched.
     pub(crate) fn spawn_relocate(&mut self, ctx: egui::Context, dir: PathBuf) {
         // A single directory walk; runs to completion.
-        let Some((tx, _)) = self.start_job(false) else {
-            return;
-        };
-        self.status = format!("Searching {} for missing files…", dir.display());
-        let db = self.db_path.clone();
-        thread::spawn(move || run_relocate(db, dir, tx, ctx));
+        let status = format!("Searching {} for missing files…", dir.display());
+        self.spawn_job(ctx, status, false, move |db, _, tx, ctx| run_relocate(db, dir, tx, ctx));
     }
 
     /// Kick off the background refreshes we always want current at launch. The
@@ -626,14 +630,9 @@ impl App {
         // Cancellable because the price phase is one rate-limited request per
         // record — minutes on a first sync. Stopping keeps everything fetched so
         // far; the next refresh resumes with what's still unpriced.
-        let Some((tx, cancel)) = self.start_job(true) else {
-            return;
-        };
-        self.status = "Syncing vinyl collection and wantlist…".into();
-        let db = self.db_path.clone();
         let ledger = self.vinyl_confirmed.clone();
         let username = self.config.discogs_username.trim().to_string();
-        thread::spawn(move || {
+        self.spawn_job(ctx, "Syncing vinyl collection and wantlist…", true, move |db, cancel, tx, ctx| {
             run_refresh_vinyl(db, token, username, cancel, false, ledger, tx, ctx)
         });
     }
@@ -647,18 +646,16 @@ impl App {
         let Some(token) = self.require_token() else {
             return;
         };
-        let Some((tx, cancel)) = self.start_job(true) else {
-            return;
-        };
-        self.status = format!("Updating {username}'s crates…");
-        let db = self.db_path.clone();
         let genres = self
             .sellers
             .iter()
             .find(|s| s.username == username)
             .map(|s| s.genres.clone())
             .unwrap_or_default();
-        thread::spawn(move || run_sweep_seller(db, token, username, genres, cancel, tx, ctx));
+        let status = format!("Updating {username}'s crates…");
+        self.spawn_job(ctx, status, true, move |db, cancel, tx, ctx| {
+            run_sweep_seller(db, token, username, genres, cancel, tx, ctx)
+        });
     }
 
     /// Import the Discogs genre database: one ~10 GB monthly-dump download,
@@ -668,12 +665,9 @@ impl App {
     /// releases newer than the dump stay untagged until a record sheet caches
     /// their detail.
     pub(crate) fn spawn_import_genredb(&mut self, ctx: egui::Context) {
-        let Some((tx, cancel)) = self.start_job(true) else {
-            return;
-        };
-        self.status = "Downloading the Discogs genre database…".into();
-        let path = genredb::default_path(&self.db_path);
-        thread::spawn(move || run_import_genredb(path, cancel, tx, ctx));
+        self.spawn_job(ctx, "Downloading the Discogs genre database…", true, |db, cancel, tx, ctx| {
+            run_import_genredb(genredb::default_path(&db), cancel, tx, ctx)
+        });
     }
 
     /// Run one user-requested change to a Discogs list — the vinyl grid's
@@ -910,12 +904,6 @@ impl App {
         let Some(token) = self.require_token() else {
             return false;
         };
-        let Some((tx, cancel)) = self.start_job(true) else {
-            return false;
-        };
-        self.artwork_enrich = true;
-        self.status = "Searching Discogs for releases…".into();
-        let db = self.db_path.clone();
         // Snapshot the medium filter for the worker: the user's picker
         // preferences can't be read off `self` from another thread.
         let hidden_mediums = if all_formats {
@@ -923,9 +911,12 @@ impl App {
         } else {
             self.config.hidden_release_mediums.clone()
         };
-        thread::spawn(move || {
+        if !self.spawn_job(ctx, "Searching Discogs for releases…", true, move |db, cancel, tx, ctx| {
             run_fetch_tracks(db, token, ids, cancel, tx, ctx, true, hidden_mediums)
-        });
+        }) {
+            return false;
+        }
+        self.artwork_enrich = true;
         true
     }
 
@@ -936,17 +927,16 @@ impl App {
     ) -> Result<(), String> {
         let spec = convert_spec(modal.target, &modal.bitrate_kbps, modal.out_dir.as_deref())?;
 
-        // A single ffmpeg run; not interruptible.
-        let Some((tx, _)) = self.start_job(false) else {
-            return Err(self.status.clone());
-        };
-        self.status = format!("Converting {}…", modal.track_label);
-
-        let db = self.db_path.clone();
         let track_id = modal.track_id;
         let in_place = modal.in_place;
         let out_dir = modal.out_dir.clone();
-        thread::spawn(move || run_convert(db, track_id, spec, out_dir, in_place, tx, ctx));
+        let status = format!("Converting {}…", modal.track_label);
+        // A single ffmpeg run; not interruptible.
+        if !self.spawn_job(ctx, status, false, move |db, _, tx, ctx| {
+            run_convert(db, track_id, spec, out_dir, in_place, tx, ctx)
+        }) {
+            return Err(self.status.clone());
+        }
         Ok(())
     }
 
@@ -963,13 +953,12 @@ impl App {
     ) -> Result<(), String> {
         let spec = convert_spec(target, bitrate_raw, out_dir.as_deref())?;
 
-        let Some((tx, cancel)) = self.start_job(true) else {
+        let status = format!("Converting {} track(s)…", ids.len());
+        if !self.spawn_job(ctx, status, true, move |db, cancel, tx, ctx| {
+            run_batch_convert(db, ids, spec, out_dir, in_place, cancel, tx, ctx)
+        }) {
             return Err(self.status.clone());
-        };
-        self.status = format!("Converting {} track(s)…", ids.len());
-
-        let db = self.db_path.clone();
-        thread::spawn(move || run_batch_convert(db, ids, spec, out_dir, in_place, cancel, tx, ctx));
+        }
         Ok(())
     }
 
@@ -977,13 +966,9 @@ impl App {
     /// file, clearing the flag as each succeeds. Cancellable; reports progress
     /// and a final summary through the shared job channel.
     pub(crate) fn spawn_write_edits(&mut self, ctx: egui::Context) {
-        let Some((tx, cancel)) = self.start_job(true) else {
-            return;
-        };
-        self.status = "Writing edits to source files…".into();
-        self.write_edits_running = true;
-        let db = self.db_path.clone();
-        thread::spawn(move || run_write_edits(db, cancel, tx, ctx));
+        if self.spawn_job(ctx, "Writing edits to source files…", true, run_write_edits) {
+            self.write_edits_running = true;
+        }
     }
 
     /// Background job: fetch and install a newer Ord in place of this
@@ -993,11 +978,8 @@ impl App {
         ctx: egui::Context,
         info: ordnung_core::update::UpdateInfo,
     ) {
-        let Some((tx, cancel)) = self.start_job(true) else {
-            return;
-        };
-        self.status = format!("Downloading Ord {}…", info.version);
-        thread::spawn(move || {
+        let status = format!("Downloading Ord {}…", info.version);
+        self.spawn_job(ctx, status, true, move |_, cancel, tx, ctx| {
             let mut last = std::time::Instant::now() - std::time::Duration::from_secs(1);
             let result = ordnung_core::update::install(
                 &info,
@@ -1039,13 +1021,8 @@ impl App {
     /// `ordnung_core::backup`). Read-only on the catalog, so it shares the
     /// job slot like any other job and the table stays usable meanwhile.
     pub(crate) fn spawn_backup(&mut self, ctx: egui::Context, dest: PathBuf) {
-        let Some((tx, _cancel)) = self.start_job(false) else {
-            return;
-        };
-        self.status = "Backing up the catalog…".into();
-        let db = self.db_path.clone();
         let cfg = crate::config::config_path();
-        thread::spawn(move || {
+        self.spawn_job(ctx, "Backing up the catalog…", false, move |db, _, tx, ctx| {
             let msg = match ordnung_core::backup::backup(&db, cfg.as_deref(), &dest) {
                 Ok(()) => JobMsg::Done(format!("Backed up the catalog to {}.", dest.display())),
                 Err(e) => JobMsg::Failed(format!("Backup failed: {e}")),
@@ -1101,12 +1078,10 @@ impl App {
     /// the Duplicates view stays interactive while it runs; `poll_worker` reloads
     /// (recomputing the groups) when it finishes.
     pub(crate) fn spawn_trash_marked(&mut self, ctx: egui::Context, batch: Vec<(Id, Id, PathBuf)>) {
-        let Some((tx, cancel)) = self.start_job(true) else {
-            return;
-        };
-        self.status = format!("Trashing {} duplicate(s)…", batch.len());
-        let db = self.db_path.clone();
-        thread::spawn(move || run_trash_marked(db, batch, cancel, tx, ctx));
+        let status = format!("Trashing {} duplicate(s)…", batch.len());
+        self.spawn_job(ctx, status, true, move |db, cancel, tx, ctx| {
+            run_trash_marked(db, batch, cancel, tx, ctx)
+        });
     }
 }
 
@@ -4429,17 +4404,12 @@ impl App {
         let Some(token) = self.require_token() else {
             return;
         };
-        let Some((tx, cancel)) = self.start_job(true) else {
-            return;
-        };
-        self.status = "Matching the tracklist…".into();
-        let db = self.db_path.clone();
         let spec = AutoMatchSpec {
             token,
             criterion: config::ReleaseAutoMatch::from_key(&self.config.discogs_auto_match),
             hidden_mediums: self.config.hidden_release_mediums.clone(),
         };
-        thread::spawn(move || {
+        self.spawn_job(ctx, "Matching the tracklist…", true, move |db, cancel, tx, ctx| {
             run_match_tracklist(db, spec, tracklist_id, scope, cancel, tx, ctx)
         });
     }
