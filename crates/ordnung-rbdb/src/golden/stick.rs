@@ -111,13 +111,6 @@ fn push(out: &mut StickDiff, area: &'static str, track: Option<&str>, d: Delta) 
     });
 }
 
-fn io(path: &Path) -> impl FnOnce(std::io::Error) -> ReadError + '_ {
-    move |source| ReadError::Io {
-        path: path.to_path_buf(),
-        source,
-    }
-}
-
 /// Filename (lowercased) → track id, for matching the two sticks.
 fn by_filename(ex: &RbExport) -> BTreeMap<String, u32> {
     ex.tracks.iter().map(|(id, t)| (basename(&t.file_path), *id)).collect()
@@ -128,8 +121,8 @@ fn by_filename(ex: &RbExport) -> BTreeMap<String, u32> {
 pub fn diff_stick(golden: &Path, ours: &Path) -> Result<StickDiff, ReadError> {
     let mut out = StickDiff::default();
     let (gp, op) = (rb_dir(golden).join("export.pdb"), rb_dir(ours).join("export.pdb"));
-    let g_pdb = std::fs::read(&gp).map_err(io(&gp))?;
-    let o_pdb = std::fs::read(&op).map_err(io(&op))?;
+    let g_pdb = std::fs::read(&gp).map_err(ReadError::io(&gp))?;
+    let o_pdb = std::fs::read(&op).map_err(ReadError::io(&op))?;
     pdb_findings(&super::diff_pdb(&g_pdb, &o_pdb)?, &mut out);
 
     let g_ex = read_export(&gp)?;

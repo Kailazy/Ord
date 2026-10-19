@@ -28,6 +28,16 @@ pub enum ReadError {
     Dlp(String),
 }
 
+impl ReadError {
+    /// `map_err` adapter: an I/O error tagged with the path it happened on.
+    pub(crate) fn io(path: &Path) -> impl FnOnce(std::io::Error) -> ReadError + '_ {
+        move |source| ReadError::Io {
+            path: path.to_path_buf(),
+            source,
+        }
+    }
+}
+
 /// One node of the export's playlist tree — a playlist or a folder.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RbPlaylist {
@@ -194,10 +204,7 @@ pub fn read_stick(volume_root: &Path) -> Result<RbExport, ReadError> {
 /// Parse the export database at `pdb_path` (the `PIONEER/rekordbox/export.pdb`
 /// file on a stick).
 pub fn read_export(pdb_path: &Path) -> Result<RbExport, ReadError> {
-    let data = std::fs::read(pdb_path).map_err(|source| ReadError::Io {
-        path: pdb_path.to_path_buf(),
-        source,
-    })?;
+    let data = std::fs::read(pdb_path).map_err(ReadError::io(pdb_path))?;
     parse_export(&data)
 }
 

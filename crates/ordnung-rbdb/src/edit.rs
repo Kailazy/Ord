@@ -185,10 +185,7 @@ pub fn write_stick_cues(
     cues: &[Cue],
 ) -> Result<(), ReadError> {
     backup_anlz(dat_path);
-    crate::anlz::write_cues(dat_path, cues).map_err(|e| ReadError::Io {
-        path: dat_path.to_path_buf(),
-        source: e,
-    })?;
+    crate::anlz::write_cues(dat_path, cues).map_err(ReadError::io(dat_path))?;
     bump_track_counter(volume_root, track_id, Counter::Cue, None)
 }
 
@@ -284,10 +281,7 @@ pub fn write_stick_beatgrid(
     beats: &[Beat],
 ) -> Result<(), ReadError> {
     backup_anlz(dat_path);
-    crate::anlz::write_beatgrid(dat_path, beats).map_err(|e| ReadError::Io {
-        path: dat_path.to_path_buf(),
-        source: e,
-    })?;
+    crate::anlz::write_beatgrid(dat_path, beats).map_err(ReadError::io(dat_path))?;
     let centi = beats
         .first()
         .map(|b| b.bpm)
@@ -408,10 +402,7 @@ fn rewrite_track_row(
     edit: impl FnOnce(&mut TrackRowEdit),
 ) -> Result<String, ReadError> {
     use crate::pdb::{table_dir, table_pages, u32_at, PAGE_HEADER, TYPE_TRACKS};
-    let mut data = std::fs::read(pdb_path).map_err(|e| ReadError::Io {
-        path: pdb_path.to_path_buf(),
-        source: e,
-    })?;
+    let mut data = std::fs::read(pdb_path).map_err(ReadError::io(pdb_path))?;
     let tables = table_dir(&data)?;
     let page_size = tables.page_size;
     if page_size != pdbw::PAGE {
@@ -487,10 +478,7 @@ fn rewrite_track_row(
         }
     }
     data[page_off..page_off + page_size].copy_from_slice(&page);
-    crate::export::write_atomic(pdb_path, &data).map_err(|e| ReadError::Io {
-        path: pdb_path.to_path_buf(),
-        source: e,
-    })?;
+    crate::export::write_atomic(pdb_path, &data).map_err(ReadError::io(pdb_path))?;
     Ok(file_path)
 }
 
@@ -537,11 +525,7 @@ fn rewrite_pdb_playlist_tables(
     playlists: &[RbPlaylist],
     entries: &HashMap<u32, Vec<u32>>,
 ) -> Result<(), ReadError> {
-    let io_err = |source| ReadError::Io {
-        path: pdb_path.to_path_buf(),
-        source,
-    };
-    let mut data = std::fs::read(pdb_path).map_err(io_err)?;
+    let mut data = std::fs::read(pdb_path).map_err(ReadError::io(pdb_path))?;
 
     let tables = crate::pdb::table_dir(&data)?;
     let page_size = tables.page_size;
@@ -687,8 +671,8 @@ fn rewrite_pdb_playlist_tables(
     // Atomic replace: a yanked stick mid-write leaves either the old database
     // or the new one, never a torn page.
     let tmp = pdb_path.with_extension("pdb.tmp");
-    crate::export::write_synced(&tmp, &data).map_err(io_err)?;
-    std::fs::rename(&tmp, pdb_path).map_err(io_err)?;
+    crate::export::write_synced(&tmp, &data).map_err(ReadError::io(pdb_path))?;
+    std::fs::rename(&tmp, pdb_path).map_err(ReadError::io(pdb_path))?;
     Ok(())
 }
 
