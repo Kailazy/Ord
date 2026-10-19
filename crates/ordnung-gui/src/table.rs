@@ -1054,8 +1054,7 @@ impl App {
         let draw_index = playlist_pid.is_some();
         let reorderable = playlist_pid.is_some() && self.sort.is_none() && menu_unfiltered;
         // Fixed gutter width, independent of the row count so it never changes
-        // between views. Numbers are right-aligned, so larger counts grow leftward
-        // within the gutter and never crowd the first data column.
+        // between views. Numbers sit left-aligned under the "#" header.
         let index_w = 34.0;
         // When the Waveform column leads the row over a blank gutter (library
         // views — no row numbers), its inline paint stretches left across the
@@ -1402,8 +1401,8 @@ impl App {
                                 if draw_index {
                                     let r = ui.max_rect();
                                     ui.painter().text(
-                                        egui::pos2(r.right() - 5.0, r.center().y),
-                                        egui::Align2::RIGHT_CENTER,
+                                        egui::pos2(r.left(), r.center().y),
+                                        egui::Align2::LEFT_CENTER,
                                         format!("{}", idx + 1),
                                         crate::ui::tokens::font::footnote(),
                                         ui.visuals().weak_text_color(),

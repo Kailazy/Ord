@@ -724,6 +724,7 @@ impl TableColumn {
                 | TableColumn::Album
                 | TableColumn::Genre
                 | TableColumn::Notes
+                | TableColumn::Tags
         )
     }
 }
