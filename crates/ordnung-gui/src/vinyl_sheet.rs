@@ -3632,6 +3632,7 @@ mod tests {
             title: "Y".into(),
             artist: "X".into(),
             offers,
+            tracks: vec![],
         }
     }
 
