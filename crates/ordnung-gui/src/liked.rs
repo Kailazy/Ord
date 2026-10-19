@@ -17,81 +17,39 @@ use crate::ui::tokens::{color, font, space};
 use ordnung_core::catalog::song_key;
 use ordnung_core::model::{SongPin, SongRef};
 
-/// What a song carries in from the row it was met on: the song, and the
-/// record it sits on when there was one. What a like, a drag to a crate
-/// and Add to crate all hand over.
-#[derive(Clone, Default)]
-pub(crate) struct LikeSpec {
-    pub artist: String,
-    pub title: String,
-    pub release_id: Option<u64>,
-    pub position: Option<String>,
-    pub rel_artist: Option<String>,
-    pub rel_title: Option<String>,
-    pub rel_label: Option<String>,
-    pub rel_catno: Option<String>,
-    pub rel_year: Option<u16>,
-    pub rel_thumb: Option<String>,
-    pub local_track_id: Option<Id>,
+/// The row to store, stamped now: a record field a row met as an empty
+/// string is nothing. Every write to the catalog goes through here, so a
+/// pin built by a row (`id: 0, added_at: 0`) and one carried on from a
+/// stored row land the same.
+pub(crate) fn stamped(mut s: SongPin) -> SongPin {
+    for f in [&mut s.position, &mut s.rel_artist, &mut s.rel_title, &mut s.rel_label, &mut s.rel_catno, &mut s.rel_thumb] {
+        f.take_if(|v| v.is_empty());
+    }
+    s.added_at = unix_now();
+    s
 }
 
-impl LikeSpec {
-    /// The row to store, stamped now.
-    pub(crate) fn into_pin(self) -> SongPin {
-        SongPin {
-            id: 0,
-            artist: self.artist,
-            title: self.title,
-            release_id: self.release_id,
-            position: self.position.filter(|p| !p.is_empty()),
-            rel_artist: self.rel_artist.filter(|s| !s.is_empty()),
-            rel_title: self.rel_title.filter(|s| !s.is_empty()),
-            rel_label: self.rel_label.filter(|s| !s.is_empty()),
-            rel_catno: self.rel_catno.filter(|s| !s.is_empty()),
-            rel_year: self.rel_year,
-            rel_thumb: self.rel_thumb.filter(|s| !s.is_empty()),
-            local_track_id: self.local_track_id,
-            added_at: unix_now(),
-        }
-    }
-
-    /// What a library track carries to a like or a tag: the song as its
-    /// tags say it, on the record it is matched to (`release_id`, from
-    /// the app's track-to-release map), with this very file as the track
-    /// that is it. The inspector's heart and the library's Tags menu both
-    /// hand this over.
-    pub(crate) fn from_track(t: &Track, release_id: Option<u64>) -> LikeSpec {
-        let song = t.song();
-        LikeSpec {
-            artist: song.artist,
-            title: song.title,
-            release_id,
-            position: None,
-            rel_artist: t.tags.album_artist.clone().or_else(|| t.tags.artist.clone()),
-            rel_title: t.tags.album.clone(),
-            rel_label: t.tags.label.clone(),
-            rel_catno: t.tags.catalog_number.clone(),
-            rel_year: t.tags.year,
-            rel_thumb: None,
-            local_track_id: Some(t.id),
-        }
-    }
-
-    /// The spec of a stored row, for carrying it on to another set.
-    pub(crate) fn from_pin(s: &SongPin) -> LikeSpec {
-        LikeSpec {
-            artist: s.artist.clone(),
-            title: s.title.clone(),
-            release_id: s.release_id,
-            position: s.position.clone(),
-            rel_artist: s.rel_artist.clone(),
-            rel_title: s.rel_title.clone(),
-            rel_label: s.rel_label.clone(),
-            rel_catno: s.rel_catno.clone(),
-            rel_year: s.rel_year,
-            rel_thumb: s.rel_thumb.clone(),
-            local_track_id: s.local_track_id,
-        }
+/// What a library track carries to a like or a tag: the song as its
+/// tags say it, on the record it is matched to (`release_id`, from
+/// the app's track-to-release map), with this very file as the track
+/// that is it. The inspector's heart and the library's Tags menu both
+/// hand this over.
+pub(crate) fn from_track(t: &Track, release_id: Option<u64>) -> SongPin {
+    let song = t.song();
+    SongPin {
+        id: 0,
+        artist: song.artist,
+        title: song.title,
+        release_id,
+        position: None,
+        rel_artist: t.tags.album_artist.clone().or_else(|| t.tags.artist.clone()),
+        rel_title: t.tags.album.clone(),
+        rel_label: t.tags.label.clone(),
+        rel_catno: t.tags.catalog_number.clone(),
+        rel_year: t.tags.year,
+        rel_thumb: None,
+        local_track_id: Some(t.id),
+        added_at: 0,
     }
 }
 
@@ -111,7 +69,7 @@ impl App {
     /// Put a song in the crate, or take it out if it's there. Writes the
     /// catalog and keeps the in-memory crate in step, so every mark for
     /// the song flips this frame.
-    pub(crate) fn toggle_like(&mut self, spec: LikeSpec) {
+    pub(crate) fn toggle_like(&mut self, spec: SongPin) {
         let key = song_key(&spec.artist, &spec.title, spec.release_id, spec.position.as_deref());
         if key.is_empty() {
             return;
@@ -134,7 +92,7 @@ impl App {
             }
         } else {
             let label = spec_label(&spec);
-            let mut song = spec.into_pin();
+            let mut song = stamped(spec);
             match cat.like_song(&song) {
                 Ok(id) => {
                     song.id = id;
@@ -284,7 +242,7 @@ fn liked_key(s: &SongPin) -> String {
     song_key(&s.artist, &s.title, s.release_id, s.position.as_deref())
 }
 
-fn spec_label(s: &LikeSpec) -> String {
+fn spec_label(s: &SongPin) -> String {
     if s.artist.is_empty() {
         s.title.clone()
     } else {

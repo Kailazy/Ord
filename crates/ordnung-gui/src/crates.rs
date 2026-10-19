@@ -28,7 +28,6 @@
 //! read with the sets.
 
 use super::*;
-use crate::liked::LikeSpec;
 use crate::song_rows::{badge, song_matches, two_line, SongSet};
 use crate::ui::cover::thumb;
 use crate::ui::hover::HoverNoteExt;
@@ -240,22 +239,22 @@ impl App {
     }
 
     /// What these library tracks carry to a tag (see
-    /// [`LikeSpec::from_track`]); a track no longer in the catalog is
+    /// [`crate::liked::from_track`]); a track no longer in the catalog is
     /// skipped.
-    pub(crate) fn track_specs(&self, ids: &[Id]) -> Vec<LikeSpec> {
+    pub(crate) fn track_specs(&self, ids: &[Id]) -> Vec<SongPin> {
         let Ok(cat) = Catalog::open(&self.db_path) else { return Vec::new() };
         ids.iter()
             .filter_map(|&id| cat.get_track(id).ok())
-            .map(|t| LikeSpec::from_track(&t, self.track_releases.get(&t.id).copied()))
+            .map(|t| crate::liked::from_track(&t, self.track_releases.get(&t.id).copied()))
             .collect()
     }
 
     /// Mark songs with a tag, or take it off them (a check in the Tags
     /// submenu). Songs already marked stay as they were. Reloads the
     /// library rows so the Tags column follows.
-    pub(crate) fn set_tag(&mut self, tag: Id, on: bool, songs: Vec<LikeSpec>) {
+    pub(crate) fn set_tag(&mut self, tag: Id, on: bool, songs: Vec<SongPin>) {
         let name = self.crate_name(tag);
-        let pins: Vec<SongPin> = songs.into_iter().map(LikeSpec::into_pin).collect();
+        let pins: Vec<SongPin> = songs.into_iter().map(crate::liked::stamped).collect();
         let n = pins.len();
         let first = pins.first().map(SongPin::song_label).unwrap_or_default();
         let res = Catalog::open(&self.db_path).and_then(|c| {
@@ -290,13 +289,13 @@ impl App {
     /// Put songs in a crate (a drop on its row, or Add to crate in a
     /// song's menu). Songs already in it stay as they were. A drop on a
     /// tag's row marks the songs with the tag.
-    pub(crate) fn add_songs_to_crate(&mut self, id: Id, songs: Vec<LikeSpec>) {
+    pub(crate) fn add_songs_to_crate(&mut self, id: Id, songs: Vec<SongPin>) {
         if self.crate_kind(id) == CrateKind::Tag {
             self.set_tag(id, true, songs);
             return;
         }
         let name = self.crate_name(id);
-        let pins: Vec<SongPin> = songs.into_iter().map(LikeSpec::into_pin).collect();
+        let pins: Vec<SongPin> = songs.into_iter().map(crate::liked::stamped).collect();
         match Catalog::open(&self.db_path).and_then(|c| c.add_crate_songs(id, &pins)) {
             Ok(n) => {
                 let words = match (n, pins.len()) {
@@ -673,7 +672,7 @@ pub(crate) fn tag_words(sets: &[CrateSet], ids: &[Id]) -> String {
 /// The key a library track's song is liked and tagged under: the song as
 /// its tags say it, on the Discogs record the track is matched to
 /// (`release`, from the app's track-to-release map), which is what
-/// [`LikeSpec::from_track`] stores. The record only enters the key for a
+/// [`crate::liked::from_track`] stores. The record only enters the key for a
 /// title that names nothing ("Untitled", see `song_key`), so a lookup
 /// without it missed every tag on such a song while the store said it
 /// was already tagged.

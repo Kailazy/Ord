@@ -3022,13 +3022,14 @@ enum RowHit {
 
 /// What a row of the sheet carries to a like, a crate or a drag: the song
 /// and the record it sits on, as far as the sheet knows it.
-fn sheet_row_spec(s: &VinylSheet, i: usize) -> Option<crate::liked::LikeSpec> {
+fn sheet_row_spec(s: &VinylSheet, i: usize) -> Option<ordnung_core::model::SongPin> {
     let row = s.rows.get(i)?;
     let local = match row.source {
         SheetSource::Local(l) => s.local.get(l).map(|t| t.id),
         _ => None,
     };
-    Some(crate::liked::LikeSpec {
+    Some(ordnung_core::model::SongPin {
+        id: 0,
         artist: row.artist.clone().unwrap_or_else(|| s.artist.clone()),
         title: row.title.clone(),
         release_id: Some(s.release_id),
@@ -3044,6 +3045,7 @@ fn sheet_row_spec(s: &VinylSheet, i: usize) -> Option<crate::liked::LikeSpec> {
         rel_year: s.detail.as_ref().and_then(|d| d.year),
         rel_thumb: s.cover_url.clone(),
         local_track_id: local,
+        added_at: 0,
     })
 }
 

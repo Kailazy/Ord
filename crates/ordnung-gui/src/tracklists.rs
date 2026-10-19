@@ -982,9 +982,10 @@ impl App {
 
     /// What a line carries to a like, a crate or a drag: the song it names
     /// and the record it matched.
-    fn line_spec(&self, e: &TracklistEntry) -> Option<crate::liked::LikeSpec> {
+    fn line_spec(&self, e: &TracklistEntry) -> Option<ordnung_core::model::SongPin> {
         let (artist, title) = line_song(e)?;
-        Some(crate::liked::LikeSpec {
+        Some(ordnung_core::model::SongPin {
+            id: 0,
             artist,
             title,
             release_id: e.release_id,
@@ -996,6 +997,7 @@ impl App {
             rel_year: e.rel_year,
             rel_thumb: e.rel_thumb.clone(),
             local_track_id: self.local_track(&e.song(), e.local_track_id),
+            added_at: 0,
         })
     }
 

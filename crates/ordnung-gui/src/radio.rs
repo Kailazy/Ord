@@ -1535,7 +1535,8 @@ impl App {
                 &ordnung_core::model::SongRef::new(artist.clone(), song.title.clone())
                     .at(Some(n.release_id), Some(&song.position)),
             );
-            self.toggle_like(crate::liked::LikeSpec {
+            self.toggle_like(ordnung_core::model::SongPin {
+                id: 0,
                 artist,
                 title: song.title.clone(),
                 release_id: Some(n.release_id),
@@ -1547,6 +1548,7 @@ impl App {
                 rel_year: None,
                 rel_thumb: n.thumb_url.clone(),
                 local_track_id: local,
+                added_at: 0,
             });
         }
     }

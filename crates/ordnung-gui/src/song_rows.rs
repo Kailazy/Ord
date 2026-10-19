@@ -10,7 +10,6 @@
 //! crate in the sidebar (or the open crate view) takes.
 
 use super::*;
-use crate::liked::LikeSpec;
 use crate::ui::hover::HoverNoteExt;
 use crate::ui::tokens::{color, font};
 use ordnung_core::model::SongPin;
@@ -227,7 +226,7 @@ impl App {
                         act = Some(SongAct::Open(i));
                     }
                     if resp.drag_started() {
-                        egui::DragAndDrop::set_payload(ctx, DraggedSongs(vec![LikeSpec::from_pin(s)]));
+                        egui::DragAndDrop::set_payload(ctx, DraggedSongs(vec![s.clone()]));
                     }
                     let crates = self.crate_sets.clone();
                     crate::ui::menu::context(&resp, |ui| {
@@ -314,14 +313,14 @@ impl App {
                 self.search_popup_open = true;
                 self.start_record_search();
             }
-            SongAct::ToggleLike(_) => self.toggle_like(LikeSpec::from_pin(&s)),
-            SongAct::AddToCrate(_, cid) => self.add_songs_to_crate(cid, vec![LikeSpec::from_pin(&s)]),
+            SongAct::ToggleLike(_) => self.toggle_like(s),
+            SongAct::AddToCrate(_, cid) => self.add_songs_to_crate(cid, vec![s]),
             SongAct::RemoveFromCrate(_) => {
                 if let SongSet::CrateSet(cid) = set {
                     self.remove_crate_song(cid, &s);
                 }
             }
-            SongAct::SetTag(_, tag, on) => self.set_tag(tag, on, vec![LikeSpec::from_pin(&s)]),
+            SongAct::SetTag(_, tag, on) => self.set_tag(tag, on, vec![s]),
         }
     }
 }

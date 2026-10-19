@@ -785,7 +785,7 @@ struct DraggedTracks(Vec<Id>);
 /// being dragged, each with the record it sits on. Dropping it on a crate
 /// in the sidebar puts them in (see `crates`).
 #[derive(Clone)]
-struct DraggedSongs(Vec<liked::LikeSpec>);
+struct DraggedSongs(Vec<SongPin>);
 
 /// True while the current drag gesture has been cancelled with Esc. Set in
 /// `App::update` when Esc lands during a live drag, cleared there on the next
@@ -851,9 +851,9 @@ enum InspectorAction {
     /// wantlist) is one click from the track.
     ViewRelease(Id),
     /// Put the track's song in the crate of liked songs, or take it out.
-    Like(liked::LikeSpec),
+    Like(SongPin),
     /// Mark the track's song with a tag, or take it off (tag, on, the song).
-    SetTag(Id, bool, liked::LikeSpec),
+    SetTag(Id, bool, SongPin),
 }
 
 /// State for the conversion modal. Also lets the user rename the track
@@ -2437,7 +2437,7 @@ enum SidebarAction {
     RenameCrateSet(Id, String),
     DeleteCrateSet(Id),
     /// Songs dropped onto a crate (crate id, the dragged songs).
-    AddSongs(Id, Vec<liked::LikeSpec>),
+    AddSongs(Id, Vec<SongPin>),
     /// Library tracks dropped onto a tag (tag id, dragged track ids).
     TagTracks(Id, Vec<Id>),
     Rename(Id, String),
