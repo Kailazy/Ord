@@ -15,8 +15,6 @@
 //!   `first == last == sentinel` — exactly how rekordbox 7 leaves the
 //!   playlist tables.
 
-use std::collections::HashMap;
-
 use crate::pdb::{RbPlaylist, PAGE_HEADER};
 
 pub(crate) const PAGE: usize = 4096;
@@ -526,20 +524,24 @@ fn build_dsql(tables: &[Vec<Vec<u8>>]) -> Vec<u8> {
     // (the directory's empty candidate); rekordbox writes sticks this way and
     // players treat the layout as canonical.
     let mut next_free = (2 * n + 1) as u32;
-    let mut overflow: HashMap<usize, Vec<u32>> = HashMap::new();
-    for (t, chunks) in chunked.iter().enumerate() {
-        let extra = chunks.len().saturating_sub(1);
-        let ids: Vec<u32> = (0..extra).map(|i| next_free + i as u32).collect();
-        next_free += extra as u32;
-        overflow.insert(t, ids);
-    }
-    let mut terminator: HashMap<usize, u32> = HashMap::new();
-    for (t, chunks) in chunked.iter().enumerate() {
-        if !chunks.is_empty() {
-            terminator.insert(t, next_free);
-            next_free += 1;
-        }
-    }
+    let overflow: Vec<Vec<u32>> = chunked
+        .iter()
+        .map(|chunks| {
+            let extra = chunks.len().saturating_sub(1);
+            let ids: Vec<u32> = (0..extra).map(|i| next_free + i as u32).collect();
+            next_free += extra as u32;
+            ids
+        })
+        .collect();
+    let terminator: Vec<Option<u32>> = chunked
+        .iter()
+        .map(|chunks| {
+            (!chunks.is_empty()).then(|| {
+                next_free += 1;
+                next_free - 1
+            })
+        })
+        .collect();
     let total_pages = next_free;
 
     let mut out = vec![0u8; total_pages as usize * PAGE];
@@ -561,7 +563,7 @@ fn build_dsql(tables: &[Vec<Vec<u8>>]) -> Vec<u8> {
     for (t, chunks) in chunked.iter().enumerate() {
         let sentinel = (2 * t + 1) as u32;
         let first_data = (2 * t + 2) as u32;
-        let ov = &overflow[&t];
+        let ov = &overflow[t];
         let last = if chunks.is_empty() {
             sentinel
         } else if chunks.len() == 1 {
@@ -571,11 +573,7 @@ fn build_dsql(tables: &[Vec<Vec<u8>>]) -> Vec<u8> {
         };
         // The all-zero page this table's chain ends at: the untouched data
         // page for an empty table, the allocated terminator otherwise.
-        let empty_candidate = if chunks.is_empty() {
-            first_data
-        } else {
-            terminator[&t]
-        };
+        let empty_candidate = terminator[t].unwrap_or(first_data);
         // Directory entry.
         {
             let o = 0x1C + t * 16;
@@ -595,15 +593,7 @@ fn build_dsql(tables: &[Vec<Vec<u8>>]) -> Vec<u8> {
         // pre-zeroed, so nothing to write), exactly as rekordbox leaves it.
         for (i, chunk) in chunks.iter().enumerate() {
             let idx = if i == 0 { first_data } else { ov[i - 1] };
-            let next = if i + 1 < chunks.len() {
-                if i == 0 {
-                    ov[0]
-                } else {
-                    ov[i]
-                }
-            } else {
-                empty_candidate
-            };
+            let next = if i + 1 < chunks.len() { ov[i] } else { empty_candidate };
             put(&mut out, idx, data_page(idx, t as u32, next, chunk));
         }
     }
