@@ -928,12 +928,10 @@ impl App {
     /// the background lane and steps aside for anything the user clicked;
     /// with nothing on air the user is waiting on it.
     fn radio_fetch_detail(&mut self, release_id: u64, ctx: egui::Context) {
-        let (tx, rx) = mpsc::channel();
-        self.radio.detail_rx = Some(rx);
         let db = self.db_path.clone();
         let token = self.discogs_token();
         let ahead = self.radio.now.is_some();
-        thread::spawn(move || {
+        self.radio.detail_rx = Some(util::spawn_oneshot(&ctx, move || {
             let id = release_id.to_string();
             let detail = Catalog::open(&db).ok().and_then(|cat| {
                 if let Ok(Some(d)) = cat.cached_release(&id) {
@@ -946,9 +944,8 @@ impl App {
                 let client = if ahead { client.background() } else { client };
                 cat.release_cached_or(&id, || client.fetch_release(&id)).ok()
             });
-            let _ = tx.send((release_id, detail));
-            ctx.request_repaint();
-        });
+            (release_id, detail)
+        }));
     }
 
     /// Put `video` on in the mini-player for `release_id`. `new_record` is

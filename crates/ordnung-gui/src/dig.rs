@@ -2191,10 +2191,7 @@ impl App {
         let anchor = self.dig.as_ref().map(|d| d.anchor()).unwrap_or_default();
         let seed = self.dig_seed;
         let db = self.db_path.clone();
-        let (tx, rx) = mpsc::channel();
-        self.dig_rx = Some(rx);
-        let ctx = self.egui_ctx.clone();
-        thread::spawn(move || {
+        self.dig_rx = Some(util::spawn_oneshot(&self.egui_ctx, move || {
             let client = discogs::Client::new(token);
             // An explicit step is never stood down: it's the request the user
             // is waiting on, so it runs to completion.
@@ -2209,15 +2206,14 @@ impl App {
                 seed,
                 &NEVER_CANCEL,
             );
-            let _ = tx.send(DigFetched {
+            DigFetched {
                 from,
                 thread,
                 entity,
                 matched: matched.or_else(|| query.style()),
                 result,
-            });
-            ctx.request_repaint();
-        });
+            }
+        }));
     }
 
     /// Adopt a finished browse: pick a release the user doesn't already have and

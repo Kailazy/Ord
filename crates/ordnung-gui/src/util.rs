@@ -21,6 +21,23 @@ pub(crate) fn read_off_thread<T: Send + 'static>(
     rx
 }
 
+/// Run `work` on its own thread; its result lands on the returned receiver
+/// and the UI is repainted so the frame that can show it comes at once.
+/// The catalog-free twin of [`read_off_thread`]. A send fails only when
+/// the app has moved on, so it is ignored.
+pub(crate) fn spawn_oneshot<T: Send + 'static>(
+    ctx: &egui::Context,
+    work: impl FnOnce() -> T + Send + 'static,
+) -> mpsc::Receiver<T> {
+    let (tx, rx) = mpsc::channel();
+    let ctx = ctx.clone();
+    thread::spawn(move || {
+        let _ = tx.send(work());
+        ctx.request_repaint();
+    });
+    rx
+}
+
 /// One line of an exported track-list text file.
 pub(crate) struct TrackListEntry {
     pub artist: String,

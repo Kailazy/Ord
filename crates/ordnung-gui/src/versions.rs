@@ -149,15 +149,12 @@ impl App {
     /// master's versions. The release is nearly always already in the catalog's
     /// `release_cache` — the vinyl sync warms it — so the common cost is one.
     fn spawn_versions_fetch(&mut self, release_id: u64, ctx: egui::Context) {
-        let (tx, rx) = mpsc::channel();
-        self.versions_rx = Some(rx);
         let db = self.db_path.clone();
         let token = self.discogs_token();
-        thread::spawn(move || {
-            let result = versions_for(&db, &token, release_id);
-            let _ = tx.send(VersionsFetched { release_id, result });
-            ctx.request_repaint();
-        });
+        self.versions_rx = Some(util::spawn_oneshot(&ctx, move || VersionsFetched {
+            release_id,
+            result: versions_for(&db, &token, release_id),
+        }));
     }
 
     /// Adopt a finished versions lookup onto the panel that asked for it.

@@ -462,15 +462,10 @@ impl App {
     /// running version is the GUI crate's compile-time `CARGO_PKG_VERSION`, which
     /// inherits the workspace version stamped into each release build.
     pub(crate) fn spawn_update_check(&mut self, ctx: egui::Context) {
-        let (tx, rx) = mpsc::channel();
-        self.update_rx = Some(rx);
-        thread::spawn(move || {
+        self.update_rx = Some(util::spawn_oneshot(&ctx, move || {
             let current = env!("CARGO_PKG_VERSION");
-            let found = ordnung_core::update::check_latest(current).ok().flatten();
-            // Ignore send errors — the app may have closed before the check returned.
-            let _ = tx.send(found);
-            ctx.request_repaint();
-        });
+            ordnung_core::update::check_latest(current).ok().flatten()
+        }));
     }
 
     /// Persist the settings, reporting a failure in the status line. True
@@ -509,12 +504,10 @@ impl App {
             self.discogs_auth_rx = None;
             return;
         }
-        let (tx, rx) = mpsc::channel();
-        self.discogs_auth_rx = Some(rx);
         self.discogs_auth = DiscogsAuth::Checking;
-        thread::spawn(move || {
+        self.discogs_auth_rx = Some(util::spawn_oneshot(&ctx, move || {
             let client = discogs::Client::new(token);
-            let outcome = match client.identity() {
+            match client.identity() {
                 Ok(username) => DiscogsAuth::Connected { username },
                 // "Token is bad" and "network is down" need very different
                 // wording in the UI, so tell them apart by status.
@@ -524,10 +517,8 @@ impl App {
                 Err(e) => DiscogsAuth::Unreachable {
                     detail: e.to_string(),
                 },
-            };
-            let _ = tx.send(outcome);
-            ctx.request_repaint();
-        });
+            }
+        }));
     }
 
     /// Drain the identity check's result. Persists a confirmed username so the
@@ -1119,17 +1110,12 @@ impl App {
         }
         self.dup_dirty = false;
         self.dup_loading = true;
-        let (tx, rx) = std::sync::mpsc::channel();
-        self.dup_rx = Some(rx);
         let db = self.db_path.clone();
-        let ctx = ctx.clone();
-        std::thread::spawn(move || {
-            let groups = Catalog::open(&db)
+        self.dup_rx = Some(util::spawn_oneshot(ctx, move || {
+            Catalog::open(&db)
                 .and_then(|c| c.find_duplicates())
-                .unwrap_or_default();
-            let _ = tx.send(groups);
-            ctx.request_repaint();
-        });
+                .unwrap_or_default()
+        }));
     }
 
     /// Keep the sidebar's device list live and the USB view's track list

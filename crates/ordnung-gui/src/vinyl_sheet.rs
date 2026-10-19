@@ -775,29 +775,19 @@ impl App {
                 s.price = PriceState::Loading;
             }
         }
-        let (tx, rx) = mpsc::channel();
-        self.sheet_price_rx = Some(rx);
         let db = self.db_path.clone();
-        thread::spawn(move || {
+        self.sheet_price_rx = Some(util::spawn_oneshot(&ctx, move || {
             let client = discogs::Client::new(token);
-            let mine = client.marketplace_price(release_id);
-            // Priced fine, or the request failed — either way there's nothing
-            // more to ask.
-            let found = match &mine {
-                Ok(Some(_)) | Err(_) => {
-                    let _ = tx.send((release_id, mine.map(|p| (p, None))));
-                    ctx.request_repaint();
-                    return;
-                }
-                Ok(None) => None,
-            };
-            // Nothing for sale here. This is often a promo or a white label
-            // whose standard pressing is well stocked, so ask the master which
-            // other pressings exist and price the most-owned one.
-            let alt = sheet_alternative(&client, &db, release_id);
-            let _ = tx.send((release_id, Ok((found, alt))));
-            ctx.request_repaint();
-        });
+            match client.marketplace_price(release_id) {
+                // Nothing for sale here. This is often a promo or a white label
+                // whose standard pressing is well stocked, so ask the master which
+                // other pressings exist and price the most-owned one.
+                Ok(None) => (release_id, Ok((None, sheet_alternative(&client, &db, release_id)))),
+                // Priced fine, or the request failed — either way there's nothing
+                // more to ask.
+                mine => (release_id, mine.map(|p| (p, None))),
+            }
+        }));
     }
 
     /// Adopt a finished price lookup onto the sheet it was asked for.
@@ -831,11 +821,9 @@ impl App {
     /// a miss. A missing token is only an error when the release isn't cached,
     /// so a record opened before still works offline.
     fn spawn_sheet_fetch(&mut self, release_id: u64, ctx: egui::Context) {
-        let (tx, rx) = mpsc::channel();
-        self.sheet_rx = Some(rx);
         let db = self.db_path.clone();
         let token = self.discogs_token();
-        thread::spawn(move || {
+        self.sheet_rx = Some(util::spawn_oneshot(&ctx, move || {
             let id = release_id.to_string();
             let result = Catalog::open(&db)
                 .map_err(|e| e.to_string())
@@ -856,9 +844,8 @@ impl App {
                     cat.release_cached_or(&id, || client.fetch_release(&id))
                         .map_err(|e| e.to_string())
                 });
-            let _ = tx.send(SheetFetched { release_id, result });
-            ctx.request_repaint();
-        });
+            SheetFetched { release_id, result }
+        }));
     }
 
     /// Adopt a finished release fetch and build the sheet's rows from it.
@@ -1008,11 +995,8 @@ impl App {
         if let Some(s) = self.vinyl_sheet.as_mut() {
             s.bandcamp = None;
         }
-        let (tx, rx) = mpsc::channel();
-        self.sheet_bandcamp_rx = Some(rx);
         let token = self.discogs_token();
-        let ctx = self.egui_ctx.clone();
-        thread::spawn(move || {
+        self.sheet_bandcamp_rx = Some(util::spawn_oneshot(&self.egui_ctx, move || {
             let official = || {
                 if token.trim().is_empty() {
                     return Vec::new();
@@ -1031,9 +1015,8 @@ impl App {
                 .find_album(&ask.artists, &ask.labels, &ask.title, &ask.tracks, official)
                 .ok()
                 .flatten();
-            let _ = tx.send((release_id, album));
-            ctx.request_repaint();
-        });
+            (release_id, album)
+        }));
     }
 
     /// Adopt a finished Bandcamp lookup onto the sheet it was asked for.

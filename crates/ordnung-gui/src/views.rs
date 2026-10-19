@@ -610,17 +610,12 @@ impl App {
         // Stat'ing every source file is ~0.1 s on an iCloud library, so it
         // runs off the UI thread; `poll_missing` lands it. A newer count
         // replaces one still running.
-        let (tx, rx) = mpsc::channel();
-        self.missing_rx = Some(rx);
         let db = self.db_path.clone();
-        let ctx = self.egui_ctx.clone();
-        thread::spawn(move || {
-            let labels = Catalog::open(&db)
+        self.missing_rx = Some(util::spawn_oneshot(&self.egui_ctx, move || {
+            Catalog::open(&db)
                 .and_then(|c| c.missing_track_labels())
-                .unwrap_or_default();
-            let _ = tx.send(labels);
-            ctx.request_repaint();
-        });
+                .unwrap_or_default()
+        }));
     }
 
     pub(crate) fn poll_missing(&mut self) {
@@ -3207,11 +3202,8 @@ impl App {
             // back to the Library.
             let vol = vol.to_path_buf();
             let n = name.clone();
-            let (tx, rx) = std::sync::mpsc::channel();
-            self.usb_eject_rx = Some(rx);
-            let ctx = ui.ctx().clone();
-            std::thread::spawn(move || {
-                let msg = match std::process::Command::new("diskutil")
+            self.usb_eject_rx = Some(util::spawn_oneshot(ui.ctx(), move || {
+                match std::process::Command::new("diskutil")
                     .arg("eject")
                     .arg(&vol)
                     .output()
@@ -3231,10 +3223,8 @@ impl App {
                         eject_failure_message(&n, &err, &volume_users(&vol))
                     }
                     Err(e) => format!("Couldn't eject {n}: {e}"),
-                };
-                let _ = tx.send(msg);
-                ctx.request_repaint();
-            });
+                }
+            }));
             self.status = format!("Ejecting {name}…");
         }
         if rescan {
