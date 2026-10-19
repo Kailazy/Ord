@@ -420,10 +420,7 @@ struct ExistingTrack {
 /// tracks (keyed for path lookup), playlist nodes and playlist memberships. A
 /// stick with no export (or an unreadable one) merges as if empty.
 fn read_existing(dest_root: &Path) -> (Vec<ExistingTrack>, Vec<RbPlaylist>, HashMap<u32, Vec<u32>>) {
-    let pdb = dest_root
-        .join("PIONEER")
-        .join("rekordbox")
-        .join("export.pdb");
+    let pdb = crate::pdb::rb_dir(dest_root).join("export.pdb");
     let Ok(export) = crate::pdb::read_export(&pdb) else {
         return Default::default();
     };
@@ -644,7 +641,7 @@ fn export_impl(
     };
 
     let contents = dest_root.join("Contents");
-    let rb_dir = dest_root.join("PIONEER").join("rekordbox");
+    let rb_dir = crate::pdb::rb_dir(dest_root);
     let anlz_root = dest_root.join("PIONEER").join("USBANLZ");
     for d in [&contents, &rb_dir, &anlz_root] {
         std::fs::create_dir_all(d).map_err(io_err(d.clone()))?;

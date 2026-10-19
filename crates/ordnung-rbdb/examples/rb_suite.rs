@@ -43,7 +43,7 @@ use ordnung_rbdb::edit::{self, PlaylistOp};
 use ordnung_rbdb::export::{export_usb_with, ExportMode, ExportOptions, PlayerTarget};
 use ordnung_rbdb::golden::changed_pages;
 use ordnung_rbdb::golden::stick::{coverage, diff_stick, Finding, StickDiff};
-use ordnung_rbdb::pdb::{read_export, read_stick, RbExport, RbPlaylist, RbTrack};
+use ordnung_rbdb::pdb::{basename, read_export, read_stick, RbExport, RbPlaylist, RbTrack};
 
 type Res<T> = Result<T, String>;
 
@@ -74,10 +74,6 @@ fn pdb_of(root: &Path) -> PathBuf {
 
 fn dat_of(root: &Path, t: &RbTrack) -> Option<PathBuf> {
     t.analyze_path.as_deref().map(|p| root.join(p.trim_start_matches('/')))
-}
-
-fn basename(p: &str) -> String {
-    p.rsplit('/').next().unwrap_or(p).to_lowercase()
 }
 
 fn stamp(p: &Path) -> (u64, i64) {

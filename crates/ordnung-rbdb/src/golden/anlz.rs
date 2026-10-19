@@ -148,8 +148,7 @@ fn diff_section(field: &str, g: &Section, o: &Section, out: &mut AnlzDiff) {
     match g.tag.as_str() {
         "PPTH" => {
             let (a, b) = (ppth(g), ppth(o));
-            let base = |p: &str| p.rsplit('/').next().unwrap_or("").to_lowercase();
-            let why = (base(&a) == base(&b))
+            let why = (crate::pdb::basename(&a) == crate::pdb::basename(&b))
                 .then_some("Ordnung keeps /Contents flat; rekordbox mirrors the source tree");
             out.deltas.push(delta(field, a, b, why));
         }

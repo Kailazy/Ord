@@ -28,7 +28,7 @@ use std::path::Path;
 
 use ordnung_core::model::{Beat, Cue};
 
-use crate::pdb::{u32_at, RbExport, RbPlaylist, ReadError, TYPE_PLAYLIST_ENTRIES, TYPE_PLAYLIST_TREE};
+use crate::pdb::{rb_dir, u32_at, RbExport, RbPlaylist, ReadError, TYPE_PLAYLIST_ENTRIES, TYPE_PLAYLIST_TREE};
 use crate::pdbw;
 
 /// One user-level playlist edit. Paths are relative to the volume root with
@@ -67,7 +67,7 @@ pub fn edit_stick_playlists(
     let mut export = crate::pdb::read_stick(volume_root)?;
     let new_id = apply_op(&mut export, op)?;
 
-    let dir = volume_root.join("PIONEER").join("rekordbox");
+    let dir = rb_dir(volume_root);
     let pdb_path = dir.join("export.pdb");
     backup_once(&pdb_path);
     rewrite_pdb_playlist_tables(&pdb_path, &export.playlists, &export.entries)?;
@@ -227,7 +227,7 @@ fn bump_track_counter(
     counter: Counter,
     centi_bpm: Option<u32>,
 ) -> Result<(), ReadError> {
-    let dir = volume_root.join("PIONEER").join("rekordbox");
+    let dir = rb_dir(volume_root);
     let pdb_path = dir.join("export.pdb");
     backup_once(&pdb_path);
     let file_path = rewrite_track_row(&pdb_path, track_id, |row| {

@@ -11,7 +11,7 @@
 //! points this at whatever `export.pdb` happens to sit on a mounted stick.
 
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 /// Reading `export.pdb` failed outright. Structural oddities *within* a page
 /// (bad row offset, malformed string) skip that row instead of erroring.
@@ -138,6 +138,17 @@ pub(crate) const PAGE_HEADER: usize = 0x28;
 /// presence bitmask, and a u16 of padding.
 const ROW_GROUP: usize = 36;
 
+/// The `PIONEER/rekordbox` directory of a volume, where both databases live.
+pub(crate) fn rb_dir(volume_root: &Path) -> PathBuf {
+    volume_root.join("PIONEER").join("rekordbox")
+}
+
+/// The last component of a stick path, lowercased: how tracks are matched
+/// across sticks and databases (the volume is FAT32).
+pub fn basename(p: &str) -> String {
+    p.rsplit('/').next().unwrap_or(p).to_lowercase()
+}
+
 /// Read everything the app needs from a mounted rekordbox stick, given the
 /// volume root: the `export.pdb` tables, and — when the export is a modern
 /// (rekordbox 6/7) one whose pdb playlist tables are empty — the playlists
@@ -146,7 +157,7 @@ const ROW_GROUP: usize = 36;
 /// volume is FAT32). Prefer this over [`read_export`] for anything
 /// user-facing, or a modern stick shows a library with no playlists.
 pub fn read_stick(volume_root: &Path) -> Result<RbExport, ReadError> {
-    let dir = volume_root.join("PIONEER").join("rekordbox");
+    let dir = rb_dir(volume_root);
     let mut export = read_export(&dir.join("export.pdb"))?;
     if !export.playlists.is_empty() {
         return Ok(export);

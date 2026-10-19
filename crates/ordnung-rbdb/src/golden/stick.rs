@@ -15,13 +15,13 @@
 //! ratings, My Tags, folders, …) so a reference with gaps shows them.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use rusqlite::types::Value;
 
 use super::anlz::{diff_anlz, Shape};
 use super::{delta, header, table_rows, Delta, PdbDiff};
-use crate::pdb::{read_export, RbExport, RbPlaylist, ReadError};
+use crate::pdb::{basename, rb_dir, read_export, RbExport, RbPlaylist, ReadError};
 
 /// One difference, located.
 #[derive(Debug, Clone, PartialEq)]
@@ -116,14 +116,6 @@ fn io(path: &Path) -> impl FnOnce(std::io::Error) -> ReadError + '_ {
         path: path.to_path_buf(),
         source,
     }
-}
-
-fn rb_dir(root: &Path) -> PathBuf {
-    root.join("PIONEER").join("rekordbox")
-}
-
-fn basename(p: &str) -> String {
-    p.rsplit('/').next().unwrap_or(p).to_lowercase()
 }
 
 /// Filename (lowercased) → track id, for matching the two sticks.
