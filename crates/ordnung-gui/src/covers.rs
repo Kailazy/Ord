@@ -373,17 +373,9 @@ pub(crate) fn decode_thumb(
     idx: usize,
     png: &[u8],
 ) -> Option<egui::TextureHandle> {
-    if png.is_empty() {
-        return None;
-    }
-    let img = image::load_from_memory(png).ok()?;
-    let rgba = img.to_rgba8();
-    let size = [rgba.width() as usize, rgba.height() as usize];
-    let pixels = rgba.into_raw();
-    let color = egui::ColorImage::from_rgba_unmultiplied(size, &pixels);
     Some(ctx.load_texture(
         format!("art-cand-{track_id}-{idx}"),
-        color,
+        decode_thumb_image(png)?,
         egui::TextureOptions::LINEAR,
     ))
 }
@@ -438,14 +430,7 @@ pub(crate) fn load_full_cover_image(
     id: Id,
     source_path: &str,
 ) -> Option<egui::ColorImage> {
-    let bytes = load_full_cover_bytes(db, id, source_path)?;
-    let img = image::load_from_memory(&bytes).ok()?;
-    let rgba = img.to_rgba8();
-    let size = [rgba.width() as usize, rgba.height() as usize];
-    Some(egui::ColorImage::from_rgba_unmultiplied(
-        size,
-        &rgba.into_raw(),
-    ))
+    decode_thumb_image(&load_full_cover_bytes(db, id, source_path)?)
 }
 
 /// Resolve the now-playing track's cover into a `file://` URL the OS media panel
@@ -607,12 +592,7 @@ pub(crate) fn spawn_vinyl_cover_loader(
                     .vinyl_cover(list, id)
                     .ok()
                     .flatten()
-                    .and_then(|bytes| image::load_from_memory(&bytes).ok())
-                    .map(|img| {
-                        let rgba = img.to_rgba8();
-                        let size = [rgba.width() as usize, rgba.height() as usize];
-                        egui::ColorImage::from_rgba_unmultiplied(size, &rgba.into_raw())
-                    });
+                    .and_then(|bytes| decode_thumb_image(&bytes));
                 if tx.send(VinylCoverLoaded { key, image }).is_err() {
                     return;
                 }
@@ -634,11 +614,5 @@ pub(crate) fn load_thumb_image(catalog: &Catalog, id: Id) -> Option<egui::ColorI
     } else {
         embedded().or_else(external)
     }?;
-    let img = image::load_from_memory(&bytes).ok()?;
-    let rgba = img.to_rgba8();
-    let size = [rgba.width() as usize, rgba.height() as usize];
-    Some(egui::ColorImage::from_rgba_unmultiplied(
-        size,
-        &rgba.into_raw(),
-    ))
+    decode_thumb_image(&bytes)
 }
