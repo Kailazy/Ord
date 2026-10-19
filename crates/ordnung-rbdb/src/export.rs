@@ -605,36 +605,21 @@ fn validate_export(
 }
 
 /// The destination is a mounted FAT32 volume root or any directory (a staging
-/// folder, an `ORDNUNG_FAKE_USB` root). `mode` decides whether the stick is
-/// rebuilt from this selection ([`ExportMode::Replace`]) or the selection is
-/// added to what is already there ([`ExportMode::Merge`]). Audio already
-/// present in `/Contents` with matching size is not re-copied either way.
+/// folder, an `ORDNUNG_FAKE_USB` root). `opts.mode` decides whether the stick
+/// is rebuilt from this selection ([`ExportMode::Replace`]) or the selection is
+/// added to what is already there ([`ExportMode::Merge`]); `opts.player`
+/// decides which audio is converted on the way onto the stick (see
+/// [`PlayerTarget`]). Audio already present in `/Contents` with matching size
+/// is not re-copied either way. Conversions write only to the stick's
+/// `/Contents`; library files are never touched. Refuses up front with
+/// [`ExportError::NeedsFfmpeg`] when a conversion is due and `ffmpeg` isn't
+/// runnable.
 ///
 /// Robustness contract: nothing is written until a free-space precheck passes;
 /// the audio, ANLZ and artwork are fsynced as they're written; the browse
 /// databases are placed atomically (temp + rename) so an interrupted export
 /// never leaves a torn manifest; the containing directory is fsynced; and the
 /// written databases are re-read and validated before success is reported.
-pub fn export_usb(
-    dest_root: &Path,
-    tracks: &[Track],
-    playlists: &[Playlist],
-    mode: ExportMode,
-    progress: &mut dyn FnMut(ExportProgress),
-    cancel: &AtomicBool,
-) -> Result<ExportReport> {
-    let opts = ExportOptions {
-        mode,
-        player: PlayerTarget::default(),
-    };
-    export_impl(dest_root, tracks, playlists, opts, progress, cancel, false)
-}
-
-/// [`export_usb`] with the full option set — the player generation decides
-/// which audio is converted on the way onto the stick (see [`PlayerTarget`]).
-/// Conversions write only to the stick's `/Contents`; library files are never
-/// touched. Refuses up front with [`ExportError::NeedsFfmpeg`] when a
-/// conversion is due and `ffmpeg` isn't runnable.
 pub fn export_usb_with(
     dest_root: &Path,
     tracks: &[Track],
@@ -649,7 +634,7 @@ pub fn export_usb_with(
 /// Turn plain storage into a rekordbox device: write a valid **empty** export
 /// onto `dest_root` — the folder skeleton plus empty-but-parseable databases —
 /// leaving every file already on the volume untouched. The one sanctioned
-/// empty export: [`export_usb`] itself refuses an empty result
+/// empty export: [`export_usb_with`] itself refuses an empty result
 /// ([`ExportError::NoTracks`]) so a selection whose sources are all missing
 /// can't silently produce a bare device. Runs as a Merge, so calling it on a
 /// device that already carries an export preserves that export in full.

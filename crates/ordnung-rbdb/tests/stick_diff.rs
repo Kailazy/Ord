@@ -6,7 +6,7 @@ use std::sync::atomic::AtomicBool;
 
 use ordnung_core::model::{Analysis, AudioProperties, Beat, Beatgrid, Cue, Format, Playlist, Tags, Track};
 use ordnung_rbdb::edit;
-use ordnung_rbdb::export::{export_usb, ExportMode};
+use ordnung_rbdb::export::{export_usb_with, ExportOptions};
 use ordnung_rbdb::golden::stick::{coverage, diff_stick};
 use ordnung_rbdb::pdb;
 
@@ -82,7 +82,7 @@ fn a_stick_diffed_against_itself_is_clean_and_an_edit_shows_only_where_it_landed
         icon: None,
         color: None,
     }];
-    export_usb(&usb, &tracks, &playlists, ExportMode::Replace, &mut |_| {}, &AtomicBool::new(false)).expect("export");
+    export_usb_with(&usb, &tracks, &playlists, ExportOptions::default(), &mut |_| {}, &AtomicBool::new(false)).expect("export");
 
     let same = diff_stick(&usb, &usb).expect("diff");
     assert_eq!(same.matched, 3);

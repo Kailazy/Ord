@@ -11,8 +11,7 @@ use ordnung_core::model::{
 };
 use ordnung_core::model::key::{Key, Mode, PitchClass};
 use ordnung_rbdb::export::{
-    export_usb, export_usb_with, setup_device, ExportError, ExportMode, ExportOptions,
-    PlayerTarget,
+    export_usb_with, setup_device, ExportError, ExportMode, ExportOptions, PlayerTarget,
 };
 use ordnung_rbdb::{dlp, pdb};
 
@@ -147,7 +146,7 @@ fn export_then_read_back_full_surface() {
 
     let cancel = AtomicBool::new(false);
     let mut stages = Vec::new();
-    let report = export_usb(&usb, &tracks, &playlists, ExportMode::Replace, &mut |p| stages.push(p.stage), &cancel)
+    let report = export_usb_with(&usb, &tracks, &playlists, ExportOptions::default(), &mut |p| stages.push(p.stage), &cancel)
         .expect("export succeeds");
     assert_eq!(report.tracks_exported, 2);
     assert_eq!(report.playlists_exported, 2);
@@ -273,7 +272,7 @@ fn export_then_read_back_full_surface() {
     assert!(ordnung_rbdb::anlz::read_cues(&beta_dat).is_empty());
 
     // --- re-export is incremental ------------------------------------------
-    let report2 = export_usb(&usb, &tracks, &playlists, ExportMode::Replace, &mut |_| {}, &cancel).unwrap();
+    let report2 = export_usb_with(&usb, &tracks, &playlists, ExportOptions::default(), &mut |_| {}, &cancel).unwrap();
     assert_eq!(report2.bytes_copied, 0, "unchanged audio must not re-copy");
 
     let _ = std::fs::remove_dir_all(&src);
@@ -303,7 +302,7 @@ fn merge_adds_to_an_existing_export_without_clobbering_it() {
         track(10, &a, Format::Mp3, "Alpha", "AA"),
         track(11, &b, Format::Mp3, "Beta", "BB"),
     ];
-    export_usb(&usb, &tracks_a, &set_a, ExportMode::Replace, &mut |_| {}, &cancel).unwrap();
+    export_usb_with(&usb, &tracks_a, &set_a, ExportOptions::default(), &mut |_| {}, &cancel).unwrap();
 
     // Merge a second playlist "set B" with gamma (a new track) and alpha
     // (already on the stick — must reuse its file, not duplicate it).
@@ -321,7 +320,7 @@ fn merge_adds_to_an_existing_export_without_clobbering_it() {
         track(10, &a, Format::Mp3, "Alpha", "AA"),
     ];
     let report =
-        export_usb(&usb, &tracks_b, &set_b, ExportMode::Merge, &mut |_| {}, &cancel).unwrap();
+        export_usb_with(&usb, &tracks_b, &set_b, ExportOptions { mode: ExportMode::Merge, ..Default::default() }, &mut |_| {}, &cancel).unwrap();
     // The stick now carries all three tracks (beta was carried over untouched).
     assert_eq!(report.tracks_exported, 3, "merge keeps the earlier tracks");
 
@@ -385,9 +384,9 @@ fn merge_adds_to_an_existing_export_without_clobbering_it() {
 fn export_refuses_empty_and_missing_dest() {
     let usb = temp_root("empty");
     let cancel = AtomicBool::new(false);
-    let err = export_usb(&usb, &[], &[], ExportMode::Replace, &mut |_| {}, &cancel).unwrap_err();
+    let err = export_usb_with(&usb, &[], &[], ExportOptions::default(), &mut |_| {}, &cancel).unwrap_err();
     assert!(matches!(err, ExportError::NoTracks));
-    let err = export_usb(Path::new("/nonexistent-ordnung"), &[], &[], ExportMode::Replace, &mut |_| {}, &cancel)
+    let err = export_usb_with(Path::new("/nonexistent-ordnung"), &[], &[], ExportOptions::default(), &mut |_| {}, &cancel)
         .unwrap_err();
     assert!(matches!(err, ExportError::BadDestination(_)));
     let _ = std::fs::remove_dir_all(&usb);
@@ -439,7 +438,7 @@ fn embedded_cover_becomes_stick_artwork() {
         track(3, &without, Format::Wav, "Without", "Artist"),
     ];
     let cancel = AtomicBool::new(false);
-    export_usb(&usb, &tracks, &[], ExportMode::Replace, &mut |_| {}, &cancel).unwrap();
+    export_usb_with(&usb, &tracks, &[], ExportOptions::default(), &mut |_| {}, &cancel).unwrap();
 
     // One artwork id, four files, correct sizes on disk.
     let art = usb.join("PIONEER/Artwork/00001");
@@ -456,7 +455,7 @@ fn embedded_cover_becomes_stick_artwork() {
     let before = std::fs::read(art.join("a1.jpg")).unwrap();
     let later = wav_file(&src, "later.wav");
     let extra = vec![track(4, &later, Format::Wav, "Later", "Artist")];
-    export_usb(&usb, &extra, &[], ExportMode::Merge, &mut |_| {}, &cancel).unwrap();
+    export_usb_with(&usb, &extra, &[], ExportOptions { mode: ExportMode::Merge, ..Default::default() }, &mut |_| {}, &cancel).unwrap();
     let export = pdb::read_export(&usb.join("PIONEER/rekordbox/export.pdb")).unwrap();
     let with_a = export.tracks.values().find(|t| t.title == "With A").unwrap();
     assert_eq!(with_a.artwork_path.as_deref(), Some("/PIONEER/Artwork/00001/a1.jpg"));
@@ -469,7 +468,7 @@ fn embedded_cover_becomes_stick_artwork() {
     // Re-exporting a covered track onto the stick numbers its cover past the
     // existing artwork instead of clobbering id 1.
     let covered_again = vec![track(5, &with_a_path, Format::Wav, "With A again", "Artist")];
-    export_usb(&usb, &covered_again, &[], ExportMode::Merge, &mut |_| {}, &cancel).unwrap();
+    export_usb_with(&usb, &covered_again, &[], ExportOptions { mode: ExportMode::Merge, ..Default::default() }, &mut |_| {}, &cancel).unwrap();
     let export = pdb::read_export(&usb.join("PIONEER/rekordbox/export.pdb")).unwrap();
     let again = export.tracks.values().find(|t| t.title == "With A again");
     // Same /Contents path as "With A" ⇒ the merge reused that slot and re-wrote
@@ -504,8 +503,8 @@ fn export_leaves_no_temp_files_and_passes_validation() {
         color: None,
     }];
     let cancel = AtomicBool::new(false);
-    // export_usb returning Ok already means validate_export passed.
-    export_usb(&usb, &tracks, &pl, ExportMode::Replace, &mut |_| {}, &cancel).unwrap();
+    // export_usb_with returning Ok already means validate_export passed.
+    export_usb_with(&usb, &tracks, &pl, ExportOptions::default(), &mut |_| {}, &cancel).unwrap();
 
     let rb = usb.join("PIONEER/rekordbox");
     let temps: Vec<_> = std::fs::read_dir(&rb)
@@ -530,7 +529,7 @@ fn cancel_aborts_before_completion() {
     let a = audio_file(&src, "x.mp3", 2_000);
     let tracks = vec![track(1, &a, Format::Mp3, "X", "Y")];
     let cancel = AtomicBool::new(true); // canceled from the start
-    let err = export_usb(&usb, &tracks, &[], ExportMode::Replace, &mut |_| {}, &cancel).unwrap_err();
+    let err = export_usb_with(&usb, &tracks, &[], ExportOptions::default(), &mut |_| {}, &cancel).unwrap_err();
     assert!(matches!(err, ExportError::Canceled));
     assert!(
         !usb.join("PIONEER/rekordbox/export.pdb").exists(),
@@ -570,7 +569,7 @@ fn empty_merge_sets_up_a_valid_device() {
     let src = temp_root("setup-src");
     let a = audio_file(&src, "first.mp3", 3_000);
     let tracks = vec![track(1, &a, Format::Mp3, "First", "Someone")];
-    export_usb(&usb, &tracks, &[], ExportMode::Merge, &mut |_| {}, &cancel)
+    export_usb_with(&usb, &tracks, &[], ExportOptions { mode: ExportMode::Merge, ..Default::default() }, &mut |_| {}, &cancel)
         .expect("merge after setup succeeds");
     let export = pdb::read_export(&usb.join("PIONEER/rekordbox/export.pdb")).unwrap();
     assert_eq!(export.tracks.len(), 1);
@@ -679,7 +678,7 @@ fn classic_player_target_converts_flac_and_high_rates_to_aiff() {
 
     // A modern target copies the FLAC as-is.
     let usb2 = temp_root("player-usb2");
-    let report = export_usb(&usb2, &tracks, &[], ExportMode::Replace, &mut |_| {}, &cancel).unwrap();
+    let report = export_usb_with(&usb2, &tracks, &[], ExportOptions::default(), &mut |_| {}, &cancel).unwrap();
     assert_eq!(report.transcoded, 0);
     assert!(usb2.join("Contents/tone.flac").is_file());
     assert!(usb2.join("Contents/hi.wav").is_file(), "96 kHz is fine on a modern player");

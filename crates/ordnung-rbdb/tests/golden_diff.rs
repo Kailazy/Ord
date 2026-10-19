@@ -9,7 +9,7 @@ use std::sync::atomic::AtomicBool;
 
 use ordnung_core::model::key::Key;
 use ordnung_core::model::{Analysis, AudioProperties, Beat, Beatgrid, Format, Tags, Track};
-use ordnung_rbdb::export::{export_usb, ExportMode};
+use ordnung_rbdb::export::{export_usb_with, ExportOptions};
 use ordnung_rbdb::golden::diff_pdb;
 use ordnung_rbdb::pdb::{read_export, RbTrack};
 
@@ -89,7 +89,7 @@ fn demo_export_diff_against_rekordbox_is_fully_explained() {
         .collect();
 
     let cancel = AtomicBool::new(false);
-    export_usb(&usb, &tracks, &[], ExportMode::Replace, &mut |_| {}, &cancel).expect("export");
+    export_usb_with(&usb, &tracks, &[], ExportOptions::default(), &mut |_| {}, &cancel).expect("export");
 
     let g = std::fs::read(&golden_path).unwrap();
     let o = std::fs::read(usb.join("PIONEER/rekordbox/export.pdb")).unwrap();
