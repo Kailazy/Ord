@@ -92,8 +92,8 @@ A Cargo workspace with three crates:
 Engines live in core, policy lives in the GUI. Core has no UI and no
 `println!`; the GUI decides when to run things and how to show them.
 
-See [PLAN.md](PLAN.md) for the architecture and phased roadmap,
-[HANDOFF.md](HANDOFF.md) for the current state of each phase, and
+See [PLAN.md](PLAN.md) for the architecture and phased roadmap, the
+`ordnung-roadmap` skill for the live backlog, and
 [docs/rekordbox-export-structure.md](docs/rekordbox-export-structure.md) for
 the USB export format.
 
