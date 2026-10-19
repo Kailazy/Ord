@@ -118,9 +118,10 @@ write only under `/Contents`; the library file is never touched.
 1. Export a tiny library (2–3 tracks, 1 playlist, a few cues) from Ordnung.
 2. Re-parse our `export.pdb`/ANLZ with rekordcrate; diff structure vs a reference
    export produced by rekordbox for the same files:
-   `cargo run -p ordnung-rbdb --example golden_diff -- GOLDEN.pdb OURS.pdb`
-   (`golden::diff_pdb`; every delta is marked explained or `!!`, exit 1 on
-   any `!!`). `tests/golden_diff.rs` keeps the demo fixture fully explained.
+   `cargo run -p ordnung-rbdb --example rb_suite -- diff GOLDEN_ROOT OURS_ROOT`
+   (`golden::stick::diff_stick`, which folds in `golden::diff_pdb`; every
+   delta is marked explained or `!!`, exit 1 on any `!!`).
+   `tests/golden_diff.rs` keeps the demo fixture fully explained.
 3. Whole-stick check against a real rekordbox export: `make rb-suite`
    (`examples/rb_suite.rs`, `golden::stick::diff_stick`). It replays every
    song operation a reference stick shows on Ordnung (tags, key, BPM,

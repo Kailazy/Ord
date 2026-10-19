@@ -94,7 +94,6 @@ fn demo_export_diff_against_rekordbox_is_fully_explained() {
     let g = std::fs::read(&golden_path).unwrap();
     let o = std::fs::read(usb.join("PIONEER/rekordbox/export.pdb")).unwrap();
     let diff = diff_pdb(&g, &o).expect("diff");
-    println!("{}", diff.render());
 
     // Shape: same tables in the same order, every track matched.
     assert!(diff.header.iter().all(|d| d.explained.is_some()), "{:?}", diff.header);

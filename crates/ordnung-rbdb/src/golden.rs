@@ -86,64 +86,6 @@ impl PdbDiff {
         }
         out
     }
-
-    /// A human report: header, per-table accounting, then per-track deltas,
-    /// each marked `ok` (explained) or `!!` (not).
-    pub fn render(&self) -> String {
-        let mut s = String::new();
-        let mark = |d: &Delta| if d.explained.is_some() { "ok" } else { "!!" };
-        s.push_str("header\n");
-        for d in &self.header {
-            s.push_str(&format!(
-                "  {} {:<22} {:>14} → {:<14} {}\n",
-                mark(d),
-                d.field,
-                d.golden,
-                d.ours,
-                d.explained.unwrap_or("")
-            ));
-        }
-        s.push_str("tables (pages golden/ours, rows golden/ours)\n");
-        for t in &self.tables {
-            s.push_str(&format!(
-                "  {:>2} {:<18} pages {}/{}  rows {}/{}\n",
-                t.table_type, t.name, t.golden_pages, t.ours_pages, t.golden_rows, t.ours_rows
-            ));
-            for d in &t.deltas {
-                s.push_str(&format!(
-                    "     {} {:<22} {:>14} → {:<14} {}\n",
-                    mark(d),
-                    d.field,
-                    d.golden,
-                    d.ours,
-                    d.explained.unwrap_or("")
-                ));
-            }
-        }
-        s.push_str("tracks\n");
-        for t in &self.tracks {
-            s.push_str(&format!("  {}\n", t.filename));
-            for d in &t.deltas {
-                s.push_str(&format!(
-                    "     {} {:<22} {:>14} → {:<14} {}\n",
-                    mark(d),
-                    d.field,
-                    trunc(&d.golden),
-                    trunc(&d.ours),
-                    d.explained.unwrap_or("")
-                ));
-            }
-        }
-        for f in &self.only_golden {
-            s.push_str(&format!("  !! only in golden: {f}\n"));
-        }
-        for f in &self.only_ours {
-            s.push_str(&format!("  !! only in ours: {f}\n"));
-        }
-        let n = self.unexplained().len();
-        s.push_str(&format!("{n} unexplained difference(s)\n"));
-        s
-    }
 }
 
 /// Whether two key names are in different notations (Camelot "8A" vs
@@ -157,16 +99,6 @@ pub(crate) fn key_notation_differs(a: &str, b: &str) -> bool {
             && k[..k.len() - 1].chars().all(|c| c.is_ascii_digit())
     };
     camelot(a) != camelot(b)
-}
-
-fn trunc(s: &str) -> String {
-    if s.chars().count() > 14 {
-        let mut t: String = s.chars().take(13).collect();
-        t.push('…');
-        t
-    } else {
-        s.to_string()
-    }
 }
 
 /// Table names by type id (§2.1).
