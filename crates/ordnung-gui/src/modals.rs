@@ -2389,37 +2389,37 @@ files elsewhere on the device stay plain storage.",
         // Which one it is decides the wording: they cost the user different
         // things, and a swap in particular gives the copy back in another
         // pressing rather than simply taking it away.
-        enum Kind<'a> {
-            Move,
-            Remove,
-            Swap(&'a str),
-        }
-        let (record, kind) = match &edit {
-            VinylEdit::Move { record, .. } => (record, Kind::Move),
-            VinylEdit::Remove { record, .. } => (record, Kind::Remove),
-            VinylEdit::Swap {
-                record, to_label, ..
-            } => (record, Kind::Swap(to_label)),
-            // Neither adds anything to confirm: they only ever create.
-            VinylEdit::Want { .. } | VinylEdit::Collect { .. } => return,
-        };
-        let title = match kind {
-            Kind::Move => "Move out of your collection?",
-            Kind::Remove => "Remove from your collection?",
-            Kind::Swap(_) => "Swap this pressing?",
-        };
-        let detail = match kind {
-            Kind::Move => "This gives up your copy on Discogs and adds the release \
+        let (record, title, detail, action) = match &edit {
+            VinylEdit::Move { record, .. } => (
+                record,
+                "Move out of your collection?",
+                "This gives up your copy on Discogs and adds the release \
                  to your wantlist instead. The copy's date added, rating and notes \
                  are lost."
-                .to_string(),
-            Kind::Remove => "This deletes your copy from your Discogs collection, \
-                 along with its date added, rating and notes."
-                .to_string(),
-            Kind::Swap(to) => format!(
-                "This puts {to} in your collection and deletes the copy above from \
-                 it. The old copy's date added, rating and notes are lost."
+                    .to_string(),
+                "Move",
             ),
+            VinylEdit::Remove { record, .. } => (
+                record,
+                "Remove from your collection?",
+                "This deletes your copy from your Discogs collection, \
+                 along with its date added, rating and notes."
+                    .to_string(),
+                "Remove",
+            ),
+            VinylEdit::Swap {
+                record, to_label, ..
+            } => (
+                record,
+                "Swap this pressing?",
+                format!(
+                    "This puts {to_label} in your collection and deletes the copy above from \
+                     it. The old copy's date added, rating and notes are lost."
+                ),
+                "Swap",
+            ),
+            // Neither adds anything to confirm: they only ever create.
+            VinylEdit::Want { .. } | VinylEdit::Collect { .. } => return,
         };
         let answer = danger_confirm(
             ctx,
@@ -2429,11 +2429,7 @@ files elsewhere on the device stay plain storage.",
                 "{detail} It changes your real Discogs account and can't be undone \
                  from Ord."
             ),
-            match kind {
-                Kind::Move => "Move",
-                Kind::Remove => "Remove",
-                Kind::Swap(_) => "Swap",
-            },
+            action,
         );
         if answer.is_some() {
             self.confirm_vinyl_edit = None;
