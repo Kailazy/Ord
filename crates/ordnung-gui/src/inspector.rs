@@ -1154,9 +1154,14 @@ pub(crate) fn edit_row(ui: &mut egui::Ui, label: &str, value: &mut String, multi
 /// values and sleeve give up the room, for when the table matters more than
 /// the detail. A wider 440pt tier used to sit above these; it only
 /// stretched the same rows, so it went.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, serde::Serialize, serde::Deserialize)]
 pub(crate) enum InspectorDensity {
+    #[serde(rename = "narrow")]
     Compact,
+    /// The default. The retired "compact"/"expanded" keys named the old
+    /// 320/440 pair, so a config still carrying one lands here, which is
+    /// the width it had.
+    #[serde(rename = "regular", other)]
     Expanded,
 }
 
@@ -1165,23 +1170,4 @@ impl InspectorDensity {
     pub(crate) const ALL: [Self; 2] = [InspectorDensity::Compact, InspectorDensity::Expanded];
     /// Snapped panel width of each tier in [`Self::ALL`], in points.
     pub(crate) const WIDTHS: &[f32] = &[200.0, 320.0];
-
-    /// Parse the persisted `Config::inspector_density` key; anything
-    /// unrecognised falls back to the designed default. The retired
-    /// "compact"/"expanded" keys named the old 320/440 pair, so a config
-    /// still carrying one lands on the default, which is the width it had.
-    pub(crate) fn from_key(key: &str) -> Self {
-        match key {
-            "narrow" => InspectorDensity::Compact,
-            _ => InspectorDensity::Expanded,
-        }
-    }
-
-    /// The config key for this tier.
-    pub(crate) fn key(self) -> &'static str {
-        match self {
-            InspectorDensity::Compact => "narrow",
-            InspectorDensity::Expanded => "regular",
-        }
-    }
 }

@@ -35,7 +35,7 @@ pub struct Config {
     /// Which candidate the automatic match commits to, as a stable
     /// [`ReleaseAutoMatch`] key. Defaults to `"most_collected"` — the release
     /// the most Discogs users own, the strongest signal for "the normal one".
-    pub discogs_auto_match: String,
+    pub discogs_auto_match: ReleaseAutoMatch,
     /// Discogs username of the token owner, captured on the first collection
     /// sync. Lets the "Vinyl Collection" view link to the user's collection
     /// page across launches without re-resolving it. Empty until a sync runs.
@@ -71,7 +71,7 @@ pub struct Config {
     /// How the "Vinyl Collection" grid is ordered: `"added"` (Discogs date
     /// added), `"price"` (lowest marketplace listing), or `"artist"`. Unknown
     /// values fall back to artist, the original fixed order. See `VinylSort`.
-    pub vinyl_sort: String,
+    pub vinyl_sort: crate::views::VinylSort,
     /// Direction for `vinyl_sort` (`true` = ascending: oldest / cheapest / A–Z
     /// first). Defaults to descending, so the default view is newest first.
     pub vinyl_sort_ascending: bool,
@@ -84,11 +84,11 @@ pub struct Config {
     /// Where the radio bar sits on the map: `"top"` (the default), `"bottom"`,
     /// `"left"` or `"right"`. Set by dragging the bar; at a side it stands
     /// upright with the cover on top.
-    pub radio_dock: String,
+    pub radio_dock: crate::radio::RadioDock,
     /// How the record map gathers its records: `"artists"` (hubs are
     /// artists, the default) or `"genres"` (hubs are styles, so the map
     /// reads as genre clouds). Unknown values fall back to artists.
-    pub graph_arrange: String,
+    pub graph_arrange: crate::graph::Arrange,
     /// Kinds of record the map leaves out: any of `"owned"`, `"wanted"`
     /// and `"dug"` (see `graph::Status::key`). Empty shows everything. A
     /// long dig fills the map with discovered records; hiding them brings
@@ -99,7 +99,7 @@ pub struct Config {
     /// `"vinyl"` (the Discogs vinyl collection first). A vinyl-led collector
     /// gets their shelf up top and the digital library pinned below. Unknown
     /// values fall back to `"digital"`. See `NavPrimary`.
-    pub nav_primary: String,
+    pub nav_primary: NavPrimary,
     /// USB exports convert FLAC and anything above 48 kHz to AIFF on the
     /// stick, for players that can't play them (CDJ-2000/NXS/900 and
     /// older). Remembered from the export confirm's checkbox; maps to
@@ -110,12 +110,12 @@ pub struct Config {
     /// default), `"tags"` (its Ordnung tags, `dub, dark`), `"notes_tags"`
     /// (both, notes first) or `"none"`. Remembered from the export
     /// confirm's dropdown. See `ExportComment`.
-    pub export_comment: String,
+    pub export_comment: ExportComment,
     /// Which of the sidebar's three width tiers is in force: `"icon"`,
     /// `"narrow"` or `"wide"` (the default). The sidebar snaps between designed
     /// layouts rather than resizing freely, so what persists is the chosen tier,
     /// not a pixel width. Unknown values fall back to `"wide"`. See `NavDensity`.
-    pub nav_density: String,
+    pub nav_density: crate::sidebar::NavDensity,
     /// The sidebar lists folded shut by their caption's chevron:
     /// `"playlists"`, `"crates"`, `"tags"`. Stored as what is hidden so the
     /// default, and every older config, shows every list.
@@ -123,7 +123,7 @@ pub struct Config {
     /// Which of the inspector drawer's two width tiers is in force:
     /// `"narrow"` or `"regular"` (the default). Like `nav_density`, a tier
     /// rather than a pixel width. See `InspectorDensity`.
-    pub inspector_density: String,
+    pub inspector_density: crate::inspector::InspectorDensity,
     /// Whether the right-hand track inspector drawer is showing. Mirrors the
     /// pull tab's toggle so the drawer comes back the way it was left. Off by
     /// default (and for older configs that predate the field): a fresh install
@@ -132,7 +132,7 @@ pub struct Config {
     /// Which section the app opens on: `"library"` (Library, the default),
     /// `"vinyl"` (the vinyl collection), or `"recent"` (new imports). Unknown
     /// values fall back to `"library"`. See `StartupView`.
-    pub startup_view: String,
+    pub startup_view: StartupView,
     /// Run analysis (BPM, key, waveform) automatically on each track as it's
     /// imported, instead of waiting for the explicit "Analyze" action. On by
     /// default; defaults to on for older configs that predate the field too.
@@ -213,7 +213,7 @@ pub struct Config {
     /// `"spectrum"` (additive RGB from the low/mid/high band balance, like
     /// rekordbox/Serato). Unknown values fall back to `"energy"`. See
     /// `WaveformColorMode`.
-    pub waveform_color_mode: String,
+    pub waveform_color_mode: WaveformColorMode,
     /// Render-time height companding for the waveform. `1.0` keeps the stored
     /// sqrt-companded amplitude (most compressed); `2.0` cancels the sqrt back to
     /// linear amplitude (least compressed, rekordbox-like). See `wave_height`.
@@ -278,7 +278,7 @@ pub struct Config {
 pub struct WaveformPreset {
     /// 1-based UI slot this preset lives in.
     pub slot: u8,
-    pub color_mode: String,
+    pub color_mode: WaveformColorMode,
     pub height_exp: f32,
     pub band_gain: [f32; 3],
     pub energy_gain: f32,
@@ -349,31 +349,17 @@ pub(crate) fn default_waveform_energy_colors() -> [[u8; 3]; 5] {
 
 /// Which library leads the left navigation sidebar. Parsed from
 /// `Config::nav_primary`; presentation policy, so it lives in the GUI boundary.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum NavPrimary {
-    /// Library / New / playlists on top, vinyl pinned below (the default).
-    Digital,
     /// The vinyl collection on top, the digital library pinned below.
+    #[serde(rename = "vinyl")]
     Vinyl,
+    /// Library / New / playlists on top, vinyl pinned below (the default).
+    #[serde(rename = "digital", other)]
+    Digital,
 }
 
 impl NavPrimary {
-    /// Parse a config string; anything unrecognized falls back to `Digital`.
-    pub fn from_key(key: &str) -> Self {
-        match key {
-            "vinyl" => NavPrimary::Vinyl,
-            _ => NavPrimary::Digital,
-        }
-    }
-
-    /// Stable lowercase key stored in the config TOML.
-    pub fn key(self) -> &'static str {
-        match self {
-            NavPrimary::Digital => "digital",
-            NavPrimary::Vinyl => "vinyl",
-        }
-    }
-
     /// Label shown in the settings picker.
     pub fn label(self) -> &'static str {
         match self {
@@ -390,40 +376,24 @@ impl NavPrimary {
 /// turns up several releases. Parsed from `Config::discogs_auto_match`; GUI
 /// policy over the popularity counts every search hit already carries, so
 /// picking costs no extra API requests.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ReleaseAutoMatch {
-    /// The release the most Discogs users own — the default, and the strongest
-    /// signal for "the normal pressing" over promos and limited variants.
-    MostCollected,
     /// The release the most Discogs users want.
+    #[serde(rename = "most_wanted")]
     MostWanted,
     /// The earliest year — usually the original release.
+    #[serde(rename = "oldest")]
     Oldest,
     /// Discogs's own first search result.
+    #[serde(rename = "top_hit")]
     TopHit,
+    /// The release the most Discogs users own — the default, and the strongest
+    /// signal for "the normal pressing" over promos and limited variants.
+    #[serde(rename = "most_collected", other)]
+    MostCollected,
 }
 
 impl ReleaseAutoMatch {
-    /// Parse a config string; anything unrecognized falls back to `MostCollected`.
-    pub fn from_key(key: &str) -> Self {
-        match key {
-            "most_wanted" => ReleaseAutoMatch::MostWanted,
-            "oldest" => ReleaseAutoMatch::Oldest,
-            "top_hit" => ReleaseAutoMatch::TopHit,
-            _ => ReleaseAutoMatch::MostCollected,
-        }
-    }
-
-    /// Stable lowercase key stored in the config TOML.
-    pub fn key(self) -> &'static str {
-        match self {
-            ReleaseAutoMatch::MostCollected => "most_collected",
-            ReleaseAutoMatch::MostWanted => "most_wanted",
-            ReleaseAutoMatch::Oldest => "oldest",
-            ReleaseAutoMatch::TopHit => "top_hit",
-        }
-    }
-
     /// Label shown in the settings picker.
     pub fn label(self) -> &'static str {
         match self {
@@ -546,35 +516,20 @@ impl ReleaseMedium {
 
 /// Which section the app selects on launch. Parsed from `Config::startup_view`;
 /// presentation policy, so it lives in the GUI boundary.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum StartupView {
-    /// The whole catalog ("Library") — the default.
-    Library,
     /// The Discogs vinyl collection grid.
+    #[serde(rename = "vinyl")]
     Vinyl,
     /// The self-clearing inbox of fresh imports.
+    #[serde(rename = "recent")]
     Recent,
+    /// The whole catalog ("Library") — the default.
+    #[serde(rename = "library", other)]
+    Library,
 }
 
 impl StartupView {
-    /// Parse a config string; anything unrecognized falls back to `Library`.
-    pub fn from_key(key: &str) -> Self {
-        match key {
-            "vinyl" => StartupView::Vinyl,
-            "recent" => StartupView::Recent,
-            _ => StartupView::Library,
-        }
-    }
-
-    /// Stable lowercase key stored in the config TOML.
-    pub fn key(self) -> &'static str {
-        match self {
-            StartupView::Library => "library",
-            StartupView::Vinyl => "vinyl",
-            StartupView::Recent => "recent",
-        }
-    }
-
     /// Label shown in the settings picker.
     pub fn label(self) -> &'static str {
         match self {
@@ -595,17 +550,20 @@ impl StartupView {
 /// What a USB export puts in the comment a CDJ shows under the song info.
 /// Parsed from `Config::export_comment`; export policy, so it lives in the
 /// GUI boundary and the exporter only ever sees a finished comment.
-#[cfg(feature = "usb-export")]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ExportComment {
-    /// The track's Notes tag, as it is.
-    Notes,
     /// The track's Ordnung tags, `dub, dark`.
+    #[serde(rename = "tags")]
     Tags,
     /// Notes, then the tags on a second line.
+    #[serde(rename = "notes_tags")]
     NotesAndTags,
     /// An empty comment.
+    #[serde(rename = "none")]
     None,
+    /// The track's Notes tag, as it is.
+    #[serde(rename = "notes", other)]
+    Notes,
 }
 
 #[cfg(feature = "usb-export")]
@@ -616,26 +574,6 @@ impl ExportComment {
         ExportComment::NotesAndTags,
         ExportComment::None,
     ];
-
-    /// Parse a config string; anything unrecognized falls back to `Notes`.
-    pub fn from_key(key: &str) -> Self {
-        match key {
-            "tags" => ExportComment::Tags,
-            "notes_tags" => ExportComment::NotesAndTags,
-            "none" => ExportComment::None,
-            _ => ExportComment::Notes,
-        }
-    }
-
-    /// Stable lowercase key stored in the config TOML.
-    pub fn key(self) -> &'static str {
-        match self {
-            ExportComment::Notes => "notes",
-            ExportComment::Tags => "tags",
-            ExportComment::NotesAndTags => "notes_tags",
-            ExportComment::None => "none",
-        }
-    }
 
     /// The dropdown's wording.
     pub fn label(self) -> &'static str {
@@ -674,30 +612,14 @@ impl ExportComment {
 
 /// How the player waveform is colored. Parsed from `Config::waveform_color_mode`;
 /// presentation policy, so it lives in the GUI boundary.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum WaveformColorMode {
-    /// Cool→hot gradient driven by each section's total energy.
-    Energy,
     /// Additive RGB from the low/mid/high band balance (rekordbox/Serato style).
+    #[serde(rename = "spectrum")]
     Spectrum,
-}
-
-impl WaveformColorMode {
-    /// Parse a config string; anything unrecognized falls back to `Energy`.
-    pub fn from_key(key: &str) -> Self {
-        match key {
-            "spectrum" => WaveformColorMode::Spectrum,
-            _ => WaveformColorMode::Energy,
-        }
-    }
-
-    /// Stable lowercase key stored in the config TOML.
-    pub fn key(self) -> &'static str {
-        match self {
-            WaveformColorMode::Energy => "energy",
-            WaveformColorMode::Spectrum => "spectrum",
-        }
-    }
+    /// Cool→hot gradient driven by each section's total energy.
+    #[serde(rename = "energy", other)]
+    Energy,
 }
 
 impl Default for Config {
@@ -705,7 +627,7 @@ impl Default for Config {
         Self {
             discogs_token: String::new(),
             discogs_auto_fetch: true,
-            discogs_auto_match: "most_collected".to_string(),
+            discogs_auto_match: ReleaseAutoMatch::MostCollected,
             discogs_username: String::new(),
             hidden_release_mediums: Vec::new(),
             library_root: None,
@@ -714,23 +636,20 @@ impl Default for Config {
             column_widths: BTreeMap::new(),
             default_sort: String::new(),
             default_sort_ascending: true,
-            vinyl_sort: "added".to_string(),
+            vinyl_sort: crate::views::VinylSort::Added,
             vinyl_sort_ascending: false,
             vinyl_view: "grid".to_string(),
-            radio_dock: "top".to_string(),
-            graph_arrange: String::new(),
+            radio_dock: crate::radio::RadioDock::Top,
+            graph_arrange: crate::graph::Arrange::Artists,
             graph_hide: Vec::new(),
-            nav_primary: "digital".to_string(),
+            nav_primary: NavPrimary::Digital,
             export_convert_for_older_players: false,
-            // `ExportComment::Notes.key()`, spelled out: the beta-off build
-            // compiles the export and its `ExportComment` out but still reads
-            // the config.
-            export_comment: "notes".to_string(),
-            nav_density: "wide".into(),
+            export_comment: ExportComment::Notes,
+            nav_density: crate::sidebar::NavDensity::Narrow,
             nav_collapsed: Vec::new(),
-            inspector_density: "regular".into(),
+            inspector_density: crate::inspector::InspectorDensity::Expanded,
             inspector_open: false,
-            startup_view: "library".to_string(),
+            startup_view: StartupView::Library,
             auto_analyze: true,
             cue_bar_open: false,
             cue_quantize: true,
@@ -746,7 +665,7 @@ impl Default for Config {
             key_lock: false,
             mid_start_videos: false,
             mid_start_files: false,
-            waveform_color_mode: "energy".to_string(),
+            waveform_color_mode: WaveformColorMode::Energy,
             waveform_height_exp: default_waveform_height_exp(),
             waveform_band_gain: default_waveform_band_gain(),
             waveform_energy_gain: default_waveform_energy_gain(),
@@ -807,7 +726,7 @@ impl Config {
     pub fn save_waveform_preset(&mut self, slot: u8) {
         let preset = WaveformPreset {
             slot,
-            color_mode: self.waveform_color_mode.clone(),
+            color_mode: self.waveform_color_mode,
             height_exp: self.waveform_height_exp,
             band_gain: self.waveform_band_gain,
             energy_gain: self.waveform_energy_gain,
@@ -892,12 +811,8 @@ mod tests {
         assert_eq!(NotesAndTags.compose("", "dub, dark"), "dub, dark");
         assert_eq!(NotesAndTags.compose("late night", ""), "late night");
         assert_eq!(None.compose("late night", "dub, dark"), "");
-        for c in ExportComment::ALL {
-            assert_eq!(ExportComment::from_key(c.key()), c);
-        }
-        assert_eq!(ExportComment::from_key(""), Notes);
         let c: Config = toml::from_str("").unwrap();
-        assert_eq!(c.export_comment, "notes");
+        assert_eq!(c.export_comment, Notes);
     }
 
     #[test]
@@ -1032,13 +947,18 @@ mod tests {
     /// byte for byte.
     #[test]
     fn full_fixture_parses_every_field_and_writes_back_identically() {
+        use crate::graph::Arrange;
+        use crate::inspector::InspectorDensity;
+        use crate::radio::RadioDock;
+        use crate::sidebar::NavDensity;
+        use crate::views::VinylSort;
         let expected = Config {
             discogs_token: "tok-abc".into(),
             hidden_release_mediums: ["vinyl", "cd", "digital", "cassette", "other"]
                 .map(String::from)
                 .to_vec(),
             discogs_auto_fetch: false,
-            discogs_auto_match: "oldest".into(),
+            discogs_auto_match: ReleaseAutoMatch::Oldest,
             discogs_username: "kai".into(),
             library_root: Some(PathBuf::from("/Users/dj/Music/seeker")),
             column_order: [
@@ -1053,20 +973,20 @@ mod tests {
                 .collect(),
             default_sort: "bpm".into(),
             default_sort_ascending: false,
-            vinyl_sort: "price".into(),
+            vinyl_sort: VinylSort::Price,
             vinyl_sort_ascending: true,
             vinyl_view: "list".into(),
-            radio_dock: "left".into(),
-            graph_arrange: "genres".into(),
+            radio_dock: RadioDock::Left,
+            graph_arrange: Arrange::Genres,
             graph_hide: ["owned", "wanted", "dug"].map(String::from).to_vec(),
-            nav_primary: "vinyl".into(),
+            nav_primary: NavPrimary::Vinyl,
             export_convert_for_older_players: true,
-            export_comment: "notes_tags".into(),
-            nav_density: "icon".into(),
+            export_comment: ExportComment::NotesAndTags,
+            nav_density: NavDensity::Icon,
             nav_collapsed: ["playlists", "crates", "tags"].map(String::from).to_vec(),
-            inspector_density: "narrow".into(),
+            inspector_density: InspectorDensity::Compact,
             inspector_open: true,
-            startup_view: "recent".into(),
+            startup_view: StartupView::Recent,
             auto_analyze: false,
             cue_bar_open: true,
             cue_quantize: false,
@@ -1082,7 +1002,7 @@ mod tests {
             key_lock: true,
             mid_start_videos: true,
             mid_start_files: true,
-            waveform_color_mode: "spectrum".into(),
+            waveform_color_mode: WaveformColorMode::Spectrum,
             waveform_height_exp: 1.5,
             waveform_band_gain: [0.875, 0.75, 0.625],
             waveform_energy_gain: 1.125,
@@ -1098,7 +1018,7 @@ mod tests {
             waveform_presets: vec![
                 WaveformPreset {
                     slot: 1,
-                    color_mode: "energy".into(),
+                    color_mode: WaveformColorMode::Energy,
                     height_exp: 1.25,
                     band_gain: [0.5, 0.625, 0.75],
                     energy_gain: 0.75,
@@ -1114,7 +1034,7 @@ mod tests {
                 },
                 WaveformPreset {
                     slot: 5,
-                    color_mode: "spectrum".into(),
+                    color_mode: WaveformColorMode::Spectrum,
                     height_exp: 2.0,
                     band_gain: [1.5, 1.25, 1.0],
                     energy_gain: 1.5,
@@ -1154,21 +1074,22 @@ mod tests {
         use crate::radio::RadioDock;
         use crate::sidebar::NavDensity;
         use crate::util::format_from_key;
+        use crate::views::VinylSort;
         use crate::TableColumn;
 
         let c: Config = toml::from_str(LEGACY).unwrap();
         assert!(c.mid_start_videos);
         assert!(!c.mid_start_files);
-        assert_eq!(NavDensity::from_key(&c.nav_density), NavDensity::Narrow);
-        assert_eq!(InspectorDensity::from_key(&c.inspector_density), InspectorDensity::Expanded);
-        assert_eq!(ReleaseAutoMatch::from_key(&c.discogs_auto_match), ReleaseAutoMatch::MostCollected);
-        assert_eq!(StartupView::from_key(&c.startup_view), StartupView::Library);
-        #[cfg(feature = "usb-export")]
-        assert_eq!(ExportComment::from_key(&c.export_comment), ExportComment::Notes);
-        assert_eq!(NavPrimary::from_key(&c.nav_primary), NavPrimary::Digital);
-        assert_eq!(WaveformColorMode::from_key(&c.waveform_color_mode), WaveformColorMode::Energy);
-        assert_eq!(RadioDock::from_key(&c.radio_dock), RadioDock::Top);
-        assert_eq!(Arrange::from_key(&c.graph_arrange), Arrange::Artists);
+        assert_eq!(c.nav_density, NavDensity::Narrow);
+        assert_eq!(c.inspector_density, InspectorDensity::Expanded);
+        assert_eq!(c.discogs_auto_match, ReleaseAutoMatch::MostCollected);
+        assert_eq!(c.startup_view, StartupView::Library);
+        assert_eq!(c.export_comment, ExportComment::Notes);
+        assert_eq!(c.nav_primary, NavPrimary::Digital);
+        assert_eq!(c.waveform_color_mode, WaveformColorMode::Energy);
+        assert_eq!(c.radio_dock, RadioDock::Top);
+        assert_eq!(c.graph_arrange, Arrange::Artists);
+        assert_eq!(c.vinyl_sort, VinylSort::Artist);
         assert_eq!(format_from_key(&c.convert_format), None);
         assert!(TableColumn::from_key(&c.default_sort).is_none());
         assert!(Status::hidden(&c.graph_hide).is_empty());
@@ -1180,9 +1101,8 @@ mod tests {
                 .collect::<Vec<_>>(),
             [None, Some("artist")]
         );
-        // The vinyl grid's fallbacks (`views::VinylSort`, the grid/list switch)
-        // are private to that module; the strings reach it untouched.
-        assert_eq!(c.vinyl_sort, "nope");
+        // The grid/list switch is private to `views`; the string reaches it
+        // untouched.
         assert_eq!(c.vinyl_view, "nope");
     }
 
@@ -1195,6 +1115,7 @@ mod tests {
         use crate::radio::RadioDock;
         use crate::sidebar::NavDensity;
         use crate::util::format_from_key;
+        use crate::views::VinylSort;
         use crate::TableColumn;
 
         const COLUMNS: [&str; 15] = [
@@ -1225,47 +1146,33 @@ mod tests {
             }
         }
 
-        fn pin<T: PartialEq + std::fmt::Debug + Copy>(
+        /// Every variant survives the round trip, and an unknown key lands
+        /// on the fallback.
+        fn pin<T: PartialEq + std::fmt::Debug + Copy + Serialize + serde::de::DeserializeOwned>(
             all: &[T],
-            key: fn(T) -> &'static str,
-            from_key: fn(&str) -> T,
             fallback: T,
         ) {
-            for v in all {
-                assert_eq!(from_key(key(*v)), *v);
+            #[derive(Serialize, Deserialize)]
+            struct Field<T> {
+                v: T,
             }
-            assert_eq!(from_key("nope"), fallback);
+            for v in all {
+                let text = toml::to_string(&Field { v: *v }).unwrap();
+                assert_eq!(toml::from_str::<Field<T>>(&text).unwrap().v, *v);
+            }
+            assert_eq!(toml::from_str::<Field<T>>("v = \"nope\"").unwrap().v, fallback);
         }
-        pin(&NavPrimary::ALL, NavPrimary::key, NavPrimary::from_key, NavPrimary::Digital);
-        pin(
-            &ReleaseAutoMatch::ALL,
-            ReleaseAutoMatch::key,
-            ReleaseAutoMatch::from_key,
-            ReleaseAutoMatch::MostCollected,
-        );
-        pin(&StartupView::ALL, StartupView::key, StartupView::from_key, StartupView::Library);
+        pin(&NavPrimary::ALL, NavPrimary::Digital);
+        pin(&ReleaseAutoMatch::ALL, ReleaseAutoMatch::MostCollected);
+        pin(&StartupView::ALL, StartupView::Library);
         #[cfg(feature = "usb-export")]
-        pin(&ExportComment::ALL, ExportComment::key, ExportComment::from_key, ExportComment::Notes);
-        pin(
-            &[WaveformColorMode::Energy, WaveformColorMode::Spectrum],
-            WaveformColorMode::key,
-            WaveformColorMode::from_key,
-            WaveformColorMode::Energy,
-        );
-        pin(
-            &[RadioDock::Top, RadioDock::Bottom, RadioDock::Left, RadioDock::Right],
-            RadioDock::key,
-            RadioDock::from_key,
-            RadioDock::Top,
-        );
-        pin(&[Arrange::Artists, Arrange::Genres], Arrange::key, Arrange::from_key, Arrange::Artists);
-        pin(&NavDensity::ALL, NavDensity::key, NavDensity::from_key, NavDensity::Narrow);
-        pin(
-            &InspectorDensity::ALL,
-            InspectorDensity::key,
-            InspectorDensity::from_key,
-            InspectorDensity::Expanded,
-        );
+        pin(&ExportComment::ALL, ExportComment::Notes);
+        pin(&[WaveformColorMode::Energy, WaveformColorMode::Spectrum], WaveformColorMode::Energy);
+        pin(&[RadioDock::Top, RadioDock::Bottom, RadioDock::Left, RadioDock::Right], RadioDock::Top);
+        pin(&[Arrange::Artists, Arrange::Genres], Arrange::Artists);
+        pin(&[VinylSort::Added, VinylSort::Price, VinylSort::Artist], VinylSort::Artist);
+        pin(&NavDensity::ALL, NavDensity::Narrow);
+        pin(&InspectorDensity::ALL, InspectorDensity::Expanded);
         assert_eq!(
             ReleaseMedium::ALL.map(ReleaseMedium::key),
             ["vinyl", "cd", "digital", "cassette", "other"]

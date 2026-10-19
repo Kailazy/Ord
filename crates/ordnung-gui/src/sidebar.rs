@@ -1397,9 +1397,13 @@ pub(crate) fn folder_context_menu(
 //     stretch the same rows. The width here is set by the one string that
 //     actually varies — a playlist name — leaving a useful prefix beside its
 //     glyph and track count before the ellipsis.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, serde::Serialize, serde::Deserialize)]
 pub(crate) enum NavDensity {
+    #[serde(rename = "icon")]
     Icon,
+    /// The default; the retired "wide" key still sitting in existing
+    /// configs lands here too.
+    #[serde(rename = "narrow", other)]
     Narrow,
 }
 
@@ -1420,25 +1424,6 @@ impl NavDensity {
     /// Icon tier hides every text label except playlist names.
     pub(crate) fn icons_only(self) -> bool {
         self == NavDensity::Icon
-    }
-
-    /// Parse the persisted `Config::nav_density` key; anything unrecognised
-    /// falls back to the designed default.
-    pub(crate) fn from_key(key: &str) -> Self {
-        // Anything else — including the retired "wide" key still sitting in
-        // existing configs — lands on the default.
-        match key {
-            "icon" => NavDensity::Icon,
-            _ => NavDensity::Narrow,
-        }
-    }
-
-    /// The config key for this tier.
-    pub(crate) fn key(self) -> &'static str {
-        match self {
-            NavDensity::Icon => "icon",
-            NavDensity::Narrow => "narrow",
-        }
     }
 }
 

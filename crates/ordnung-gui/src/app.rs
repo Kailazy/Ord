@@ -426,15 +426,14 @@ impl App {
         }
         // Open on whichever section the user set as their home. A vinyl-first
         // collector lands on the shelf instead of the digital catalog.
-        app.view = match StartupView::from_key(&app.config.startup_view) {
+        app.view = match app.config.startup_view {
             StartupView::Library => LibraryView::Library,
             StartupView::Vinyl => LibraryView::Vinyl,
             StartupView::Recent => LibraryView::RecentlyAdded,
         };
         // Restore the sidebar to the width tier it was left at.
-        app.nav.tier = NavDensity::from_key(&app.config.nav_density) as usize;
-        app.inspector_nav.tier =
-            crate::inspector::InspectorDensity::from_key(&app.config.inspector_density) as usize;
+        app.nav.tier = app.config.nav_density as usize;
+        app.inspector_nav.tier = app.config.inspector_density as usize;
         // And the inspector drawer to the open/closed state it was left in.
         app.inspector_open = app.config.inspector_open;
         app.load_column_layout();
@@ -3087,8 +3086,7 @@ impl App {
         );
         self.inspector_nav = inspector_nav;
         if shown.committed {
-            self.config.inspector_density =
-                crate::inspector::InspectorDensity::ALL[self.inspector_nav.tier].key().to_string();
+            self.config.inspector_density = crate::inspector::InspectorDensity::ALL[self.inspector_nav.tier];
             let _ = self.config.save();
         }
         let width = shown.width;
@@ -3168,7 +3166,7 @@ impl App {
                 // Which library leads the sidebar. A vinyl-first collector puts
                 // the shelf on top and the digital catalog underneath it; the
                 // default keeps the digital catalog as the home base.
-                let nav_primary = NavPrimary::from_key(&self.config.nav_primary);
+                let nav_primary = self.config.nav_primary;
                 // Copied out so the section closures below don't borrow `self`
                 // while the panel is drawing (`view` is threaded in explicitly).
                 let recent_count = self.recent_count;
@@ -3710,7 +3708,7 @@ impl App {
             });
         self.nav = nav_state;
         if nav_panel.committed {
-            self.config.nav_density = NavDensity::ALL[self.nav.tier].key().to_string();
+            self.config.nav_density = NavDensity::ALL[self.nav.tier];
             let _ = self.config.save();
         }
         self.nav_screen_rect = nav_panel.inner.as_ref().map(|p| p.response.rect);

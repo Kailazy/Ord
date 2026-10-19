@@ -1028,8 +1028,7 @@ impl App {
         const DISCOGS_TICK_PAD: f32 = 1.5;
         // Color mode for the inline Waveform column, read once per frame (Copy, so
         // capturing it in the row closures doesn't borrow `self`).
-        let waveform_color_mode =
-            config::WaveformColorMode::from_key(&self.config.waveform_color_mode);
+        let waveform_color_mode = self.config.waveform_color_mode;
         // Full live render style (colors, gains, height) for the inline waveform
         // cells; `Copy`, so the row closures capture it without borrowing `self`.
         let waveform_style = crate::player::WaveformStyle::from_config(&self.config);
@@ -2434,11 +2433,10 @@ impl App {
         // The Waveform header toggle flips the inline waveform colouring between
         // energy and frequency; persist it so the player bar and next launch match.
         if toggle_waveform_mode {
-            let next = match config::WaveformColorMode::from_key(&self.config.waveform_color_mode) {
+            self.config.waveform_color_mode = match self.config.waveform_color_mode {
                 config::WaveformColorMode::Energy => config::WaveformColorMode::Spectrum,
                 config::WaveformColorMode::Spectrum => config::WaveformColorMode::Energy,
             };
-            self.config.waveform_color_mode = next.key().to_string();
             self.save_config();
         }
 

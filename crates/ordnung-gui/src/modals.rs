@@ -541,7 +541,7 @@ impl App {
             auto_dirty = true;
         }
         ui.add_enabled_ui(self.config.discogs_auto_fetch, |ui| {
-            let current = config::ReleaseAutoMatch::from_key(&self.config.discogs_auto_match);
+            let current = self.config.discogs_auto_match;
             let mut picked = current;
             ui.horizontal(|ui| {
                 ui.label("Prefer:");
@@ -557,7 +557,7 @@ impl App {
             .response
             .on_hover_note(current.hint());
             if picked != current {
-                self.config.discogs_auto_match = picked.key().to_string();
+                self.config.discogs_auto_match = picked;
                 auto_dirty = true;
             }
         });
@@ -692,10 +692,8 @@ impl App {
                 );
                                         ui.add_space(4.0);
                                         let mut nav_dirty = false;
-                                        let nav_primary =
-                                            NavPrimary::from_key(&self.config.nav_primary);
-                                        let startup_view =
-                                            StartupView::from_key(&self.config.startup_view);
+                                        let nav_primary = self.config.nav_primary;
+                                        let startup_view = self.config.startup_view;
                                         egui::Grid::new("settings_nav_grid")
                                             .num_columns(2)
                                             .spacing([12.0, 8.0])
@@ -715,8 +713,7 @@ impl App {
                                                             .clicked()
                                                             && nav_primary != opt
                                                         {
-                                                            self.config.nav_primary =
-                                                                opt.key().to_string();
+                                                            self.config.nav_primary = opt;
                                                             nav_dirty = true;
                                                         }
                                                     }
@@ -738,8 +735,7 @@ impl App {
                                                             .clicked()
                                                             && startup_view != opt
                                                         {
-                                                            self.config.startup_view =
-                                                                opt.key().to_string();
+                                                            self.config.startup_view = opt;
                                                             nav_dirty = true;
                                                         }
                                                     }
@@ -938,9 +934,7 @@ impl App {
                                     .weak(),
                                 );
                                         ui.add_space(4.0);
-                                        let current = config::WaveformColorMode::from_key(
-                                            &self.config.waveform_color_mode,
-                                        );
+                                        let current = self.config.waveform_color_mode;
                                         let mut picked = current;
                                         egui::ComboBox::from_id_salt("settings_waveform_color")
                                             .selected_text(match current {
@@ -964,8 +958,7 @@ impl App {
                                                 );
                                             });
                                         if picked != current {
-                                            self.config.waveform_color_mode =
-                                                picked.key().to_string();
+                                            self.config.waveform_color_mode = picked;
                                             self.save_config();
                                         }
 
@@ -2060,7 +2053,7 @@ Converted copies go on the stick; your library files stay as they are. Needs ffm
                 // field, filled from the track's Notes, its tags, or both.
                 use crate::config::ExportComment;
                 ui.add_space(6.0);
-                let current = ExportComment::from_key(&self.config.export_comment);
+                let current = self.config.export_comment;
                 let mut picked = current;
                 ui.horizontal(|ui| {
                     ui.label("Comment on the player:");
@@ -2078,7 +2071,7 @@ Converted copies go on the stick; your library files stay as they are. Needs ffm
 Ord tags, as in the table's Tags column.",
                 );
                 if picked != current {
-                    self.config.export_comment = picked.key().to_string();
+                    self.config.export_comment = picked;
                     self.save_config();
                 }
                 ui.add_space(12.0);

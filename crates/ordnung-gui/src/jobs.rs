@@ -200,7 +200,7 @@ impl App {
         let auto_match = if self.config.discogs_auto_fetch && !token.is_empty() {
             Some(AutoMatchSpec {
                 token,
-                criterion: config::ReleaseAutoMatch::from_key(&self.config.discogs_auto_match),
+                criterion: self.config.discogs_auto_match,
                 hidden_mediums: self.config.hidden_release_mediums.clone(),
             })
         } else {
@@ -294,7 +294,7 @@ impl App {
     ) {
         let verb = if replace { "Exporting" } else { "Adding" };
         let status = format!("{verb} {scope} to {}…", dest.display());
-        let comment = crate::config::ExportComment::from_key(&self.config.export_comment);
+        let comment = self.config.export_comment;
         let to = dest.clone();
         if self.spawn_job(ctx, status, true, move |db, cancel, tx, ctx| {
             run_export(db, dest, playlist_ids, replace, player, comment, cancel, tx, ctx)
@@ -4412,7 +4412,7 @@ impl App {
         };
         let spec = AutoMatchSpec {
             token,
-            criterion: config::ReleaseAutoMatch::from_key(&self.config.discogs_auto_match),
+            criterion: self.config.discogs_auto_match,
             hidden_mediums: self.config.hidden_release_mediums.clone(),
         };
         self.spawn_job(ctx, "Matching the tracklist…", true, move |db, cancel, tx, ctx| {

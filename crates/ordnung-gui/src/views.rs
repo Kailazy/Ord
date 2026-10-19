@@ -324,33 +324,20 @@ pub(crate) fn vinyl_matches(v: &VinylRecord, query: &str) -> bool {
 /// [`crate::config::Config::vinyl_sort`], so an unknown key from another build
 /// falls back to `Artist` (the fixed order the view shipped with) rather than
 /// failing to load.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) enum VinylSort {
     /// Discogs `date_added` — when the record joined the collection/wantlist.
+    #[serde(rename = "added")]
     Added,
     /// Lowest current marketplace listing (see `Client::marketplace_price`).
+    #[serde(rename = "price")]
     Price,
     /// Artist, then title. The catalog's own ordering.
+    #[serde(rename = "artist", other)]
     Artist,
 }
 
 impl VinylSort {
-    fn from_key(key: &str) -> Self {
-        match key {
-            "added" => VinylSort::Added,
-            "price" => VinylSort::Price,
-            _ => VinylSort::Artist,
-        }
-    }
-
-    fn key(self) -> &'static str {
-        match self {
-            VinylSort::Added => "added",
-            VinylSort::Price => "price",
-            VinylSort::Artist => "artist",
-        }
-    }
-
     fn label(self) -> &'static str {
         match self {
             VinylSort::Added => "Date added",
@@ -1608,7 +1595,7 @@ impl App {
 
         // Sort choice, persisted across launches. Read once per frame so the
         // menu below can write it back without borrowing the config twice.
-        let mut sort = VinylSort::from_key(&self.config.vinyl_sort);
+        let mut sort = self.config.vinyl_sort;
         let mut ascending = self.config.vinyl_sort_ascending;
         // Layout choice (wall of covers vs rows), persisted like the sort. The
         // toggle writes the config directly; this snapshot decides whether to
@@ -1775,7 +1762,7 @@ impl App {
                 // Switching re-homes every record in place and the springs
                 // carry it to its new cloud.
                 ui.add_space(6.0);
-                let current = graph::Arrange::from_key(&self.config.graph_arrange);
+                let current = self.config.graph_arrange;
                 let mut pick = current;
                 if ui
                     .selectable_label(current == graph::Arrange::Artists, "Artists")
@@ -1792,7 +1779,7 @@ impl App {
                     pick = graph::Arrange::Genres;
                 }
                 if pick != current {
-                    self.config.graph_arrange = pick.key().to_string();
+                    self.config.graph_arrange = pick;
                     self.save_config();
                 }
                 // Which kinds of record are on the map. Each row toggles
@@ -1996,11 +1983,11 @@ impl App {
         }));
         // The row's trailing item spacing is part of the gap.
         ui.add_space(pad - ui.spacing().item_spacing.y);
-        if sort.key() != self.config.vinyl_sort
+        if sort != self.config.vinyl_sort
             || ascending != self.config.vinyl_sort_ascending
             || self.config.vinyl_view != view_before
         {
-            self.config.vinyl_sort = sort.key().to_string();
+            self.config.vinyl_sort = sort;
             self.config.vinyl_sort_ascending = ascending;
             self.save_config();
         }
@@ -3364,15 +3351,6 @@ mod tests {
             sort_vinyl_cells(&mut cells, VinylSort::Added, ascending);
             assert_eq!(artists(&cells), ["dated", "undated"]);
         }
-    }
-
-    #[test]
-    fn sort_choice_survives_a_round_trip_through_the_config_key() {
-        for sort in [VinylSort::Added, VinylSort::Price, VinylSort::Artist] {
-            assert_eq!(VinylSort::from_key(sort.key()), sort);
-        }
-        // A key from a build that knows sorts this one doesn't.
-        assert_eq!(VinylSort::from_key("condition"), VinylSort::Artist);
     }
 
     #[test]

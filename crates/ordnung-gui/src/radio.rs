@@ -184,33 +184,19 @@ enum Find {
 
 /// Where the radio bar sits on the map. Along the top or bottom it lies
 /// flat; dragged to a side it stands upright, cover on top.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, serde::Serialize, serde::Deserialize)]
 pub(crate) enum RadioDock {
-    Top,
+    #[serde(rename = "bottom")]
     Bottom,
+    #[serde(rename = "left")]
     Left,
+    #[serde(rename = "right")]
     Right,
+    #[serde(rename = "top", other)]
+    Top,
 }
 
 impl RadioDock {
-    pub(crate) fn key(self) -> &'static str {
-        match self {
-            RadioDock::Top => "top",
-            RadioDock::Bottom => "bottom",
-            RadioDock::Left => "left",
-            RadioDock::Right => "right",
-        }
-    }
-
-    pub(crate) fn from_key(key: &str) -> Self {
-        match key {
-            "bottom" => RadioDock::Bottom,
-            "left" => RadioDock::Left,
-            "right" => RadioDock::Right,
-            _ => RadioDock::Top,
-        }
-    }
-
     fn upright(self) -> bool {
         matches!(self, RadioDock::Left | RadioDock::Right)
     }
@@ -997,7 +983,7 @@ impl App {
         /// One song in the list.
         const ROW_H: f32 = 22.0;
 
-        let dock = RadioDock::from_key(&self.config.radio_dock);
+        let dock = self.config.radio_dock;
         let now = self.radio.now.clone();
         let tr = webview::transport();
         let body_h = ui.fonts(|f| f.row_height(&font::body()));
@@ -1139,7 +1125,7 @@ impl App {
         if shade.drag_stopped() && self.radio.drag.take().is_some() {
             let new = slot_for(bar.center());
             if new != dock {
-                self.config.radio_dock = new.key().to_string();
+                self.config.radio_dock = new;
                 self.save_config();
             }
             // A released bar keeps a little of the hand's motion and is

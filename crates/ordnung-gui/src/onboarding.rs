@@ -284,11 +284,10 @@ impl App {
         self.tour = Some(Tour::new(
             self.config.auto_write_tags,
             self.config.library_root.clone(),
-            crate::config::NavPrimary::from_key(&self.config.nav_primary)
-                == crate::config::NavPrimary::Vinyl,
+            self.config.nav_primary == crate::config::NavPrimary::Vinyl,
             self.config.discogs_token.clone(),
             self.config.discogs_auto_fetch,
-            crate::config::ReleaseAutoMatch::from_key(&self.config.discogs_auto_match),
+            self.config.discogs_auto_match,
         ));
     }
 
@@ -909,9 +908,9 @@ impl App {
         } else {
             crate::config::NavPrimary::Digital
         };
-        if crate::config::NavPrimary::from_key(&self.config.nav_primary) != medium {
-            self.config.nav_primary = medium.key().to_string();
-            self.config.startup_view = if vinyl_first { "vinyl" } else { "library" }.to_string();
+        if self.config.nav_primary != medium {
+            self.config.nav_primary = medium;
+            self.config.startup_view = if vinyl_first { StartupView::Vinyl } else { StartupView::Library };
         }
         // A token typed in the tour is committed like the Settings tab does it,
         // including the mirror field the Settings text box edits; a token that
@@ -930,7 +929,7 @@ impl App {
         // The automation fork from the Discogs step, committed like the
         // writeback one: what the user saw ticked is what runs from now on.
         self.config.discogs_auto_fetch = auto_fetch;
-        self.config.discogs_auto_match = auto_match.key().to_string();
+        self.config.discogs_auto_match = auto_match;
         self.config.onboarding_completed_version = TOUR_VERSION;
         if self.save_config() {
             self.status = if auto_write {

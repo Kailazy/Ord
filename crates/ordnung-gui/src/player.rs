@@ -2440,7 +2440,7 @@ impl WaveformStyle {
     pub(crate) fn from_config(cfg: &config::Config) -> Self {
         let rgb = |c: [u8; 3]| egui::Color32::from_rgb(c[0], c[1], c[2]);
         Self {
-            mode: config::WaveformColorMode::from_key(&cfg.waveform_color_mode),
+            mode: cfg.waveform_color_mode,
             height_exp: cfg.waveform_height_exp,
             band_gain: cfg.waveform_band_gain,
             energy_gain: cfg.waveform_energy_gain,

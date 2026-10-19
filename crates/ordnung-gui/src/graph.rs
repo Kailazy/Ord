@@ -73,31 +73,17 @@ impl Status {
 
 /// What the map gathers records around. Switching re-homes every record
 /// under new hubs in place, and the springs carry them across.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, serde::Serialize, serde::Deserialize)]
 pub(crate) enum Arrange {
-    /// Artist hubs, with a label sub-group where an artist has two or more
-    /// records on one label.
-    Artists,
     /// Style hubs ("Deep House"), each a cloud of the records tagged with
     /// it first; a record's further styles tie it loosely to those clouds
     /// too, so neighbouring styles drift together.
+    #[serde(rename = "genres")]
     Genres,
-}
-
-impl Arrange {
-    pub(crate) fn from_key(k: &str) -> Self {
-        if k == "genres" {
-            Self::Genres
-        } else {
-            Self::Artists
-        }
-    }
-    pub(crate) fn key(self) -> &'static str {
-        match self {
-            Self::Artists => "artists",
-            Self::Genres => "genres",
-        }
-    }
+    /// Artist hubs, with a label sub-group where an artist has two or more
+    /// records on one label.
+    #[serde(rename = "artists", other)]
+    Artists,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -1305,7 +1291,7 @@ impl App {
     ) -> Option<GraphAct> {
         use crate::ui::tokens::{color, font};
         let mut g = std::mem::take(self.map_mut(scope));
-        let arrange = Arrange::from_key(&self.config.graph_arrange);
+        let arrange = self.config.graph_arrange;
         // The dig map has no filter: everything on it is what's being dug.
         let hidden = match scope {
             MapScope::Library => Status::hidden(&self.config.graph_hide),
@@ -2627,7 +2613,7 @@ impl App {
                     }
                     None => (String::new(), 0, None),
                 };
-                let arrange = Arrange::from_key(&self.config.graph_arrange);
+                let arrange = self.config.graph_arrange;
                 let mut pick = arrange;
                 let mut fit = false;
                 let mut dig_act = None;
@@ -2679,7 +2665,7 @@ impl App {
                     });
                 });
                 if pick != arrange {
-                    self.config.graph_arrange = pick.key().to_string();
+                    self.config.graph_arrange = pick;
                     self.save_config();
                 }
                 match dig_act {
