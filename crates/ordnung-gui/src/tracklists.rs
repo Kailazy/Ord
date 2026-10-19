@@ -863,7 +863,7 @@ impl App {
                     });
                     let resp = row.response();
                     if resp.hovered() && e.release_id.is_some() {
-                        ui_cursor_hand(ctx);
+                        ctx.set_cursor_icon(egui::CursorIcon::PointingHand);
                     }
                     if resp.drag_started() {
                         if let Some(spec) = self.line_spec(&e) {
@@ -1189,8 +1189,4 @@ impl App {
             self.tracklist_pick = None;
         }
     }
-}
-
-fn ui_cursor_hand(ctx: &egui::Context) {
-    ctx.set_cursor_icon(egui::CursorIcon::PointingHand);
 }
