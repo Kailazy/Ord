@@ -156,6 +156,15 @@ pub fn download(
     download_impl(url, what, dest, progress, cancel, |r| r)
 }
 
+/// The agent for one long download stream: a generous read timeout and no
+/// overall cap.
+pub(crate) fn download_agent() -> ureq::Agent {
+    ureq::AgentBuilder::new()
+        .timeout_read(std::time::Duration::from_secs(120))
+        .user_agent(crate::USER_AGENT)
+        .build()
+}
+
 /// The shared download loop: `wrap` turns the counted network stream into
 /// whatever is written to `dest` (the stream itself, or a decoder over it).
 fn download_impl<R: Read>(
@@ -166,11 +175,7 @@ fn download_impl<R: Read>(
     cancel: &AtomicBool,
     wrap: impl FnOnce(CountingReader<Box<dyn Read + Send + Sync>>) -> R,
 ) -> Result<bool> {
-    let agent = ureq::AgentBuilder::new()
-        .timeout_read(std::time::Duration::from_secs(120))
-        .user_agent(crate::USER_AGENT)
-        .build();
-    let resp = agent
+    let resp = download_agent()
         .get(url)
         .call()
         .map_err(|e| Error::Network(format!("downloading {what}: {e}")))?;

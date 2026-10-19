@@ -27,7 +27,7 @@ use rusqlite::{params, Connection};
 use crate::catalog::{split_genres, GENRE_SEP};
 use crate::discogs::genre_tags;
 use crate::error::{Error, Result};
-use crate::tools::CountingReader;
+use crate::tools::{download_agent, CountingReader};
 
 /// Where the monthly dumps are listed and served.
 const DUMP_HOST: &str = "https://data.discogs.com";
@@ -139,7 +139,8 @@ impl GenreDb {
 /// Find the newest releases dump on data.discogs.com by reading the year
 /// listing (falling back to last year around January). Returns the date stamp
 /// and the download URL.
-pub fn latest_dump(agent: &ureq::Agent) -> Result<(String, String)> {
+pub fn latest_dump() -> Result<(String, String)> {
+    let agent = download_agent();
     let mut best: Option<String> = None;
     for year in [2027, 2026, 2025] {
         let url = format!("{DUMP_HOST}/?prefix=data%2F{year}%2F");
@@ -251,12 +252,7 @@ pub fn import_latest(
     progress: &mut dyn FnMut(ImportProgress),
     cancel: &AtomicBool,
 ) -> Result<ImportStats> {
-    // Long stream: generous read timeout, no overall cap.
-    let agent = ureq::AgentBuilder::new()
-        .timeout_read(std::time::Duration::from_secs(120))
-        .user_agent(crate::USER_AGENT)
-        .build();
-    let (stamp, url) = latest_dump(&agent)?;
+    let (stamp, url) = latest_dump()?;
     import_from(db_path, &stamp, &url, progress, cancel)
 }
 
@@ -270,12 +266,8 @@ pub fn import_from(
     progress: &mut dyn FnMut(ImportProgress),
     cancel: &AtomicBool,
 ) -> Result<ImportStats> {
-    let agent = ureq::AgentBuilder::new()
-        .timeout_read(std::time::Duration::from_secs(120))
-        .user_agent(crate::USER_AGENT)
-        .build();
     let stamp = stamp.to_string();
-    let resp = agent
+    let resp = download_agent()
         .get(url)
         .call()
         .map_err(|e| Error::Network(format!("downloading the Discogs dump: {e}")))?;
