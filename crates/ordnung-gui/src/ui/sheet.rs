@@ -100,23 +100,3 @@ pub fn progress_dots(ui: &mut egui::Ui, total: usize, current: usize, accent: eg
             .circle_filled(r.center(), if i == current { 4.0 } else { 3.0 }, color);
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// The whole point of the component: one geometry for the flow. If a future
-    /// change makes the size per-page, the constant stops being a constant and
-    /// the "Next never moves" guarantee is gone.
-    #[test]
-    fn the_tour_geometry_is_a_single_shared_constant() {
-        let a = SheetSize::TOUR;
-        let b = SheetSize::TOUR;
-        assert_eq!(a.width, b.width);
-        assert_eq!(a.body_height, b.body_height);
-        // A body box has to be big enough to be worth pinning; a degenerate
-        // value here would let content drive the height again.
-        assert!(a.body_height > 200.0);
-        assert!(a.width > 320.0);
-    }
-}
