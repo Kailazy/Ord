@@ -91,6 +91,17 @@ pub(crate) fn fmt_running_time(ms: u64) -> String {
     }
 }
 
+/// The next number off `seed`, which moves on: a seed walks the same
+/// path every time, so what was rolled from it once is rolled again.
+pub(crate) fn roll(seed: &mut u64) -> u64 {
+    let mut x = *seed ^ 0x9E37_79B9_7F4A_7C15;
+    x ^= x >> 30;
+    x = x.wrapping_mul(0xBF58_476D_1CE4_E5B9);
+    x ^= x >> 27;
+    *seed = seed.wrapping_add(0x9E37_79B9_7F4A_7C15);
+    x
+}
+
 /// Unix seconds now, or 0 when the clock reads before 1970.
 pub(crate) fn unix_now() -> i64 {
     std::time::SystemTime::now()

@@ -919,8 +919,8 @@ impl App {
                 .duration_since(std::time::UNIX_EPOCH)
                 .map(|d| d.as_nanos() as u64)
                 .unwrap_or(0);
-        self.dig_seed = self.dig_seed.wrapping_mul(6364136223846793005).wrapping_add(t | 1);
-        ((self.dig_seed >> 33) as usize) % len.max(1)
+        self.dig_seed = self.dig_seed.wrapping_add(t | 1);
+        ((roll(&mut self.dig_seed) >> 33) as usize) % len.max(1)
     }
 
     /// Fetch the record's detail, cache first, for its videos. While a record

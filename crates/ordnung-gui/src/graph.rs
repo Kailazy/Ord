@@ -458,15 +458,10 @@ fn fold(s: &str) -> String {
         .join(" ")
 }
 
-/// xorshift, for spawn offsets. Deterministic per state so a rebuilt map
-/// lands the same way twice.
+/// A share of a turn in `0..1` for spawn offsets, off [`roll`]: deterministic
+/// per state so a rebuilt map lands the same way twice.
 fn next_rand(seed: &mut u64) -> f32 {
-    let mut x = *seed;
-    x ^= x << 13;
-    x ^= x >> 7;
-    x ^= x << 17;
-    *seed = x;
-    (x >> 11) as f32 / (1u64 << 53) as f32
+    (roll(seed) >> 11) as f32 / (1u64 << 53) as f32
 }
 
 /// A hub is an anchor, not a body: the cloud's first record sits on it and

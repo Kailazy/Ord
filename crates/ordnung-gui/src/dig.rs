@@ -1144,15 +1144,11 @@ pub(crate) fn is_vinyl(format: &str) -> bool {
 /// A cheap varying index in `0..len`, from a seed advanced every frame the
 /// strip draws, so taking the same branch twice lands somewhere else. A free
 /// function so it can be used while a mutable borrow of the dig is live.
-fn dig_roll_with(seed: u64, len: usize) -> usize {
+fn dig_roll_with(mut seed: u64, len: usize) -> usize {
     if len == 0 {
         return 0;
     }
-    let mut x = seed ^ 0x9E37_79B9_7F4A_7C15;
-    x ^= x >> 30;
-    x = x.wrapping_mul(0xBF58_476D_1CE4_E5B9);
-    x ^= x >> 27;
-    (x % len as u64) as usize
+    (roll(&mut seed) % len as u64) as usize
 }
 
 /// Drop Discogs's `(2)` disambiguator for *display*. It's never dropped for
