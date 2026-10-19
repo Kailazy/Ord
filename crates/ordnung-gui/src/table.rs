@@ -3316,21 +3316,12 @@ pub(crate) fn chip_text_color(bg: egui::Color32) -> egui::Color32 {
 
 /// HSV (`h` in degrees, `s`/`v` in 0..=1) to an opaque colour.
 pub(crate) fn hsv_to_color32(h: f32, s: f32, v: f32) -> egui::Color32 {
-    let c = v * s;
-    let hp = h.rem_euclid(360.0) / 60.0;
-    let x = c * (1.0 - (hp % 2.0 - 1.0).abs());
-    let (r1, g1, b1) = match hp as u32 {
-        0 => (c, x, 0.0),
-        1 => (x, c, 0.0),
-        2 => (0.0, c, x),
-        3 => (0.0, x, c),
-        4 => (x, 0.0, c),
-        _ => (c, 0.0, x),
-    };
-    let m = v - c;
+    // Plain HSV maths in gamma space, like the table's colours. Not
+    // `Hsva::new(..).into()`: that takes linear light and gamma-encodes.
+    let [r, g, b] = egui::ecolor::rgb_from_hsv((h / 360.0, s, v));
     egui::Color32::from_rgb(
-        ((r1 + m) * 255.0).round() as u8,
-        ((g1 + m) * 255.0).round() as u8,
-        ((b1 + m) * 255.0).round() as u8,
+        (r * 255.0).round() as u8,
+        (g * 255.0).round() as u8,
+        (b * 255.0).round() as u8,
     )
 }
