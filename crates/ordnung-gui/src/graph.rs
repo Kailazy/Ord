@@ -458,18 +458,6 @@ fn fold(s: &str) -> String {
         .join(" ")
 }
 
-/// A cheap stable hash for the source signature.
-fn mix(h: &mut u64, v: u64) {
-    *h ^= v;
-    *h = h.wrapping_mul(0x100_0000_01b3);
-}
-fn mix_str(h: &mut u64, s: &str) {
-    for b in s.bytes() {
-        mix(h, b as u64);
-    }
-    mix(h, 0xff);
-}
-
 /// xorshift, for spawn offsets. Deterministic per state so a rebuilt map
 /// lands the same way twice.
 fn next_rand(seed: &mut u64) -> f32 {
@@ -688,24 +676,21 @@ impl GraphState {
     /// the dig window. Nothing moves while the list is the one it was
     /// built from last.
     fn rebuild(&mut self, arrange: Arrange, releases: Vec<Release>) {
-        let mut sig = 0xcbf2_9ce4_8422_2325u64;
-        mix(&mut sig, arrange as u64);
+        use std::hash::{DefaultHasher, Hash, Hasher};
+        let mut h = DefaultHasher::new();
+        (arrange as u64).hash(&mut h);
         for r in &releases {
-            mix(&mut sig, r.release_id);
-            mix(&mut sig, r.status as u64);
-            mix_str(&mut sig, r.label.as_deref().unwrap_or(""));
-            for g in &r.genres {
-                mix_str(&mut sig, g);
-            }
+            r.release_id.hash(&mut h);
+            (r.status as u64).hash(&mut h);
+            r.label.as_deref().unwrap_or("").hash(&mut h);
+            r.genres.hash(&mut h);
             match &r.cover {
-                Cover::None => mix(&mut sig, 0),
-                Cover::Shelf((l, id)) => {
-                    mix(&mut sig, 1 + *l as u64);
-                    mix(&mut sig, *id);
-                }
-                Cover::Url(u) => mix_str(&mut sig, u),
+                Cover::None => 0u64.hash(&mut h),
+                Cover::Shelf((l, id)) => (1 + *l as u64, *id).hash(&mut h),
+                Cover::Url(u) => u.hash(&mut h),
             }
         }
+        let sig = h.finish();
         if sig == self.sig {
             return;
         }
