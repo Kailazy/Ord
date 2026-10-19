@@ -1765,15 +1765,27 @@ impl Client {
     /// Download + downscale a thumbnail URL into a small PNG for GUI preview.
     /// `None` on any network/decode failure.
     pub fn fetch_thumb(&self, url: &str) -> Option<Vec<u8>> {
-        let bytes = self.download(url).ok()?;
-        downscale_png(&bytes, THUMB_MAX_SIDE)
+        self.fetch_image(url, THUMB_MAX_SIDE)
     }
 
     /// Download + downscale a full-resolution image URL into a PNG for tag
     /// embedding. `None` on any network/decode failure.
     pub fn fetch_full(&self, url: &str) -> Option<Vec<u8>> {
-        let bytes = self.download(url).ok()?;
-        downscale_png(&bytes, FULL_MAX_SIDE)
+        self.fetch_image(url, FULL_MAX_SIDE)
+    }
+
+    /// Download an image and downscale it to `max_side`; `None` on any
+    /// network/decode failure, which is all the callers above need to know.
+    fn fetch_image(&self, url: &str, max_side: u32) -> Option<Vec<u8>> {
+        let resp = self
+            .agent
+            .get(url)
+            .set("User-Agent", crate::USER_AGENT)
+            .call()
+            .ok()?;
+        let mut buf = Vec::new();
+        resp.into_reader().read_to_end(&mut buf).ok()?;
+        downscale_png(&buf, max_side)
     }
 
     /// Fetch a single release's full detail (`GET /releases/{id}`) so the caller
@@ -2132,8 +2144,7 @@ impl Client {
     /// collection grid. `None` on any network/decode failure (the grid then shows
     /// a placeholder). CDN image downloads don't count against the API rate limit.
     pub fn fetch_cover(&self, url: &str) -> Option<Vec<u8>> {
-        let bytes = self.download(url).ok()?;
-        downscale_png(&bytes, VINYL_COVER_MAX_SIDE)
+        self.fetch_image(url, VINYL_COVER_MAX_SIDE)
     }
 
     /// Resolve the best set of release hits for a track, trying progressively
@@ -2414,20 +2425,6 @@ impl Client {
             }
             req
         })
-    }
-
-    fn download(&self, url: &str) -> Result<Vec<u8>> {
-        let resp = self
-            .agent
-            .get(url)
-            .set("User-Agent", crate::USER_AGENT)
-            .call()
-            .map_err(map_ureq_err)?;
-        let mut buf = Vec::new();
-        resp.into_reader()
-            .read_to_end(&mut buf)
-            .map_err(|e| Error::Network(format!("reading thumbnail bytes from {url}: {e}")))?;
-        Ok(buf)
     }
 }
 
