@@ -92,8 +92,6 @@ const FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8UnormSrgb;
 
 /// A texture that is drawn into and sampled from.
 struct Target {
-    #[allow(dead_code)]
-    tex: wgpu::Texture,
     view: wgpu::TextureView,
     size: [u32; 2],
 }
@@ -115,7 +113,7 @@ impl Target {
             view_formats: &[],
         });
         let view = tex.create_view(&Default::default());
-        Self { tex, view, size }
+        Self { view, size }
     }
 }
 
@@ -134,8 +132,6 @@ struct Shared {
     blit_half: wgpu::BindGroup,
     blur_h: wgpu::BindGroup,
     blur_v: wgpu::BindGroup,
-    #[allow(dead_code)]
-    uniforms: [wgpu::Buffer; 3],
 }
 
 /// One surface's blurred backdrop: a texture egui can paint with.
@@ -349,7 +345,6 @@ impl Engine {
                 blit_half,
                 blur_h,
                 blur_v,
-                uniforms,
             });
         }
         self.shared.as_ref().unwrap()
