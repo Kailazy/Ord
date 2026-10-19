@@ -166,20 +166,11 @@ fn line_song(e: &TracklistEntry) -> Option<(String, String)> {
 
 /// The caption under a matched record: `2001 · Environ ENV 006 · Vinyl, 12"`.
 fn record_sub(e: &TracklistEntry) -> String {
-    let mut parts: Vec<String> = Vec::new();
-    if let Some(y) = e.rel_year {
-        parts.push(y.to_string());
-    }
-    match (e.rel_label.as_deref(), e.rel_catno.as_deref()) {
-        (Some(l), Some(c)) => parts.push(format!("{l} {c}")),
-        (Some(l), None) => parts.push(l.to_string()),
-        (None, Some(c)) => parts.push(c.to_string()),
-        (None, None) => {}
-    }
-    if let Some(f) = e.rel_format.as_deref() {
-        parts.push(f.to_string());
-    }
-    parts.join(" · ")
+    dots(&[
+        e.rel_year.map(|y| y.to_string()).as_deref(),
+        imprint(e.rel_label.as_deref(), e.rel_catno.as_deref()).as_deref(),
+        e.rel_format.as_deref(),
+    ])
 }
 
 /// Colour and words for a line's confidence pip.

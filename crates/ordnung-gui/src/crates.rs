@@ -152,20 +152,13 @@ fn group_by_record(songs: &[SongPin]) -> Vec<RecordGroup> {
         match groups.iter_mut().find(|g| g.release_id == Some(r)) {
             Some(g) => g.songs.push(i),
             None => {
-                let mut sub = Vec::new();
-                if let Some(y) = s.rel_year {
-                    sub.push(y.to_string());
-                }
-                match (s.rel_label.as_deref(), s.rel_catno.as_deref()) {
-                    (Some(l), Some(c)) => sub.push(format!("{l} {c}")),
-                    (Some(l), None) => sub.push(l.to_string()),
-                    (None, Some(c)) => sub.push(c.to_string()),
-                    (None, None) => {}
-                }
                 groups.push(RecordGroup {
                     release_id: Some(r),
                     name: s.record_name(),
-                    sub: sub.join(" · "),
+                    sub: dots(&[
+                        s.rel_year.map(|y| y.to_string()).as_deref(),
+                        imprint(s.rel_label.as_deref(), s.rel_catno.as_deref()).as_deref(),
+                    ]),
                     thumb: s.rel_thumb.clone(),
                     songs: vec![i],
                 });

@@ -1136,23 +1136,12 @@ fn pressing_line(hit: &RecordHit) -> String {
 /// Label and catalog number are joined with a space rather than a separator —
 /// "Environ ENV 006", the way a record is actually cited, not "Environ · ENV 006".
 fn sheet_subtitle(hit: &RecordHit) -> String {
-    let (label, catno) = (hit.label.trim(), hit.catno.trim());
-    let imprint = match (label.is_empty(), catno.is_empty()) {
-        (false, false) => format!("{label} {catno}"),
-        (false, true) => label.to_string(),
-        (true, false) => catno.to_string(),
-        (true, true) => String::new(),
-    };
-    [
-        hit.year.trim(),
-        hit.format.trim(),
-        imprint.as_str(),
-        hit.country.trim(),
-    ]
-    .into_iter()
-    .filter(|s| !s.is_empty())
-    .collect::<Vec<_>>()
-    .join(" · ")
+    dots(&[
+        non_empty(&hit.year).as_deref(),
+        non_empty(&hit.format).as_deref(),
+        imprint(non_empty(&hit.label).as_deref(), non_empty(&hit.catno).as_deref()).as_deref(),
+        non_empty(&hit.country).as_deref(),
+    ])
 }
 
 #[cfg(test)]

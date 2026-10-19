@@ -299,12 +299,7 @@ struct VinylCell {
 /// The caption line under a cover, e.g. `1993 · Vinyl, 12"`. Also part of the
 /// search haystack, so it's built in one place for both.
 pub(crate) fn vinyl_sub(v: &VinylRecord) -> String {
-    match (v.year, v.format.as_deref()) {
-        (Some(y), Some(f)) => format!("{y} · {f}"),
-        (Some(y), None) => y.to_string(),
-        (None, Some(f)) => f.to_string(),
-        (None, None) => String::new(),
-    }
+    dots(&[v.year.map(|y| y.to_string()).as_deref(), v.format.as_deref()])
 }
 
 /// Does this record match the vinyl view's search box? `query` is already

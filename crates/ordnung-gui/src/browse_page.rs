@@ -435,21 +435,16 @@ impl App {
                     // says nothing. An artist's run hops labels, so there it
                     // is the row's most telling fact after the year.
                     BrowseThread::Label => r.catno.trim().to_string(),
-                    BrowseThread::Artist => [r.label.trim(), r.catno.trim()]
-                        .into_iter()
-                        .filter(|s| !s.is_empty())
-                        .collect::<Vec<_>>()
-                        .join(" "),
+                    BrowseThread::Artist => {
+                        crate::util::imprint(non_empty(&r.label).as_deref(), non_empty(&r.catno).as_deref())
+                            .unwrap_or_default()
+                    }
                 };
-                let sub = [
-                    r.year.filter(|y| *y > 0).map(|y| y.to_string()),
-                    (!r.format.trim().is_empty()).then(|| r.format.clone()),
-                    (!imprint.is_empty()).then_some(imprint),
-                ]
-                .into_iter()
-                .flatten()
-                .collect::<Vec<_>>()
-                .join(" · ");
+                let sub = dots(&[
+                    r.year.filter(|y| *y > 0).map(|y| y.to_string()).as_deref(),
+                    (!r.format.trim().is_empty()).then_some(r.format.as_str()),
+                    (!imprint.is_empty()).then_some(imprint.as_str()),
+                ]);
                 (
                     r.thumb_url.clone(),
                     r.release_id,
@@ -740,14 +735,10 @@ impl App {
             Some(Act::Open(i)) => {
                 if let Some(r) = row_of(i).cloned() {
                     let (artist, title) = crate::dig::row_artist_title(&r);
-                    let sub = [
-                        r.year.filter(|y| *y > 0).map(|y| y.to_string()),
-                        (!r.format.trim().is_empty()).then(|| r.format.clone()),
-                    ]
-                    .into_iter()
-                    .flatten()
-                    .collect::<Vec<_>>()
-                    .join(" · ");
+                    let sub = dots(&[
+                        r.year.filter(|y| *y > 0).map(|y| y.to_string()).as_deref(),
+                        (!r.format.trim().is_empty()).then_some(r.format.as_str()),
+                    ]);
                     let thumb = (!r.thumb_url.trim().is_empty()).then(|| r.thumb_url.clone());
                     self.open_release_sheet(r.release_id, artist, title, sub, thumb, ctx);
                 }
@@ -765,14 +756,10 @@ impl App {
             Some(Act::Dig(i)) => {
                 if let Some(r) = row_of(i).cloned() {
                     let (artist, title) = crate::dig::row_artist_title(&r);
-                    let sub = [
-                        r.year.filter(|y| *y > 0).map(|y| y.to_string()),
-                        (!r.format.trim().is_empty()).then(|| r.format.clone()),
-                    ]
-                    .into_iter()
-                    .flatten()
-                    .collect::<Vec<_>>()
-                    .join(" · ");
+                    let sub = dots(&[
+                        r.year.filter(|y| *y > 0).map(|y| y.to_string()).as_deref(),
+                        (!r.format.trim().is_empty()).then_some(r.format.as_str()),
+                    ]);
                     // A label page knows the imprint; an artist's row carries
                     // its own, when Discogs listed one.
                     let label_name = match thread {

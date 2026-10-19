@@ -74,20 +74,11 @@ pub(crate) fn song_matches(s: &SongPin, query: &str) -> bool {
 
 /// The caption under the record: `A1 · 2001 · Environ ENV 006`.
 pub(crate) fn record_sub(s: &SongPin) -> String {
-    let mut parts: Vec<String> = Vec::new();
-    if let Some(p) = s.position.as_deref() {
-        parts.push(p.to_string());
-    }
-    if let Some(y) = s.rel_year {
-        parts.push(y.to_string());
-    }
-    match (s.rel_label.as_deref(), s.rel_catno.as_deref()) {
-        (Some(l), Some(c)) => parts.push(format!("{l} {c}")),
-        (Some(l), None) => parts.push(l.to_string()),
-        (None, Some(c)) => parts.push(c.to_string()),
-        (None, None) => {}
-    }
-    parts.join(" · ")
+    dots(&[
+        s.position.as_deref(),
+        s.rel_year.map(|y| y.to_string()).as_deref(),
+        imprint(s.rel_label.as_deref(), s.rel_catno.as_deref()).as_deref(),
+    ])
 }
 
 /// Pad a cell so its one- or two-line text block sits in the middle of the

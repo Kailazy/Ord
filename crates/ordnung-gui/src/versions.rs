@@ -494,21 +494,11 @@ impl App {
 /// The caption under a pressing's name in the record sheet — the same
 /// `year · format · label catno` shape the grid's cells use.
 fn version_sub(v: &discogs::MasterVersion) -> String {
-    let mut parts = Vec::new();
-    let year = year_of(&v.released);
-    if !year.is_empty() {
-        parts.push(year.to_string());
-    }
-    if !v.format.trim().is_empty() {
-        parts.push(v.format.clone());
-    }
-    match (v.label.trim(), v.catno.trim()) {
-        ("", "") => {}
-        ("", c) => parts.push(c.to_string()),
-        (l, "") => parts.push(l.to_string()),
-        (l, c) => parts.push(format!("{l} {c}")),
-    }
-    parts.join(" · ")
+    dots(&[
+        Some(year_of(&v.released)).filter(|y| !y.is_empty()),
+        (!v.format.trim().is_empty()).then_some(v.format.as_str()),
+        imprint(non_empty(&v.label).as_deref(), non_empty(&v.catno).as_deref()).as_deref(),
+    ])
 }
 
 /// How to name an incoming pressing in the swap's confirmation and status line.

@@ -99,6 +99,22 @@ pub(crate) fn unix_now() -> i64 {
         .unwrap_or(0)
 }
 
+/// `Environ ENV 006`: the label and catalog number with a space between,
+/// or whichever one is known; `None` when neither is.
+pub(crate) fn imprint(label: Option<&str>, catno: Option<&str>) -> Option<String> {
+    match (label, catno) {
+        (Some(l), Some(c)) => Some(format!("{l} {c}")),
+        (Some(l), None) => Some(l.to_string()),
+        (None, Some(c)) => Some(c.to_string()),
+        (None, None) => None,
+    }
+}
+
+/// The parts that are there, joined with ` · `.
+pub(crate) fn dots(parts: &[Option<&str>]) -> String {
+    parts.iter().flatten().copied().collect::<Vec<_>>().join(" · ")
+}
+
 pub(crate) fn non_empty(s: &str) -> Option<String> {
     let t = s.trim();
     if t.is_empty() {

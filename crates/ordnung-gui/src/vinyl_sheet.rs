@@ -335,24 +335,17 @@ fn sheet_alternative(
 /// The header's version line: `1993 · Vinyl, 12"` or `CD, Mixed`, whichever
 /// halves are known. `released` may be a full date; only its year is kept.
 pub(crate) fn sub_line(released: &str, format: &str) -> String {
-    let year = released.split('-').next().unwrap_or("").trim();
-    [year, format.trim()]
-        .into_iter()
-        .filter(|s| !s.is_empty())
-        .collect::<Vec<_>>()
-        .join(" · ")
+    let year = released.split('-').next().unwrap_or("");
+    dots(&[non_empty(year).as_deref(), non_empty(format).as_deref()])
 }
 
 /// The header's label line: `Warp · WAP42`, or whichever half is known.
 pub(crate) fn imprint_line(label: Option<&str>, catno: Option<&str>) -> Option<String> {
-    let l = label.unwrap_or("").trim();
-    let c = catno.unwrap_or("").trim();
-    match (l, c) {
-        ("", "") => None,
-        (l, "") => Some(l.to_string()),
-        ("", c) => Some(c.to_string()),
-        (l, c) => Some(format!("{l} · {c}")),
-    }
+    let line = dots(&[
+        non_empty(label.unwrap_or("")).as_deref(),
+        non_empty(catno.unwrap_or("")).as_deref(),
+    ]);
+    (!line.is_empty()).then_some(line)
 }
 
 /// One seller's copy on a line: `€14.00 · VG+/VG +€6.50 shipping from hardwax`.
