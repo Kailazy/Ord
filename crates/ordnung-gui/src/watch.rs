@@ -55,12 +55,7 @@ struct Row {
 fn fmt_subtotal(b: &SellerBasket) -> String {
     b.subtotal
         .iter()
-        .map(|(currency, value)| {
-            crate::vinyl_sheet::fmt_market_price(&discogs::MarketPrice {
-                value: *value,
-                currency: currency.clone(),
-            })
-        })
+        .map(|(currency, value)| crate::views::format_price(*value, Some(currency), true))
         .collect::<Vec<_>>()
         .join(" + ")
 }
@@ -79,20 +74,14 @@ fn draw_basket_header(ui: &mut egui::Ui, b: &SellerBasket) {
     match &b.shipping {
         Some((p, c)) => meta.push_str(&format!(
             " + {} shipping",
-            crate::vinyl_sheet::fmt_market_price(&discogs::MarketPrice {
-                value: *p,
-                currency: c.clone(),
-            })
+            crate::views::format_price(*p, Some(c), true)
         )),
         None => meta.push_str(" · shipping not quoted"),
     }
     if let Some((per, c)) = b.landed_per_record() {
         meta.push_str(&format!(
             " · ≈ {} per record",
-            crate::vinyl_sheet::fmt_market_price(&discogs::MarketPrice {
-                value: per,
-                currency: c,
-            })
+            crate::views::format_price(per, Some(&c), true)
         ));
     }
     ui.horizontal(|ui| {
