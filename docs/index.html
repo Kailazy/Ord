@@ -19,6 +19,7 @@
     --accent: #406eb4;
     --accent-hover: #5a96dc;
     --bar-h: 56px;
+    --side-w: 380px;
   }
   * { box-sizing: border-box; }
   html { scroll-behavior: smooth; scroll-padding-top: calc(var(--bar-h) + 16px); }
@@ -291,44 +292,49 @@
   footer a { color: var(--muted); text-decoration: none; }
   footer a:hover { color: var(--text); }
 
-  /* What's new: the last prod releases, read live from GitHub (see the
-     script); the markup carries the current one so the page says something
-     without it. Laid out like the tour: the title column keeps its place
-     while the notes scroll. */
-  .news { padding: 0 0 50px; }
-  .news .wrap { display: grid; grid-template-columns: 1fr 1.3fr; gap: 56px; align-items: start; }
-  .news .text { position: sticky; top: max(80px, 14vh); }
-  .news h2 { margin: 0 0 10px; font-size: 1.75rem; font-weight: 620; letter-spacing: -0.02em; }
-  .news .text p { margin: 0 0 14px; color: var(--muted); font-size: 1.08rem; max-width: 44ch; }
-  .news .text a { color: var(--muted); font-size: .9rem; text-decoration: none; }
-  .news .text a:hover { color: var(--text); }
-  .news .at { margin: 0 0 14px; font-size: 1rem; color: var(--text); font-variant-numeric: tabular-nums; min-height: 1.4em; }
-  .news .at span { color: var(--muted); }
-  /* The road: a rail down the left with a dot per release, newest at the
-     top, so scrolling down walks back in time. The rail fills to the
-     release in view (--fill, set by the script) and its dot lights. A
-     release without notes is a smaller dot with its version and date. */
-  .road { list-style: none; margin: 0; padding: 0 0 0 34px; position: relative; }
-  .road::before, .road::after { content: ""; position: absolute; left: 8px; top: 10px; bottom: 10px; width: 2px; background: var(--line); }
+  /* What's new: the road, in a sidebar along the right that stays for the
+     whole page. A dot per prod release, newest at the top; the one you are
+     at (by how far the page has scrolled) lights, its notes open and the
+     rail fills down to it. Under 1100 px the sidebar is the page's last
+     section instead, every release open, picked by what is in view. */
+  .page { display: grid; grid-template-columns: minmax(0, 1fr) var(--side-w); }
+  .side { position: sticky; top: 0; align-self: start; height: 100vh; box-sizing: border-box; overflow: auto; padding: calc(var(--bar-h) + 28px) 26px 28px 28px; border-left: 1px solid var(--line); background: rgba(20, 20, 20, .55); }
+  .side h2 { margin: 0 0 8px; font-size: 1.3rem; font-weight: 620; letter-spacing: -0.02em; }
+  .side .text p { margin: 0 0 10px; color: var(--muted); font-size: .92rem; }
+  .side .at { margin: 0 0 8px; font-size: .95rem; color: var(--text); font-variant-numeric: tabular-nums; min-height: 1.4em; }
+  .side .at span { color: var(--muted); }
+  .side .text a { color: var(--muted); font-size: .85rem; text-decoration: none; }
+  .side .text a:hover { color: var(--text); }
+  .road { list-style: none; margin: 26px 0 0; padding: 0 0 0 30px; position: relative; }
+  .road::before, .road::after { content: ""; position: absolute; left: 7px; top: 10px; bottom: 10px; width: 2px; background: var(--line); }
   .road::after { bottom: auto; height: var(--fill, 0px); background: var(--accent-hover); transition: height .4s ease; }
-  .ver { position: relative; padding: 0 0 40px; }
+  .ver { position: relative; padding: 0 0 26px; }
   .ver:last-child { padding-bottom: 8px; }
-  .ver::before { content: ""; position: absolute; left: -34px; top: 2px; width: 18px; height: 18px; border-radius: 50%; box-sizing: border-box; background: var(--bg); border: 2px solid #3a3a3b; transition: border-color .3s, background .3s, box-shadow .3s; }
+  .ver::before { content: ""; position: absolute; left: -30px; top: 2px; width: 16px; height: 16px; border-radius: 50%; box-sizing: border-box; background: var(--bg); border: 2px solid #3a3a3b; transition: border-color .3s, background .3s, box-shadow .3s; }
   .ver.active::before { border-color: var(--accent-hover); background: var(--accent); box-shadow: 0 0 0 5px rgba(90, 150, 220, .16); }
-  .ver header { display: flex; align-items: baseline; gap: 12px; }
-  .ver header b { font-weight: 620; font-size: 1.2rem; letter-spacing: -0.01em; }
-  .ver header time, .ver header a { color: var(--muted); font-size: .85rem; text-decoration: none; }
+  .ver header { display: flex; align-items: baseline; gap: 10px; }
+  .ver header b { font-weight: 620; font-size: 1.05rem; letter-spacing: -0.01em; }
+  .ver header time, .ver header a { color: var(--muted); font-size: .82rem; text-decoration: none; }
   .ver header a { margin-left: auto; }
   .ver header a:hover { color: var(--text); }
-  .ver.bare { padding-bottom: 26px; }
-  .ver.bare::before { width: 12px; height: 12px; left: -31px; top: 5px; }
-  .ver.bare header b { font-size: 1rem; font-weight: 560; color: var(--muted); }
+  .ver.bare::before { width: 10px; height: 10px; left: -27px; top: 5px; }
+  .ver.bare header b { font-size: .95rem; font-weight: 560; color: var(--muted); }
   .ver.active header b { color: var(--text); }
-  .ver p { margin: 10px 0 0; color: var(--muted); font-size: .95rem; }
-  .ver ul { margin: 8px 0 0; padding-left: 18px; list-style: disc; }
-  .ver li { margin: 6px 0; color: var(--muted); font-size: .95rem; line-height: 1.45; }
+  .ver p { margin: 8px 0 0; color: var(--muted); font-size: .9rem; }
+  .ver ul { margin: 6px 0 0; padding-left: 16px; list-style: disc; }
+  .ver li { margin: 5px 0; color: var(--muted); font-size: .9rem; line-height: 1.4; }
   .ver li b { color: var(--text); }
   .ver code { font-size: .85em; background: #232324; padding: 1px 5px; border-radius: 4px; }
+  .side .ver:not(.active) > :not(header) { display: none; }
+  @media (max-width: 1099px) {
+    .page { grid-template-columns: minmax(0, 1fr); }
+    .side { position: static; height: auto; overflow: visible; width: 100%; max-width: 1120px; margin: 0 auto; padding: 0 24px 50px; border-left: 0; background: none; }
+    .side .ver:not(.active) > :not(header) { display: block; }
+    .side h2 { font-size: 1.75rem; }
+    .side .text p { font-size: 1.08rem; max-width: 44ch; }
+    .road { margin-top: 24px; }
+    .ver { padding-bottom: 34px; }
+  }
 
   @media (max-width: 760px) {
     .hero { padding-top: 64px; }
@@ -348,12 +354,6 @@
     .steps { padding: 4vh 0; }
     .step { min-height: 40vh; }
     .step h2 { font-size: 1.45rem; }
-    .news .wrap { grid-template-columns: 1fr; gap: 20px; }
-    .news .text { position: static; }
-    .road { padding-left: 30px; }
-    .ver::before { left: -30px; }
-    .ver.bare::before { left: -27px; }
-    .news h2 { font-size: 1.45rem; }
     .col, .find { display: none; }
     .line { width: 96px; }
     .d-body.grid { grid-template-columns: repeat(auto-fill, minmax(78px, 1fr)); gap: 8px; }
@@ -379,6 +379,9 @@
     <a class="btn dl" href="https://github.com/Kailazy/Ord/releases/latest/download/Ord-macos-universal.dmg">Download for macOS</a>
   </div>
 </header>
+
+<div class="page">
+<main>
 
 <section class="hero" id="top">
   <div class="wrap">
@@ -499,37 +502,38 @@
   </div>
 </section>
 
-<section class="news" id="whats-new">
-  <div class="wrap">
-    <div class="text">
-      <h2>What's new</h2>
-      <p>Every release, newest first, with what it changed. Scroll down to walk back.</p>
-      <p class="at" id="at"></p>
-      <a href="https://github.com/Kailazy/Ord/releases">All releases on GitHub</a>
-    </div>
-    <ol class="road" id="rel">
-      <li class="ver">
-        <header><b>0.184.0</b><time datetime="2026-10-20">20 Oct 2026</time><a href="https://github.com/Kailazy/Ord/releases/tag/v0.184.0">Release</a></header>
-        <p>Since v0.182.1, the last prod release:</p>
-        <ul>
-          <li><b>Update from inside the app.</b> The update banner's <b>Update</b> now downloads the new build, swaps it in and relaunches. No quarantine prompt, and your privacy grants (Desktop, Documents, USB sticks) carry over, because every build is now signed with the same identity.</li>
-          <li><b>Drag tracks out as files.</b> Drag rows past the window's edge, or hold ⌥, and they leave as files for Finder or any other app. The gesture starts every time now, and the drag icons sit under the pointer.</li>
-          <li><b>Zoom the lane in steps.</b> Settings ▸ Waveform ▸ "Zoom the lane in steps" makes wheel zoom jump between fixed widths, 1 s to 64 s doubling, like a CDJ's zoom levels.</li>
-          <li><b>A narrower player bar.</b> Key lock shrinks to a lock mark when the window is narrow, and the scrubber gets the width.</li>
-          <li><b>Toolbar.</b> Tracklist search is a clipboard mark, and the search field no longer runs over it in a narrow window.</li>
-          <li><b>Song table.</b> Scroll bars rest at a quiet grey and the horizontal bar only shows for a real overflow. The Tags column clips like Notes, so the table never scrolls sideways, and playlist row numbers line up under the # header.</li>
-          <li><b>Fixed.</b> A crash when the mini-player polled a video whose web process had gone (reported 2026-10-19 on 0.183.0).</li>
-        </ul>
-      </li>
-    </ol>
-  </div>
-</section>
-
 <footer>
   <div class="wrap">
     <a href="https://github.com/Kailazy/Ord">Source on GitHub</a> &nbsp;·&nbsp; <a href="https://github.com/Kailazy/Ord/releases">All releases</a>
   </div>
 </footer>
+
+</main>
+
+<aside class="side" id="whats-new">
+  <div class="text">
+    <h2>What's new</h2>
+    <p>Every release, newest first. Scroll the page to walk back.</p>
+    <p class="at" id="at"></p>
+    <a href="https://github.com/Kailazy/Ord/releases">All releases on GitHub</a>
+  </div>
+  <ol class="road" id="rel">
+    <li class="ver">
+      <header><b>0.184.0</b><time datetime="2026-10-20">20 Oct 2026</time><a href="https://github.com/Kailazy/Ord/releases/tag/v0.184.0">Release</a></header>
+      <p>Since v0.182.1, the last prod release:</p>
+      <ul>
+      <li><b>Update from inside the app.</b> The update banner's <b>Update</b> now downloads the new build, swaps it in and relaunches. No quarantine prompt, and your privacy grants (Desktop, Documents, USB sticks) carry over, because every build is now signed with the same identity.</li>
+      <li><b>Drag tracks out as files.</b> Drag rows past the window's edge, or hold ⌥, and they leave as files for Finder or any other app. The gesture starts every time now, and the drag icons sit under the pointer.</li>
+      <li><b>Zoom the lane in steps.</b> Settings ▸ Waveform ▸ "Zoom the lane in steps" makes wheel zoom jump between fixed widths, 1 s to 64 s doubling, like a CDJ's zoom levels.</li>
+      <li><b>A narrower player bar.</b> Key lock shrinks to a lock mark when the window is narrow, and the scrubber gets the width.</li>
+      <li><b>Toolbar.</b> Tracklist search is a clipboard mark, and the search field no longer runs over it in a narrow window.</li>
+      <li><b>Song table.</b> Scroll bars rest at a quiet grey and the horizontal bar only shows for a real overflow. The Tags column clips like Notes, so the table never scrolls sideways, and playlist row numbers line up under the # header.</li>
+      <li><b>Fixed.</b> A crash when the mini-player polled a video whose web process had gone (reported 2026-10-19 on 0.183.0).</li>
+      </ul>
+    </li>
+  </ol>
+</aside>
+</div>
 
 <dialog id="gate-dialog">
   <div class="gate-copy"></div>
@@ -1116,15 +1120,17 @@
     return html + (list ? '</ul>' : '');
   };
   const when = iso => new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
-  // The release you are at: the last one whose top has passed the middle
-  // of the view, or further along by how far the page has scrolled through
-  // the road (0 with the road's top under the bar, 1 at the page's end),
-  // whichever is older. The road sits at the bottom of the page, so on a
-  // short page the last milestones never reach the middle on their own;
-  // the progress rule walks the dot down to the oldest by the end anyway,
-  // and the position rule keeps it from running ahead of what is read. Its
-  // dot lights, the rail fills down to it and the title column names it.
+  // The release you are at. Along the side, the page's own progress walks
+  // the road: the newest at the top of the page, the oldest at its end. As
+  // the last section (narrow windows), it is the last release whose top has
+  // passed the middle of the view, or further along by how far the page
+  // has scrolled through the road, whichever is older: the road is the last
+  // thing on the page, so its last milestones never reach the middle on
+  // their own, and the progress rule gets the dot to the oldest by the end
+  // while the position rule keeps it from running ahead of what is read.
+  // Its dot lights, the rail fills down to it and the title names it.
   // Picked on scroll; the previous pick is dropped when the road is rebuilt.
+  const along = matchMedia('(min-width: 1100px)');
   let pick = () => {};
   const road = () => {
     removeEventListener('scroll', pick);
@@ -1138,19 +1144,26 @@
       at.innerHTML = `${$('header b', v).outerHTML} <span>· ${$('header time', v).textContent}</span>`;
     };
     pick = () => {
+      const end = document.documentElement.scrollHeight - innerHeight;
+      const clamp = x => Math.min(Math.max(x, 0), 1);
+      const last = vers.length - 1;
+      if (along.matches) {
+        activate(vers[Math.round(clamp(end > 0 ? scrollY / end : 0) * last)]);
+        return;
+      }
       const line = innerHeight * 0.55;
       let i = 0;
       vers.forEach((x, k) => { if (x.getBoundingClientRect().top < line) i = k; });
       const pad = parseFloat(getComputedStyle(document.documentElement).scrollPaddingTop) || 0;
       const start = rel.getBoundingClientRect().top + scrollY - pad;
-      const end = document.documentElement.scrollHeight - innerHeight;
-      const p = end > start ? Math.min(Math.max((scrollY - start) / (end - start), 0), 1) : 0;
-      activate(vers[Math.max(i, Math.round(p * (vers.length - 1)))]);
+      const p = end > start ? clamp((scrollY - start) / (end - start)) : 0;
+      activate(vers[Math.max(i, Math.round(p * last))]);
     };
     addEventListener('scroll', pick, { passive: true });
     pick();
   };
   addEventListener('resize', () => pick());
+  along.addEventListener('change', () => pick());
   road();
   fetch('https://api.github.com/repos/Kailazy/Ord/releases?per_page=30')
     .then(r => r.ok ? r.json() : Promise.reject(r.status))
