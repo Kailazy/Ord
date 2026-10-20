@@ -395,6 +395,7 @@ impl App {
             wave_grab: None,
             volume_dirty: false,
             wave_zoom_secs: crate::player::DEFAULT_ZOOM_SECS,
+            wave_zoom_notch: 0.0,
             wave_lane_h: crate::player::DEFAULT_LANE_H,
             grid_edit_open: false,
             grid_nudge_held: false,

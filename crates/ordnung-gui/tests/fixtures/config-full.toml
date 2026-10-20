@@ -78,6 +78,7 @@ mid_start_videos = true
 mid_start_files = true
 waveform_color_mode = "spectrum"
 waveform_height_exp = 1.5
+wave_zoom_steps = true
 waveform_band_gain = [
     0.875,
     0.75,

@@ -56,11 +56,12 @@ pub mod app {
     pub const CARET_UP: &str = "caret-up";
     pub const CARET_DOWN: &str = "caret-down";
     pub const CLIPBOARD_TEXT: &str = "clipboard-text";
+    pub const LOCK_KEY: &str = "lock-key";
 
     #[cfg(test)]
     pub const ALL: &[&str] = &[
         MUSIC_NOTE, VINYL, HEART, SPARKLE, WARNING, EJECT, LIGHTNING, PLUS, PACKAGE, TAG, FOLDER,
-        FILE_AUDIO, CARET_UP, CARET_DOWN, CLIPBOARD_TEXT,
+        FILE_AUDIO, CARET_UP, CARET_DOWN, CLIPBOARD_TEXT, LOCK_KEY,
     ];
 }
 

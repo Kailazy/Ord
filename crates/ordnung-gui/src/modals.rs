@@ -961,6 +961,17 @@ impl App {
                                             self.config.waveform_color_mode = picked;
                                             self.save_config();
                                         }
+                                        ui.add_space(8.0);
+                                        if ui
+                                            .checkbox(
+                                                &mut self.config.wave_zoom_steps,
+                                                "Zoom the lane in steps",
+                                            )
+                                            .on_hover_note("Wheel zoom jumps between fixed widths, 1 s to 64 s doubling, like a CDJ's zoom levels")
+                                            .changed()
+                                        {
+                                            self.save_config();
+                                        }
 
                                         ui.add_space(12.0);
                                         let mut wave_dirty = false;

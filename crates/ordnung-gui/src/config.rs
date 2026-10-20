@@ -218,6 +218,9 @@ pub struct Config {
     /// sqrt-companded amplitude (most compressed); `2.0` cancels the sqrt back to
     /// linear amplitude (least compressed, rekordbox-like). See `wave_height`.
     pub waveform_height_exp: f32,
+    /// The player's zoom lane zooms in fixed steps (a doubling ladder, like
+    /// a CDJ's zoom levels) instead of smoothly.
+    pub wave_zoom_steps: bool,
     /// Per-band visual height gain for spectrum mode `[low, mid, high]`. The bass
     /// band swamps the others, so the default trims it and lifts mid/high.
     pub waveform_band_gain: [f32; 3],
@@ -667,6 +670,7 @@ impl Default for Config {
             mid_start_files: false,
             waveform_color_mode: WaveformColorMode::Energy,
             waveform_height_exp: default_waveform_height_exp(),
+            wave_zoom_steps: false,
             waveform_band_gain: default_waveform_band_gain(),
             waveform_energy_gain: default_waveform_energy_gain(),
             waveform_band_colors: default_waveform_band_colors(),
@@ -1004,6 +1008,7 @@ mod tests {
             mid_start_files: true,
             waveform_color_mode: WaveformColorMode::Spectrum,
             waveform_height_exp: 1.5,
+            wave_zoom_steps: true,
             waveform_band_gain: [0.875, 0.75, 0.625],
             waveform_energy_gain: 1.125,
             waveform_band_colors: [[1, 2, 3], [4, 5, 6], [7, 8, 9]],

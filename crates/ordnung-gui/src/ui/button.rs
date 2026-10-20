@@ -242,7 +242,6 @@ pub fn deck(
     lit: Option<egui::Color32>,
     enabled: bool,
 ) -> egui::Response {
-    let h = ui.spacing().interact_size.y;
     // A single glyph (‹, ›, Q) sits at body size so it reads as a key cap;
     // a word is small caps at footnote size.
     let font_id = if label.chars().count() == 1 {
@@ -253,6 +252,34 @@ pub fn deck(
     let galley = ui
         .painter()
         .layout_no_wrap(label.to_uppercase(), font_id, color::LABEL);
+    deck_cap(ui, galley, lit, enabled)
+}
+
+/// [`deck`] whose cap is one mark from the app's icon face (see
+/// `phosphor_icons::named`): the key lock once the player's row is too
+/// narrow for its word. Same key, same fill and lit colour, a third of the
+/// width.
+pub fn deck_icon(
+    ui: &mut egui::Ui,
+    glyph: &str,
+    lit: Option<egui::Color32>,
+    enabled: bool,
+) -> egui::Response {
+    let galley = ui.painter().layout_no_wrap(
+        glyph.to_owned(),
+        font::icon(font::body().size + 2.0),
+        color::LABEL,
+    );
+    deck_cap(ui, galley, lit, enabled)
+}
+
+fn deck_cap(
+    ui: &mut egui::Ui,
+    galley: std::sync::Arc<egui::Galley>,
+    lit: Option<egui::Color32>,
+    enabled: bool,
+) -> egui::Response {
+    let h = ui.spacing().interact_size.y;
     let w = (galley.size().x + 2.0 * DECK_PAD_X).max(h * 1.25).round();
     let (rect, resp) = ui.allocate_exact_size(
         egui::vec2(w, h),

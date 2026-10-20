@@ -585,13 +585,24 @@ impl App {
                         set_pitch = Some(v);
                     }
                     ui.add_space(6.0);
+                    // On a narrow window the key gives up its word for the
+                    // lock mark, and the scrubber after it gets the width.
+                    let compact = ui.available_width() < KEY_WORD_ROOM;
                     crate::ui::control_row(ui, |ui| {
-                        if crate::ui::button::deck(
-                            ui,
-                            "Key lock",
-                            key_lock.then_some(crate::ui::tokens::color::ACCENT_HOVER),
-                            true,
-                        )
+                        let lit = key_lock.then_some(crate::ui::tokens::color::ACCENT_HOVER);
+                        let key = if compact {
+                            crate::ui::button::deck_icon(
+                                ui,
+                                crate::ui::phosphor_icons::named(
+                                    crate::ui::phosphor_icons::app::LOCK_KEY,
+                                ),
+                                lit,
+                                true,
+                            )
+                        } else {
+                            crate::ui::button::deck(ui, "Key lock", lit, true)
+                        };
+                        if key
                         .on_hover_note(if key_lock {
                             "Key lock on: the fader changes tempo, the key stays"
                         } else {
@@ -1083,7 +1094,11 @@ impl App {
         seek_to: &mut Option<f32>,
     ) {
         const MARGIN: f32 = 10.0;
-        let zoom = self.wave_zoom_secs.clamp(MIN_ZOOM_SECS, MAX_ZOOM_SECS);
+        let zoom = if self.config.wave_zoom_steps {
+            ZOOM_STEPS_SECS[zoom_step(self.wave_zoom_secs)]
+        } else {
+            self.wave_zoom_secs.clamp(MIN_ZOOM_SECS, MAX_ZOOM_SECS)
+        };
         let lane_h = self.wave_lane_h.clamp(MIN_LANE_H, MAX_LANE_H);
         let lane_w = (ui.available_width() - 2.0 * MARGIN).max(60.0);
 
@@ -1218,11 +1233,33 @@ impl App {
             );
 
             // Wheel to zoom (multiplicative, so each notch is a constant ratio).
+            // In steps, a notch's worth of wheel moves one rung up or down
+            // the ladder; a trackpad hands a gesture over as many small
+            // deltas, so they add up to a notch first.
             if resp.hovered() {
                 let scroll = ui.input(|i| i.smooth_scroll_delta.y);
                 if scroll != 0.0 {
-                    self.wave_zoom_secs =
-                        (zoom * (-scroll * 0.004).exp()).clamp(MIN_ZOOM_SECS, MAX_ZOOM_SECS);
+                    if self.config.wave_zoom_steps {
+                        // A change of direction starts a fresh notch, so the
+                        // tail of the last tick never swallows the next.
+                        if self.wave_zoom_notch * scroll < 0.0 {
+                            self.wave_zoom_notch = 0.0;
+                        }
+                        self.wave_zoom_notch += scroll;
+                        if self.wave_zoom_notch.abs() >= ZOOM_NOTCH_PX {
+                            let i = zoom_step(zoom);
+                            let i = if self.wave_zoom_notch > 0.0 {
+                                i.saturating_sub(1)
+                            } else {
+                                (i + 1).min(ZOOM_STEPS_SECS.len() - 1)
+                            };
+                            self.wave_zoom_secs = ZOOM_STEPS_SECS[i];
+                            self.wave_zoom_notch = 0.0;
+                        }
+                    } else {
+                        self.wave_zoom_secs = (zoom * (-scroll * 0.004).exp())
+                            .clamp(MIN_ZOOM_SECS, MAX_ZOOM_SECS);
+                    }
                     ui.ctx().request_repaint();
                 }
             }
@@ -1587,6 +1624,17 @@ fn beat_lines(
 /// exercise it.
 #[cfg(test)]
 mod segmented_tests {
+    #[test]
+    fn zoom_step_is_nearest_rung_by_ratio() {
+        // On a rung, and anywhere short of the geometric halfway point.
+        assert_eq!(ZOOM_STEPS_SECS[zoom_step(16.0)], 16.0);
+        assert_eq!(ZOOM_STEPS_SECS[zoom_step(22.0)], 16.0);
+        assert_eq!(ZOOM_STEPS_SECS[zoom_step(23.0)], 32.0);
+        // Both ends clamp to the ladder.
+        assert_eq!(ZOOM_STEPS_SECS[zoom_step(0.5)], 1.0);
+        assert_eq!(ZOOM_STEPS_SECS[zoom_step(90.0)], 64.0);
+    }
+
     use super::*;
     use std::cell::Cell;
     use std::rc::Rc;
@@ -2632,6 +2680,30 @@ pub(crate) const DEFAULT_ZOOM_SECS: f32 = 16.0;
 const MIN_ZOOM_SECS: f32 = 0.5;
 /// Widest zoom before the lane is essentially the full-track overview again.
 const MAX_ZOOM_SECS: f32 = 90.0;
+/// The lane's widths when zoom runs in steps (`Config::wave_zoom_steps`):
+/// each twice the last, the way a CDJ's zoom levels go, from about a bar at
+/// a club tempo up to a minute. Wheel notches walk this ladder instead of
+/// scaling the width smoothly.
+const ZOOM_STEPS_SECS: [f32; 7] = [1.0, 2.0, 4.0, 8.0, 16.0, 32.0, 64.0];
+/// Wheel travel that counts as one notch on the ladder: a mouse wheel's
+/// click is 40 pt in egui, a trackpad gets there in a short swipe.
+const ZOOM_NOTCH_PX: f32 = 36.0;
+
+/// The rung of [`ZOOM_STEPS_SECS`] nearest a width. The ladder is geometric,
+/// so "nearest" is by ratio: the halfway point between a rung and the next
+/// is the rung times √2.
+fn zoom_step(secs: f32) -> usize {
+    ZOOM_STEPS_SECS
+        .iter()
+        .position(|&s| s >= secs / std::f32::consts::SQRT_2)
+        .unwrap_or(ZOOM_STEPS_SECS.len() - 1)
+}
+
+/// Room left on the artwork row, after the pitch fader, under which the key
+/// lock drops its word for the lock mark: the word's key takes 68 pt and the
+/// mark's 34, and past the 12 pt gap, the 46 pt clock and the 86 pt tail
+/// (time and close) the scrubber wants 240 pt or so to be worth looking at.
+const KEY_WORD_ROOM: f32 = 460.0;
 
 /// How long the cue bar takes to slide into or out of the player.
 

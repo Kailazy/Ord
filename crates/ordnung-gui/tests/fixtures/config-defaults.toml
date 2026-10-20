@@ -37,6 +37,7 @@ mid_start_videos = false
 mid_start_files = false
 waveform_color_mode = "energy"
 waveform_height_exp = 1.0099999904632568
+wave_zoom_steps = false
 waveform_band_gain = [
     1.0,
     0.8500000238418579,
