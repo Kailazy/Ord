@@ -216,8 +216,21 @@ if [[ "$make_dmg" -eq 1 ]]; then
   mkdir -p "$dmg_work"
   cp -R "$out_app" "$dmg_work/Ord.app"
   ln -s /Applications "$dmg_work/Applications"
-  hdiutil create -volname "Ord $version" \
-    -srcfolder "$dmg_work" -fs HFS+ -format UDZO -ov "$dmg_out" >/dev/null
+  # hdiutil on a GitHub macOS runner now and then fails with "Resource busy"
+  # (the v0.184.0 run lost a finished build to one). A few tries with a
+  # pause between them get past it.
+  for attempt in 1 2 3 4 5; do
+    if hdiutil create -volname "Ord $version" \
+      -srcfolder "$dmg_work" -fs HFS+ -format UDZO -ov "$dmg_out" >/dev/null; then
+      break
+    fi
+    if [[ "$attempt" -eq 5 ]]; then
+      echo "hdiutil create failed $attempt times, giving up" >&2
+      exit 1
+    fi
+    echo "hdiutil create failed (attempt $attempt), retrying in 5s" >&2
+    sleep 5
+  done
   rm -rf "$dmg_work"
   echo "Built: $dmg_out"
 fi
