@@ -658,7 +658,9 @@
       const [r, i, ext] = queue[q++ % queue.length], tr = { ...byId(r).tracks[i], ext };
       const el = add(tr, false);
       count();
-      el.scrollIntoView({ block: 'nearest' });
+      // Scroll the list, not the page: scrollIntoView also scrolls the
+      // window, which dropped every visitor at the tour on load.
+      rows.scrollTop = rows.scrollHeight;
       await wait(1400);
       el.innerHTML = rowHtml(tr, true);
       el.classList.add('fill');
