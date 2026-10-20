@@ -302,15 +302,30 @@
   .news .text p { margin: 0 0 14px; color: var(--muted); font-size: 1.08rem; max-width: 44ch; }
   .news .text a { color: var(--muted); font-size: .9rem; text-decoration: none; }
   .news .text a:hover { color: var(--text); }
-  .rel { display: flex; flex-direction: column; gap: 14px; }
-  .ver { border: 1px solid var(--line); border-radius: 14px; background: var(--card); padding: 18px 22px; }
+  .news .at { margin: 0 0 14px; font-size: 1rem; color: var(--text); font-variant-numeric: tabular-nums; min-height: 1.4em; }
+  .news .at span { color: var(--muted); }
+  /* The road: a rail down the left with a dot per release, newest at the
+     top, so scrolling down walks back in time. The rail fills to the
+     release in view (--fill, set by the script) and its dot lights. A
+     release without notes is a smaller dot with its version and date. */
+  .road { list-style: none; margin: 0; padding: 0 0 0 34px; position: relative; }
+  .road::before, .road::after { content: ""; position: absolute; left: 8px; top: 10px; bottom: 10px; width: 2px; background: var(--line); }
+  .road::after { bottom: auto; height: var(--fill, 0px); background: var(--accent-hover); transition: height .4s ease; }
+  .ver { position: relative; padding: 0 0 40px; }
+  .ver:last-child { padding-bottom: 8px; }
+  .ver::before { content: ""; position: absolute; left: -34px; top: 2px; width: 18px; height: 18px; border-radius: 50%; box-sizing: border-box; background: var(--bg); border: 2px solid #3a3a3b; transition: border-color .3s, background .3s, box-shadow .3s; }
+  .ver.active::before { border-color: var(--accent-hover); background: var(--accent); box-shadow: 0 0 0 5px rgba(90, 150, 220, .16); }
   .ver header { display: flex; align-items: baseline; gap: 12px; }
-  .ver header b { font-weight: 620; font-size: 1.05rem; }
+  .ver header b { font-weight: 620; font-size: 1.2rem; letter-spacing: -0.01em; }
   .ver header time, .ver header a { color: var(--muted); font-size: .85rem; text-decoration: none; }
   .ver header a { margin-left: auto; }
   .ver header a:hover { color: var(--text); }
+  .ver.bare { padding-bottom: 26px; }
+  .ver.bare::before { width: 12px; height: 12px; left: -31px; top: 5px; }
+  .ver.bare header b { font-size: 1rem; font-weight: 560; color: var(--muted); }
+  .ver.active header b { color: var(--text); }
   .ver p { margin: 10px 0 0; color: var(--muted); font-size: .95rem; }
-  .ver ul { margin: 8px 0 0; padding-left: 18px; }
+  .ver ul { margin: 8px 0 0; padding-left: 18px; list-style: disc; }
   .ver li { margin: 6px 0; color: var(--muted); font-size: .95rem; line-height: 1.45; }
   .ver li b { color: var(--text); }
   .ver code { font-size: .85em; background: #232324; padding: 1px 5px; border-radius: 4px; }
@@ -335,6 +350,9 @@
     .step h2 { font-size: 1.45rem; }
     .news .wrap { grid-template-columns: 1fr; gap: 20px; }
     .news .text { position: static; }
+    .road { padding-left: 30px; }
+    .ver::before { left: -30px; }
+    .ver.bare::before { left: -27px; }
     .news h2 { font-size: 1.45rem; }
     .col, .find { display: none; }
     .line { width: 96px; }
@@ -485,11 +503,12 @@
   <div class="wrap">
     <div class="text">
       <h2>What's new</h2>
-      <p>What the latest builds changed, from the release notes.</p>
+      <p>Every release, newest first, with what it changed. Scroll down to walk back.</p>
+      <p class="at" id="at"></p>
       <a href="https://github.com/Kailazy/Ord/releases">All releases on GitHub</a>
     </div>
-    <div class="rel" id="rel">
-      <article class="ver">
+    <ol class="road" id="rel">
+      <li class="ver">
         <header><b>0.184.0</b><time datetime="2026-10-20">20 Oct 2026</time><a href="https://github.com/Kailazy/Ord/releases/tag/v0.184.0">Release</a></header>
         <p>Since v0.182.1, the last prod release:</p>
         <ul>
@@ -501,8 +520,8 @@
           <li><b>Song table.</b> Scroll bars rest at a quiet grey and the horizontal bar only shows for a real overflow. The Tags column clips like Notes, so the table never scrolls sideways, and playlist row numbers line up under the # header.</li>
           <li><b>Fixed.</b> A crash when the mini-player polled a video whose web process had gone (reported 2026-10-19 on 0.183.0).</li>
         </ul>
-      </article>
-    </div>
+      </li>
+    </ol>
   </div>
 </section>
 
@@ -1073,12 +1092,13 @@
   }).observe(cv);
   setPlaying(playing);
 
-  // What's new: the last three prod releases from GitHub. A release's notes
-  // are what its body says under a "What's new" heading, up to the next
-  // heading or a --- rule (bullets, bold and code); one without that
-  // heading shows as a bare row. The markup's own copy stays when the request fails (offline,
-  // the API's rate limit) or the newest release carries no notes.
-  const rel = $('#rel');
+  // What's new: the prod releases from GitHub, newest first, on the road.
+  // A release's notes are what its body says under a "What's new" heading,
+  // up to the next heading or a --- rule (bullets, bold and code); one
+  // without that heading is a bare milestone. The markup's own copy stays
+  // when the request fails (offline, the API's rate limit) or the newest
+  // release carries no notes.
+  const rel = $('#rel'), at = $('#at');
   const inline = t => t.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]))
     .replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').replace(/`(.+?)`/g, '<code>$1</code>');
   const notes = body => {
@@ -1096,12 +1116,52 @@
     return html + (list ? '</ul>' : '');
   };
   const when = iso => new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
-  fetch('https://api.github.com/repos/Kailazy/Ord/releases?per_page=12')
+  // The release you are at: the last one whose top has passed the middle
+  // of the view, or further along by how far the page has scrolled through
+  // the road (0 with the road's top under the bar, 1 at the page's end),
+  // whichever is older. The road sits at the bottom of the page, so on a
+  // short page the last milestones never reach the middle on their own;
+  // the progress rule walks the dot down to the oldest by the end anyway,
+  // and the position rule keeps it from running ahead of what is read. Its
+  // dot lights, the rail fills down to it and the title column names it.
+  // Picked on scroll; the previous pick is dropped when the road is rebuilt.
+  let pick = () => {};
+  const road = () => {
+    removeEventListener('scroll', pick);
+    const vers = $$('.ver', rel);
+    let cur;
+    const activate = v => {
+      if (v === cur) return;
+      cur = v;
+      vers.forEach(x => x.classList.toggle('active', x === v));
+      rel.style.setProperty('--fill', (v.offsetTop + 10) + 'px');
+      at.innerHTML = `${$('header b', v).outerHTML} <span>· ${$('header time', v).textContent}</span>`;
+    };
+    pick = () => {
+      const line = innerHeight * 0.55;
+      let i = 0;
+      vers.forEach((x, k) => { if (x.getBoundingClientRect().top < line) i = k; });
+      const pad = parseFloat(getComputedStyle(document.documentElement).scrollPaddingTop) || 0;
+      const start = rel.getBoundingClientRect().top + scrollY - pad;
+      const end = document.documentElement.scrollHeight - innerHeight;
+      const p = end > start ? Math.min(Math.max((scrollY - start) / (end - start), 0), 1) : 0;
+      activate(vers[Math.max(i, Math.round(p * (vers.length - 1)))]);
+    };
+    addEventListener('scroll', pick, { passive: true });
+    pick();
+  };
+  addEventListener('resize', () => pick());
+  road();
+  fetch('https://api.github.com/repos/Kailazy/Ord/releases?per_page=30')
     .then(r => r.ok ? r.json() : Promise.reject(r.status))
     .then(all => {
-      const prod = all.filter(r => !r.prerelease && !r.draft && /^v\d/.test(r.tag_name)).slice(0, 3);
+      const prod = all.filter(r => !r.prerelease && !r.draft && /^v\d/.test(r.tag_name)).slice(0, 12);
       if (!prod.length || !notes(prod[0].body)) return;
-      rel.innerHTML = prod.map(r => `<article class="ver"><header><b>${inline(r.tag_name.slice(1))}</b><time datetime="${inline(r.published_at)}">${when(r.published_at)}</time><a href="${inline(r.html_url)}">Release</a></header>${notes(r.body)}</article>`).join('');
+      rel.innerHTML = prod.map(r => {
+        const n = notes(r.body);
+        return `<li class="ver${n ? '' : ' bare'}"><header><b>${inline(r.tag_name.slice(1))}</b><time datetime="${inline(r.published_at)}">${when(r.published_at)}</time><a href="${inline(r.html_url)}">Release</a></header>${n}</li>`;
+      }).join('');
+      road();
     })
     .catch(() => {});
 })();
