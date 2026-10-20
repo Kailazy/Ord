@@ -55,11 +55,12 @@ pub mod app {
     pub const SHOPPING_CART: &str = "shopping-cart";
     pub const CARET_UP: &str = "caret-up";
     pub const CARET_DOWN: &str = "caret-down";
+    pub const CLIPBOARD_TEXT: &str = "clipboard-text";
 
     #[cfg(test)]
     pub const ALL: &[&str] = &[
         MUSIC_NOTE, VINYL, HEART, SPARKLE, WARNING, EJECT, LIGHTNING, PLUS, PACKAGE, TAG, FOLDER,
-        FILE_AUDIO, CARET_UP, CARET_DOWN,
+        FILE_AUDIO, CARET_UP, CARET_DOWN, CLIPBOARD_TEXT,
     ];
 }
 

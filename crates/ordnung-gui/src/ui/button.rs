@@ -34,15 +34,26 @@ pub fn button(ui: &mut egui::Ui, label: impl Into<egui::WidgetText>) -> egui::Re
 /// is open. Never on a row of controls, where every button comes out the
 /// standard height (see the module doc).
 pub fn compact(ui: &mut egui::Ui, label: &str, selected: bool) -> egui::Response {
+    compact_in(ui, egui::RichText::new(label).font(font::footnote()), selected)
+}
+
+/// [`compact`] whose whole label is one mark from the app's icon face (see
+/// `phosphor_icons::named`): the toolbar's tracklist-search toggle, which
+/// has only its hover note to say what it does.
+pub fn compact_icon(ui: &mut egui::Ui, glyph: &str, selected: bool) -> egui::Response {
+    compact_in(
+        ui,
+        egui::RichText::new(glyph).font(font::icon(font::footnote().size + 2.0)),
+        selected,
+    )
+}
+
+fn compact_in(ui: &mut egui::Ui, text: egui::RichText, selected: bool) -> egui::Response {
     ui.scope(|ui| {
         let s = ui.spacing_mut();
         s.button_padding = egui::vec2(8.0, 2.0);
         s.interact_size.y = 0.0;
-        ui.add(
-            egui::Button::new(egui::RichText::new(label).font(font::footnote()))
-                .rounding(radius::SM)
-                .selected(selected),
-        )
+        ui.add(egui::Button::new(text).rounding(radius::SM).selected(selected))
     })
     .inner
 }

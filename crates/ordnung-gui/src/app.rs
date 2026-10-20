@@ -2803,8 +2803,13 @@ impl App {
                                 let gap = ui.spacing().item_spacing.x;
                                 let sep_w = 6.0 + gap;
                                 let clear_w = if has_filters { 140.0 + gap } else { 0.0 };
-                                let reserved =
-                                    SEARCH_FIELD_MIN_W + gap + SCOPE_TOGGLE_W + clear_w + sep_w * 2.0;
+                                let field_frame = crate::ui::field::MARGIN.sum().x;
+                                let reserved = SEARCH_FIELD_MIN_W
+                                    + field_frame
+                                    + gap
+                                    + SCOPE_TOGGLE_W
+                                    + clear_w
+                                    + sep_w * 2.0;
                                 let room = ui.available_width() - reserved;
                                 let width_of = |ui: &egui::Ui, text: &str| {
                                     ui.painter()
@@ -2834,20 +2839,22 @@ impl App {
                         }
                         ui.separator();
                         // Tracklist search: paste a mix's tracklist and match
-                        // every line to its record. A compact button hard
-                        // against the counts' divider, not a tab: a tool you
-                        // reach for, not a place you live in.
+                        // every line to its record. A compact clipboard mark
+                        // hard against the counts' divider, not a tab: a tool
+                        // you reach for, not a place you live in. Only the
+                        // mark, so a narrow window keeps the search field off
+                        // it; the hover note carries the name.
                         {
                             let n = self.tracklists.len();
-                            let resp = crate::ui::button::compact(
+                            let resp = crate::ui::button::compact_icon(
                                 ui,
-                                "Tracklist search",
+                                named(icons::CLIPBOARD_TEXT),
                                 self.tracklist_open,
                             )
                             .on_hover_note(if n == 0 {
-                                "Paste a mix tracklist and match every line to its record".to_string()
+                                "Tracklist search: paste a mix tracklist and match every line to its record".to_string()
                             } else {
-                                format!("Tracklists ({n}): paste a mix tracklist and match every line to its record")
+                                format!("Tracklist search ({n}): paste a mix tracklist and match every line to its record")
                             });
                             if resp.clicked() {
                                 self.tracklist_open = !self.tracklist_open;
@@ -2863,7 +2870,12 @@ impl App {
                             // pushing either past the edge of this remainder.
                             let gap = ui.spacing().item_spacing.x;
                             let clear_w = if has_filters { 140.0 + gap } else { 0.0 };
-                            let reserved = clear_w + SCOPE_TOGGLE_W + gap;
+                            // The field's width is its text area: its frame
+                            // adds the margin on either side (see
+                            // `ui::field::MARGIN`), and that is what the
+                            // row has to find room for.
+                            let field_frame = crate::ui::field::MARGIN.sum().x;
+                            let reserved = clear_w + SCOPE_TOGGLE_W + gap + field_frame;
                             let w = (ui.available_width() - reserved)
                                 .clamp(SEARCH_FIELD_MIN_W, 320.0);
                             // Anchor the field + scope toggle to the window's
@@ -2876,7 +2888,7 @@ impl App {
                             // it does. Only a window too narrow to fit pushes
                             // the group off center.
                             let avail = ui.available_rect_before_wrap();
-                            let group_w = w + gap + SCOPE_TOGGLE_W;
+                            let group_w = w + field_frame + gap + SCOPE_TOGGLE_W;
                             let left = (toolbar_center_x - group_w / 2.0).clamp(
                                 avail.left(),
                                 (avail.right() - group_w - clear_w).max(avail.left()),
