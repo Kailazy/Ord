@@ -291,6 +291,30 @@
   footer a { color: var(--muted); text-decoration: none; }
   footer a:hover { color: var(--text); }
 
+  /* What's new: the last prod releases, read live from GitHub (see the
+     script); the markup carries the current one so the page says something
+     without it. Laid out like the tour: the title column keeps its place
+     while the notes scroll. */
+  .news { padding: 0 0 50px; }
+  .news .wrap { display: grid; grid-template-columns: 1fr 1.3fr; gap: 56px; align-items: start; }
+  .news .text { position: sticky; top: max(80px, 14vh); }
+  .news h2 { margin: 0 0 10px; font-size: 1.75rem; font-weight: 620; letter-spacing: -0.02em; }
+  .news .text p { margin: 0 0 14px; color: var(--muted); font-size: 1.08rem; max-width: 44ch; }
+  .news .text a { color: var(--muted); font-size: .9rem; text-decoration: none; }
+  .news .text a:hover { color: var(--text); }
+  .rel { display: flex; flex-direction: column; gap: 14px; }
+  .ver { border: 1px solid var(--line); border-radius: 14px; background: var(--card); padding: 18px 22px; }
+  .ver header { display: flex; align-items: baseline; gap: 12px; }
+  .ver header b { font-weight: 620; font-size: 1.05rem; }
+  .ver header time, .ver header a { color: var(--muted); font-size: .85rem; text-decoration: none; }
+  .ver header a { margin-left: auto; }
+  .ver header a:hover { color: var(--text); }
+  .ver p { margin: 10px 0 0; color: var(--muted); font-size: .95rem; }
+  .ver ul { margin: 8px 0 0; padding-left: 18px; }
+  .ver li { margin: 6px 0; color: var(--muted); font-size: .95rem; line-height: 1.45; }
+  .ver li b { color: var(--text); }
+  .ver code { font-size: .85em; background: #232324; padding: 1px 5px; border-radius: 4px; }
+
   @media (max-width: 760px) {
     .hero { padding-top: 64px; }
     .hero h1 { font-size: 2.4rem; }
@@ -309,6 +333,9 @@
     .steps { padding: 4vh 0; }
     .step { min-height: 40vh; }
     .step h2 { font-size: 1.45rem; }
+    .news .wrap { grid-template-columns: 1fr; gap: 20px; }
+    .news .text { position: static; }
+    .news h2 { font-size: 1.45rem; }
     .col, .find { display: none; }
     .line { width: 96px; }
     .d-body.grid { grid-template-columns: repeat(auto-fill, minmax(78px, 1fr)); gap: 8px; }
@@ -451,6 +478,31 @@
       </div>
     </div>
 
+  </div>
+</section>
+
+<section class="news" id="whats-new">
+  <div class="wrap">
+    <div class="text">
+      <h2>What's new</h2>
+      <p>What the latest builds changed, from the release notes.</p>
+      <a href="https://github.com/Kailazy/Ord/releases">All releases on GitHub</a>
+    </div>
+    <div class="rel" id="rel">
+      <article class="ver">
+        <header><b>0.184.0</b><time datetime="2026-10-20">20 Oct 2026</time><a href="https://github.com/Kailazy/Ord/releases/tag/v0.184.0">Release</a></header>
+        <p>Since v0.182.1, the last prod release:</p>
+        <ul>
+          <li><b>Update from inside the app.</b> The update banner's <b>Update</b> now downloads the new build, swaps it in and relaunches. No quarantine prompt, and your privacy grants (Desktop, Documents, USB sticks) carry over, because every build is now signed with the same identity.</li>
+          <li><b>Drag tracks out as files.</b> Drag rows past the window's edge, or hold ⌥, and they leave as files for Finder or any other app. The gesture starts every time now, and the drag icons sit under the pointer.</li>
+          <li><b>Zoom the lane in steps.</b> Settings ▸ Waveform ▸ "Zoom the lane in steps" makes wheel zoom jump between fixed widths, 1 s to 64 s doubling, like a CDJ's zoom levels.</li>
+          <li><b>A narrower player bar.</b> Key lock shrinks to a lock mark when the window is narrow, and the scrubber gets the width.</li>
+          <li><b>Toolbar.</b> Tracklist search is a clipboard mark, and the search field no longer runs over it in a narrow window.</li>
+          <li><b>Song table.</b> Scroll bars rest at a quiet grey and the horizontal bar only shows for a real overflow. The Tags column clips like Notes, so the table never scrolls sideways, and playlist row numbers line up under the # header.</li>
+          <li><b>Fixed.</b> A crash when the mini-player polled a video whose web process had gone (reported 2026-10-19 on 0.183.0).</li>
+        </ul>
+      </article>
+    </div>
   </div>
 </section>
 
@@ -1020,6 +1072,38 @@
     draw();
   }).observe(cv);
   setPlaying(playing);
+
+  // What's new: the last three prod releases from GitHub. A release's notes
+  // are what its body says under a "What's new" heading, up to the next
+  // heading or a --- rule (bullets, bold and code); one without that
+  // heading shows as a bare row. The markup's own copy stays when the request fails (offline,
+  // the API's rate limit) or the newest release carries no notes.
+  const rel = $('#rel');
+  const inline = t => t.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]))
+    .replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').replace(/`(.+?)`/g, '<code>$1</code>');
+  const notes = body => {
+    const lines = (body || '').split(/\r?\n/);
+    const start = lines.findIndex(l => /^#+\s*what'?s new/i.test(l));
+    if (start < 0) return '';
+    let html = '', list = false;
+    for (const l of lines.slice(start + 1)) {
+      if (/^(#|---)/.test(l)) break;
+      const m = l.match(/^\s*[-*]\s+(.*)/);
+      if (m) { if (!list) { html += '<ul>'; list = true; } html += `<li>${inline(m[1])}</li>`; continue; }
+      if (list) { html += '</ul>'; list = false; }
+      if (l.trim()) html += `<p>${inline(l.trim())}</p>`;
+    }
+    return html + (list ? '</ul>' : '');
+  };
+  const when = iso => new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+  fetch('https://api.github.com/repos/Kailazy/Ord/releases?per_page=12')
+    .then(r => r.ok ? r.json() : Promise.reject(r.status))
+    .then(all => {
+      const prod = all.filter(r => !r.prerelease && !r.draft && /^v\d/.test(r.tag_name)).slice(0, 3);
+      if (!prod.length || !notes(prod[0].body)) return;
+      rel.innerHTML = prod.map(r => `<article class="ver"><header><b>${inline(r.tag_name.slice(1))}</b><time datetime="${inline(r.published_at)}">${when(r.published_at)}</time><a href="${inline(r.html_url)}">Release</a></header>${notes(r.body)}</article>`).join('');
+    })
+    .catch(() => {});
 })();
 </script>
 

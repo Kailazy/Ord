@@ -28,6 +28,16 @@ dev build can be promoted; `make promote V=X.Y.Z` fails if `dev` holds a
 different version. Only Kai decides when a build goes prod; never promote
 unasked.
 
+A prod release carries notes: after the promote, `gh release edit vX.Y.Z
+--notes-file` with a `## What's new in X.Y.Z` section, then a `---` line,
+then the install boilerplate (keep it: `gh release view vX.Y.Z --json body`
+gives it). Bullets for what a DJ would notice since the previous prod
+release, `**Lead.** sentence` each, newest work first, fixes last. The
+landing page's "What's new" section reads that section from
+`releases/latest` through the API, and its markup carries a copy of the
+current notes as the no-script fallback, so refresh `docs/index.html`'s
+`#rel` article with the same bullets.
+
 ## Semver contract
 
 `MAJOR.MINOR.PATCH`, judged by what a DJ using the app would notice:
