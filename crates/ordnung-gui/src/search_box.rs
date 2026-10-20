@@ -699,8 +699,8 @@ fn search_hit_row(
         },
     );
     if let Some(id) = track_id {
-        if resp.dragged() && !crate::drag_cancelled(ui.ctx()) {
-            resp.dnd_set_drag_payload(DraggedTracks(vec![id]));
+        if resp.drag_started() {
+            egui::DragAndDrop::set_payload(ui.ctx(), DraggedTracks(vec![id]));
         }
     }
     // Everything the row paints is offset by the remaining slide and dimmed by

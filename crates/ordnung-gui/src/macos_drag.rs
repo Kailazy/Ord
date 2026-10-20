@@ -7,26 +7,23 @@
 //! the file URLs onto the drag pasteboard; the source files are never moved or
 //! modified. The drop side (rekordbox/Finder) decides what to do with them.
 
-use std::path::Path;
+use std::path::PathBuf;
 
 /// Begin a native drag carrying `paths` as file URLs, their Finder icons
-/// stacked under the cursor. Returns true once the gesture is AppKit's; false
-/// only if the window handle wasn't available this frame (the caller can
-/// simply let the user drag again).
+/// stacked under the cursor. A no-op without a window handle, which eframe's
+/// `update` always has.
 ///
 /// Must be called on the UI thread — eframe's `update` always is. Returns as
 /// soon as the session starts: AppKit then tracks the drag to the drop on its
 /// own, consuming the mouse events — the mouse-up included — so the window
 /// never hears the gesture end.
 #[cfg(target_os = "macos")]
-pub fn begin_file_drag(frame: &eframe::Frame, paths: &[&Path]) -> bool {
+pub fn begin_file_drag(frame: &eframe::Frame, paths: &[PathBuf]) {
     imp::begin_file_drag(frame, paths)
 }
 
 #[cfg(not(target_os = "macos"))]
-pub fn begin_file_drag(_frame: &eframe::Frame, _paths: &[&Path]) -> bool {
-    false
-}
+pub fn begin_file_drag(_frame: &eframe::Frame, _paths: &[PathBuf]) {}
 
 /// The live mouse position in egui points (top-left origin), queried straight
 /// from AppKit. egui's own `pointer.latest_pos()` goes stale during an OS file
@@ -47,7 +44,7 @@ pub fn pointer_pos(_frame: &eframe::Frame) -> Option<egui::Pos2> {
 
 #[cfg(target_os = "macos")]
 mod imp {
-    use std::path::Path;
+    use std::path::PathBuf;
 
     use objc2::rc::Retained;
     use objc2::runtime::{AnyObject, ProtocolObject};
@@ -86,34 +83,34 @@ mod imp {
         Some(egui::pos2(view_pt.x as f32, view_pt.y as f32))
     }
 
-    pub fn begin_file_drag(frame: &eframe::Frame, paths: &[&Path]) -> bool {
+    pub fn begin_file_drag(frame: &eframe::Frame, paths: &[PathBuf]) {
         if paths.is_empty() {
-            return false;
+            return;
         }
         // objc2 requires proof we're on the main thread for these AppKit calls;
         // eframe's update() runs there, so this succeeds. Bail rather than risk
         // UB if it ever doesn't.
         let Some(mtm) = MainThreadMarker::new() else {
-            return false;
+            return;
         };
 
         // Pull the NSView out of eframe's AppKit window handle, adopting the
         // borrowed (+0) pointer for the duration of this call only. Never stash
         // it across frames — eframe may recreate the surface/view.
         let Ok(handle) = frame.window_handle() else {
-            return false;
+            return;
         };
         let RawWindowHandle::AppKit(h) = handle.as_raw() else {
-            return false;
+            return;
         };
         let view: Retained<NSView> = unsafe {
             match Retained::retain(h.ns_view.as_ptr() as *mut NSView) {
                 Some(v) => v,
-                None => return false,
+                None => return,
             }
         };
         let Some(window) = view.window() else {
-            return false;
+            return;
         };
 
         // beginDraggingSession wants the mouse event that started the drag.
@@ -145,7 +142,7 @@ mod imp {
             )
         };
         let Some(event) = event else {
-            return false;
+            return;
         };
 
         // Drag images are placed in the view's coordinates; winit's view is
@@ -153,7 +150,7 @@ mod imp {
         let cursor = view.convertPoint_fromView(win_pt, None);
         let items = build_drag_items(paths, cursor);
         if items.is_empty() {
-            return false;
+            return;
         }
         let items = NSArray::from_vec(items);
 
@@ -165,14 +162,13 @@ mod imp {
         unsafe {
             view.beginDraggingSessionWithItems_event_source(&items, &event, source);
         }
-        true
     }
 
     /// One `NSDraggingItem` per file: each writes a file URL to the drag
     /// pasteboard and shows the file's Finder icon, centred on `cursor` (view
     /// coordinates). Items are staggered so a multi-file drag reads as a small
     /// stack under the pointer; past a few the stack stops growing.
-    fn build_drag_items(paths: &[&Path], cursor: NSPoint) -> Vec<Retained<NSDraggingItem>> {
+    fn build_drag_items(paths: &[PathBuf], cursor: NSPoint) -> Vec<Retained<NSDraggingItem>> {
         let workspace = unsafe { NSWorkspace::sharedWorkspace() };
         let mut items = Vec::with_capacity(paths.len());
         for (i, path) in paths.iter().enumerate() {

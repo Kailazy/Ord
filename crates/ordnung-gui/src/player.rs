@@ -289,10 +289,6 @@ impl App {
         // (jumping rebuilds rows and selection, which needs `&mut self`).
         let mut filter_album = false;
         let mut filter_artist = false;
-        // A ⌥-drag begun on the artwork this frame. Parked on `self` below, for
-        // the frame's single `begin_file_drag` dispatch in `update`.
-        let mut native_drag = false;
-
         // Fraction the bar reflects: the live position, or the in-progress scrub
         // before release. Shared by the zoom lane and the overview strip so both
         // track the same playhead. Computed once up front (the panel closure below
@@ -407,16 +403,8 @@ impl App {
                     let art_sz = egui::vec2(56.0, 56.0);
                     let (art_rect, art_resp) =
                         ui.allocate_exact_size(art_sz, egui::Sense::click_and_drag());
-                    let alt_drag = ui.input(|i| i.modifiers.alt);
-                    let cancelled = crate::drag_cancelled(ui.ctx());
-                    // Armed every dragged frame (not just drag start) so a
-                    // mid-drag ⌥ press still promotes to the file drag-out.
-                    // Esc cancels the grab for the rest of the gesture.
-                    if (art_resp.drag_started() || art_resp.dragged()) && alt_drag && !cancelled {
-                        native_drag = true;
-                    }
-                    if art_resp.dragged() && !alt_drag && !cancelled {
-                        art_resp.dnd_set_drag_payload(DraggedTracks(vec![np_id]));
+                    if art_resp.drag_started() {
+                        egui::DragAndDrop::set_payload(ui.ctx(), DraggedTracks(vec![np_id]));
                     }
                     if art_resp.hovered() {
                         ui.ctx().set_cursor_icon(egui::CursorIcon::Grab);
@@ -489,8 +477,7 @@ impl App {
                                 salt: &str,
                                 color: egui::Color32,
                                 note: &str,
-                                hit: &mut bool,
-                                native_drag: &mut bool| {
+                                hit: &mut bool| {
                         let rect = egui::Rect::from_min_size(pos, size);
                         let resp = ui
                             .interact(rect, ui.id().with(salt), egui::Sense::click_and_drag())
@@ -505,13 +492,8 @@ impl App {
                                 egui::Stroke::new(1.0, color),
                             );
                         }
-                        let alt = ui.input(|i| i.modifiers.alt);
-                        let cancelled = crate::drag_cancelled(ui.ctx());
-                        if (resp.drag_started() || resp.dragged()) && alt && !cancelled {
-                            *native_drag = true;
-                        }
-                        if resp.dragged() && !alt && !cancelled {
-                            resp.dnd_set_drag_payload(DraggedTracks(vec![np_id]));
+                        if resp.drag_started() {
+                            egui::DragAndDrop::set_payload(ui.ctx(), DraggedTracks(vec![np_id]));
                         }
                         if resp.clicked() {
                             *hit = true;
@@ -526,7 +508,6 @@ impl App {
                             egui::Color32::from_gray(240),
                             "Show this album",
                             &mut filter_album,
-                            &mut native_drag,
                         );
                     }
                     if !artist.trim().is_empty() {
@@ -538,7 +519,6 @@ impl App {
                             egui::Color32::from_gray(165),
                             "Show this artist",
                             &mut filter_artist,
-                            &mut native_drag,
                         );
                     }
                     ui.add_space(16.0);
@@ -730,9 +710,6 @@ impl App {
         }
         if shuffle || smart_shuffle {
             self.shuffle_next(np_id, smart_shuffle);
-        }
-        if native_drag {
-            self.player_native_drag = Some(PathBuf::from(&np_path));
         }
         if close {
             self.close_player();

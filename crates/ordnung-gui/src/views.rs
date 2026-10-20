@@ -3082,7 +3082,7 @@ impl App {
     /// opens direct tag editing — Save writes to the file on the stick. When
     /// the volume is a rekordbox export, a banner warns that players read
     /// export.pdb/ANLZ, not file tags, so direct edits desync until re-export.
-    pub(crate) fn draw_usb(&mut self, ui: &mut egui::Ui, vol: &Path) -> Option<Vec<PathBuf>> {
+    pub(crate) fn draw_usb(&mut self, ui: &mut egui::Ui, vol: &Path) {
         let name = vol
             .file_name()
             .map(|n| n.to_string_lossy().into_owned())
@@ -3216,7 +3216,7 @@ impl App {
         }
         if rescan {
             self.usb_loaded_for = None; // poll_usb respawns the scan
-            return None;
+            return;
         }
 
         if self.usb_loading {
@@ -3225,7 +3225,7 @@ impl App {
                 ui.spinner();
                 ui.label("Scanning device…");
             });
-            return None;
+            return;
         }
         if self.usb_tracks.is_empty() {
             ui.add_space(24.0);
@@ -3233,7 +3233,7 @@ impl App {
                 ui.heading("No audio files");
                 ui.label("Nothing playable was found on this volume.");
             });
-            return None;
+            return;
         }
         if self.rows.is_empty() {
             // The playlist resolved to nothing (files missing from /Contents)
@@ -3247,19 +3247,15 @@ impl App {
                     "Nothing on this device matches the search."
                 });
             });
-            return None;
+            return;
         }
 
         // ── Track table ──────────────────────────────────────────────────
         // The same table as the library — sorting, filters, per-row play,
         // ⌥-drag file drag-out — fed by `usb_rows` (built in `reload`).
-        let mut native_drag = None;
         egui::CentralPanel::default()
             .frame(egui::Frame::none())
-            .show_inside(ui, |ui| {
-                native_drag = self.draw_table(ui);
-            });
-        native_drag
+            .show_inside(ui, |ui| self.draw_table(ui));
     }
 }
 

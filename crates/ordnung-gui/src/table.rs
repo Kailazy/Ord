@@ -820,7 +820,7 @@ impl App {
         ui.add_space(space::S3);
     }
 
-    pub(crate) fn draw_table(&mut self, ui: &mut egui::Ui) -> Option<Vec<PathBuf>> {
+    pub(crate) fn draw_table(&mut self, ui: &mut egui::Ui) {
         let mut open_convert_for: Option<Id> = None;
         let mut open_inspector = false;
         // Keyboard: ↑ ↓ (and W S) move the selection one row through the
@@ -912,11 +912,6 @@ impl App {
         let track_releases = &self.track_releases;
         let vinyl_owned_tracks = &self.vinyl_owned_tracks;
         let vinyl_wanted_tracks = &self.vinyl_wanted_tracks;
-        // The track ids of a ⌥-drag that started this frame, set in a row closure
-        // below. Resolved to source-file paths and returned at the end so the
-        // caller can begin the native macOS drag-out *after* these closures (and
-        // their `self.rows` borrows) have dropped.
-        let mut native_drag_ids: Option<Vec<Id>> = None;
         // Cmd/Ctrl+C copies the selected rows the same way the "Copy for Soulseek"
         // context-menu item does (Artist – Title, one per line). On native eframe
         // the OS copy shortcut arrives as an `Event::Copy`, not a Key::C press, so
@@ -1392,14 +1387,21 @@ impl App {
                             } else {
                                 vec![r.id]
                             };
-                            // Decide drag mode up front from the live modifier: a plain
-                            // drag stays in-app (egui DnD → sidebar playlist / reorder),
-                            // a ⌥-drag becomes the native macOS drag-out. They must never
-                            // both fire, so the ⌥ branch suppresses the egui payload.
-                            let alt_drag = ctx_clone.input(|i| i.modifiers.alt);
-                            // Esc dropped the grab: stop re-arming either drag
-                            // kind for the rest of the gesture.
-                            let cancelled = crate::drag_cancelled(&ctx_clone);
+                            // A drag carries these ids as an egui payload, set once
+                            // at drag start: it lives until the release (or Esc,
+                            // which egui handles), serves the sidebar and reorder
+                            // drops inside the window, and `update` turns it into
+                            // the native file drag-out on ⌥ or at the window edge.
+                            // Device rows drag as their own payload type: droppable
+                            // on the Library source tab (copy to library), invisible
+                            // to playlist targets that need catalog ids.
+                            let set_payload = |ids: Vec<Id>| {
+                                if is_usb {
+                                    egui::DragAndDrop::set_payload(&ctx_clone, DraggedUsbTracks(ids));
+                                } else {
+                                    egui::DragAndDrop::set_payload(&ctx_clone, DraggedTracks(ids));
+                                }
+                            };
 
                             let mut clicked = false;
                             let mut dbl = false;
@@ -1625,26 +1627,7 @@ impl App {
                                         }
                                         if resp.drag_started() && !over_play_btn {
                                             drag = true;
-                                        }
-                                        // Arm on every dragged frame, not only drag start,
-                                        // so ⌥ pressed mid-drag still promotes to the file
-                                        // drag-out (the dispatch latches once it starts).
-                                        if !over_play_btn
-                                            && alt_drag
-                                            && !cancelled
-                                            && (resp.drag_started() || resp.dragged())
-                                        {
-                                            native_drag_ids = Some(drag_ids.clone());
-                                        }
-                                        if !over_play_btn
-                                            && resp.dragged()
-                                            && !alt_drag
-                                            && !cancelled
-                                            && !is_usb
-                                        {
-                                            resp.dnd_set_drag_payload(DraggedTracks(
-                                                drag_ids.clone(),
-                                            ));
+                                            set_payload(drag_ids.clone());
                                         }
                                     });
                                     continue;
@@ -1783,29 +1766,7 @@ impl App {
                                     }
                                     if resp.drag_started() {
                                         drag = true;
-                                    }
-                                    // Re-armed every dragged frame (see the cover cell)
-                                    // so ⌥ pressed after the drag began still counts.
-                                    if alt_drag
-                                        && !cancelled
-                                        && (resp.drag_started() || resp.dragged())
-                                    {
-                                        native_drag_ids = Some(drag_ids.clone());
-                                    }
-                                    if resp.dragged() && !alt_drag && !cancelled {
-                                        if is_usb {
-                                            // Device rows drag as their own payload
-                                            // type: droppable on the Library source
-                                            // tab (copy to library), invisible to
-                                            // playlist targets that need catalog ids.
-                                            resp.dnd_set_drag_payload(DraggedUsbTracks(
-                                                drag_ids.clone(),
-                                            ));
-                                        } else {
-                                            resp.dnd_set_drag_payload(DraggedTracks(
-                                                drag_ids.clone(),
-                                            ));
-                                        }
+                                        set_payload(drag_ids.clone());
                                     }
                                     // Right-click menu. Attached to each text cell's
                                     // interactive response (which senses secondary clicks);
@@ -2689,17 +2650,6 @@ impl App {
                 });
             }
         }
-
-        // Resolve a ⌥-drag started this frame into its concrete source files for
-        // the native drag-out. Done here, after every table closure has dropped,
-        // so no borrow of `self.rows` is live when AppKit enters its nested loop.
-        native_drag_ids.map(|ids| {
-            self.rows
-                .iter()
-                .filter(|r| ids.contains(&r.id))
-                .map(|r| r.source_path.clone())
-                .collect()
-        })
     }
 }
 

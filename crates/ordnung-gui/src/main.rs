@@ -784,19 +784,6 @@ struct DraggedTracks(Vec<Id>);
 #[derive(Clone)]
 struct DraggedSongs(Vec<SongPin>);
 
-/// True while the current drag gesture has been cancelled with Esc. Set in
-/// `App::update` when Esc lands during a live drag, cleared there on the next
-/// mouse press. Every payload / native-drag source checks this and stops
-/// re-arming, so the grab is dropped mid-gesture. Lives in egui temp memory
-/// (not on `App`) so free-function drag sources can read it too.
-pub(crate) fn drag_cancelled(ctx: &egui::Context) -> bool {
-    ctx.data(|d| d.get_temp(egui::Id::new("drag-cancelled")).unwrap_or(false))
-}
-
-pub(crate) fn set_drag_cancelled(ctx: &egui::Context, cancelled: bool) {
-    ctx.data_mut(|d| d.insert_temp(egui::Id::new("drag-cancelled"), cancelled));
-}
-
 /// Drag payload for rows from a mounted device (synthetic ids — see
 /// [`usb_track_id`]). A distinct type from [`DraggedTracks`] so catalog drop
 /// targets (playlists) can't accept device rows they have no ids for; the one
@@ -2174,15 +2161,6 @@ struct App {
     /// the source path (used to lazily load its cover). Set when playback starts;
     /// the bar is shown while the engine still has this track loaded or decoding.
     now_playing: Option<NowPlaying>,
-    /// A native drag-out started this frame from the now-playing bar's artwork,
-    /// holding the playing track's source file. `draw_player` runs long before
-    /// the frame's `begin_file_drag` dispatch, so the path parks here and is
-    /// taken alongside the table's own drag (see `update`).
-    player_native_drag: Option<PathBuf>,
-    /// True once a native drag-out session has started for the current mouse
-    /// gesture, so the drag sources (still armed in the frame it started)
-    /// cannot start a second one. Cleared on the next mouse press.
-    native_drag_spent: bool,
     /// Files carried by the most recent native drag-out session. A drop of
     /// (only) these back onto our own window is the user abandoning the drag,
     /// not a Finder import — the tracks are already in the library — so

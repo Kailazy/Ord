@@ -371,11 +371,11 @@ impl App {
     /// The crate view: its name and counts over the records to bring, the
     /// songs, or (a tag) the library table of its tracks. Hands back the
     /// files of a native drag from that table, like `draw_table`.
-    pub(crate) fn draw_crate_set(&mut self, ui: &mut egui::Ui, ctx: &egui::Context, id: Id) -> Option<Vec<PathBuf>> {
+    pub(crate) fn draw_crate_set(&mut self, ui: &mut egui::Ui, ctx: &egui::Context, id: Id) {
         self.ensure_crate_songs(id);
         self.ensure_library_index();
         let Some(set) = self.crate_sets.iter().find(|c| c.id == id).cloned() else {
-            return None;
+            return;
         };
         let songs = self.crate_songs.clone();
         let in_library: Vec<Option<Id>> = songs
@@ -440,9 +440,8 @@ impl App {
         });
         ui.add_space(space::S2);
 
-        let mut native_drag = None;
         if layout == CrateLayout::Tracks {
-            native_drag = self.draw_tag_tracks(ui, &set);
+            self.draw_tag_tracks(ui, &set);
         } else if songs.is_empty() {
             ui.add_space(24.0);
             ui.vertical_centered(|ui| match set.kind {
@@ -532,14 +531,13 @@ impl App {
                 }
             }
         }
-        native_drag
     }
 
     /// The Tracks layout of a tag: the library table over the files that
     /// carry it (`rows`, loaded for the view by `load_rows` through
     /// `Catalog::list_crate_tracks`), with the table's own filter bar. An
     /// empty tag, or one whose songs are all off the library, says so.
-    fn draw_tag_tracks(&mut self, ui: &mut egui::Ui, set: &CrateSet) -> Option<Vec<PathBuf>> {
+    fn draw_tag_tracks(&mut self, ui: &mut egui::Ui, set: &CrateSet) {
         let unfiltered = self.load_error.is_none()
             && self.filter.trim().is_empty()
             && self.col_filters.values().all(|v| v.trim().is_empty());
@@ -557,7 +555,7 @@ impl App {
                     });
                 }
             });
-            return None;
+            return;
         }
         self.draw_table_filter_bar(ui);
         self.draw_table(ui)

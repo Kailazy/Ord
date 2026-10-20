@@ -25,16 +25,13 @@ impl App {
     /// (e.g. a search-box hit dragged from another view) falls back to a
     /// catalog lookup. Ids that resolve nowhere are skipped.
     fn native_paths_for(&self, ids: &[Id]) -> Vec<PathBuf> {
-        let mut cat: Option<Option<Catalog>> = None;
+        let cat = Catalog::open(&self.db_path).ok();
         ids.iter()
             .filter_map(|&id| {
                 if let Some(r) = self.rows.iter().find(|r| r.id == id) {
                     return Some(r.source_path.clone());
                 }
-                let cat = cat
-                    .get_or_insert_with(|| Catalog::open(&self.db_path).ok())
-                    .as_ref()?;
-                cat.get_track(id).ok().map(|t| PathBuf::from(t.source_path))
+                cat.as_ref()?.get_track(id).ok().map(|t| PathBuf::from(t.source_path))
             })
             .collect()
     }
@@ -391,8 +388,6 @@ impl App {
             renaming: None,
             sort: None,
             now_playing: None,
-            player_native_drag: None,
-            native_drag_spent: false,
             native_drag_paths: Vec::new(),
             native_drag_release: None,
             pending_pick: None,
@@ -3965,9 +3960,6 @@ impl App {
         // Same deal for the USB device list and the viewed volume's track scan.
         self.poll_usb(ctx);
 
-        // Source files for a ⌥-drag started this frame inside the table (see
-        // `draw_table`); the native drag-out is begun after the panel closes.
-        let mut native_drag: Option<Vec<PathBuf>> = None;
         // The songs/content area sits a shade lighter than its default panel fill
         // so it reads as raised above the nav sidebar and the top/bottom bars
         // (which keep the darker `BG`). Otherwise this is the default central frame.
@@ -3985,9 +3977,9 @@ impl App {
                 } else if self.view == LibraryView::Vinyl {
                     self.draw_vinyl(ui, ctx);
                 } else if let LibraryView::CrateSet(id) = self.view {
-                    native_drag = self.draw_crate_set(ui, ctx, id);
+                    self.draw_crate_set(ui, ctx, id);
                 } else if let LibraryView::Usb(vol, _) = self.view.clone() {
-                    native_drag = self.draw_usb(ui, &vol);
+                    self.draw_usb(ui, &vol);
                 } else if self.rows.is_empty()
                     && self.load_error.is_none()
                     && self.filter.trim().is_empty()
@@ -4055,7 +4047,7 @@ impl App {
                     // Missing, Vinyl and USB render from their own caches and
                     // return early above.
                     self.draw_table_filter_bar(ui);
-                    native_drag = self.draw_table(ui);
+                    self.draw_table(ui);
                     // An open playlist gets a tiny info glyph over the table's
                     // top-right corner with its rollup totals on hover.
                     if let LibraryView::Playlist(pid) = self.view {
@@ -4064,83 +4056,42 @@ impl App {
                 }
             });
 
-        // Native drag-out to rekordbox/Finder. A ⌥-drag in the table (any
-        // dragged frame — `draw_table` returned its files) hands the gesture
-        // to an `NSDraggingSession` *now*; AppKit then tracks it to the drop
-        // on its own, and the `spent` latch below keeps the still-armed drag
-        // sources from starting a second one. A plain (non-⌥) drag carries an
-        // egui payload for in-window reorder / sidebar drops — until it leaves
-        // the window, at which point it too promotes to the native drag-out
-        // (see below). The now-playing bar's artwork drag, taken from where
-        // `draw_player` parked it earlier this frame, goes through this same
-        // dispatch point.
-        // A fresh press begins a new gesture, so the previous gesture's
-        // latches (session spent, Esc-cancelled, self-drop paths) no longer
-        // apply.
-        if ctx.input(|i| i.pointer.any_pressed()) {
-            self.native_drag_spent = false;
-            self.native_drag_paths.clear();
-            crate::set_drag_cancelled(ctx, false);
-        }
-        let from_player = self.player_native_drag.take().map(|p| vec![p]);
-        let mut native_drag = native_drag.or(from_player);
-        // Esc abandons the grab: drop the egui payload (the drag sources check
-        // `drag_cancelled` and stop re-setting it) and disarm any native drag
-        // for the rest of the gesture.
-        if ctx.input(|i| i.key_pressed(egui::Key::Escape))
-            && (egui::DragAndDrop::has_any_payload(ctx) || native_drag.is_some())
-        {
-            crate::set_drag_cancelled(ctx, true);
-            egui::DragAndDrop::clear_payload(ctx);
-        }
-        if crate::drag_cancelled(ctx) {
-            native_drag = None;
-        }
-        // A plain (non-⌥) drag becomes the native file drag the moment it
-        // leaves the window: inside, the egui payload still serves the
-        // sidebar/reorder drops, but nothing in-app can accept a drop outside,
-        // so hand the gesture to AppKit carrying the tracks' files. This is
-        // what makes "drag a song into another app" work without knowing
-        // about ⌥. Polled via AppKit (`pointer_pos`) because egui's own
+        // Native drag-out to rekordbox/Finder. Every row drag (table, player
+        // bar, search box) carries an egui payload for the in-window targets:
+        // sidebar playlists, playlist reorder, the Library tab for device
+        // rows. It becomes an `NSDraggingSession` carrying the tracks' files
+        // the moment ⌥ is held or the pointer leaves the window: nothing
+        // in-app can take a drop outside, and ⌥ asks for the file drag right
+        // away. Sources set the payload once at drag start and it is cleared
+        // here, so a gesture starts at most one session; AppKit then tracks
+        // it to the drop on its own. Esc is egui's own: `DragAndDrop` drops
+        // the payload. Polled via AppKit (`pointer_pos`) because egui's own
         // pointer can go stale at the window edge.
-        if native_drag.is_none() && !self.native_drag_spent {
-            if let Some(payload) = egui::DragAndDrop::payload::<DraggedTracks>(ctx) {
-                let outside = macos_drag::pointer_pos(frame)
-                    .or_else(|| ctx.input(|i| i.pointer.latest_pos()))
-                    .is_some_and(|p| !ctx.screen_rect().expand(2.0).contains(p));
-                if outside && ctx.input(|i| i.pointer.primary_down()) {
-                    let paths = self.native_paths_for(&payload.0);
-                    if !paths.is_empty() {
-                        egui::DragAndDrop::clear_payload(ctx);
-                        native_drag = Some(paths);
-                    }
-                }
-            }
+        if ctx.input(|i| i.pointer.any_pressed()) {
+            self.native_drag_paths.clear();
         }
-        if let Some(paths) = native_drag {
-            if !self.native_drag_spent {
-                let refs: Vec<&Path> = paths.iter().map(PathBuf::as_path).collect();
-                if !refs.is_empty() {
-                    // Latch before starting, and record the paths so
-                    // handle_file_drop recognises (and ignores) these files
+        let ids = egui::DragAndDrop::payload::<DraggedTracks>(ctx)
+            .map(|p| p.0.clone())
+            .or_else(|| egui::DragAndDrop::payload::<crate::DraggedUsbTracks>(ctx).map(|p| p.0.clone()));
+        if let Some(ids) = ids {
+            let (alt, down, esc) = ctx.input(|i| {
+                (i.modifiers.alt, i.pointer.primary_down(), i.key_pressed(egui::Key::Escape))
+            });
+            let outside = macos_drag::pointer_pos(frame)
+                .is_some_and(|p| !ctx.screen_rect().expand(2.0).contains(p));
+            if down && !esc && (alt || outside) {
+                let paths = self.native_paths_for(&ids);
+                if !paths.is_empty() {
+                    egui::DragAndDrop::clear_payload(ctx);
+                    macos_drag::begin_file_drag(frame, &paths);
+                    // AppKit owns the gesture from here and never delivers its
+                    // mouse-up to the window; egui gets one from
+                    // `raw_input_hook` next pass, so the button is not left
+                    // down until the next click.
+                    self.native_drag_release = macos_drag::pointer_pos(frame);
+                    // Let handle_file_drop recognise (and ignore) these files
                     // dropped back onto our own window.
-                    self.native_drag_spent = true;
-                    self.native_drag_paths = paths.clone();
-                    if macos_drag::begin_file_drag(frame, &refs) {
-                        // AppKit owns the gesture from here and never delivers
-                        // its mouse-up to the window; egui gets one from
-                        // `raw_input_hook` next pass, so the button is not
-                        // left down until the next click.
-                        self.native_drag_release = macos_drag::pointer_pos(frame)
-                            .or_else(|| ctx.input(|i| i.pointer.latest_pos()));
-                    } else {
-                        // No window handle this frame: un-latch so the
-                        // re-armed drag retries, and ask for the next frame
-                        // promptly.
-                        self.native_drag_spent = false;
-                        self.native_drag_paths.clear();
-                        ctx.request_repaint();
-                    }
+                    self.native_drag_paths = paths;
                 }
             }
         }
