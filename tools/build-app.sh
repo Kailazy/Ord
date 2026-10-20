@@ -227,6 +227,21 @@ if [[ "$install" -eq 0 ]]; then
   exit 0
 fi
 
+# Never put an older version over a newer one: a `make app` from a checkout
+# whose main lags the latest tag has replaced the installed build with a stale
+# one more than once. Fast-forward first; to downgrade on purpose, delete the
+# installed bundle before running this.
+installed_version="$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' \
+  "$installed_app/Contents/Info.plist" 2>/dev/null || true)"
+if [[ -n "$installed_version" && "$installed_version" != "$version" ]]; then
+  newest="$(printf '%s\n%s\n' "$installed_version" "$version" | sort -t. -k1,1n -k2,2n -k3,3n | tail -1)"
+  if [[ "$newest" != "$version" ]]; then
+    echo "refusing to install $version over the newer $installed_version in $installed_app" >&2
+    echo "this checkout is behind: git fetch && git merge --ff-only origin/main, then retry" >&2
+    exit 1
+  fi
+fi
+
 # Quit a running instance so we can overwrite the bundle and relaunch fresh code.
 if pgrep -x Ord >/dev/null 2>&1; then
   echo "==> Quitting running Ord"
