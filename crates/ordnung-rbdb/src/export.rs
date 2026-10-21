@@ -420,8 +420,11 @@ struct ExistingTrack {
 /// tracks (keyed for path lookup), playlist nodes and playlist memberships. A
 /// stick with no export (or an unreadable one) merges as if empty.
 fn read_existing(dest_root: &Path) -> (Vec<ExistingTrack>, Vec<RbPlaylist>, HashMap<u32, Vec<u32>>) {
-    let pdb = crate::pdb::rb_dir(dest_root).join("export.pdb");
-    let Ok(export) = crate::pdb::read_export(&pdb) else {
+    // The stick reader, not the bare pdb parse: a rekordbox 6/7 export keeps
+    // its playlists only in exportLibrary.db (the pdb tree is empty), and a
+    // merge that read the pdb alone carried none of them over, so adding one
+    // track to such a stick silently wiped its playlists.
+    let Ok(export) = crate::pdb::read_stick(dest_root) else {
         return Default::default();
     };
     let mut tracks = Vec::new();
