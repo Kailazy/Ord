@@ -2500,7 +2500,7 @@ impl App {
                 self.set_tag(tag, on, specs);
             }
             Some(TrackMenuAction::ExportTo(ids, dest)) => {
-                self.confirm_export(None, ids, dest);
+                self.confirm_export(None, ids, dest, None);
             }
             Some(TrackMenuAction::RemoveFromPlaylist(pid, ids)) => {
                 match Catalog::open(&self.db_path).and_then(|c| c.remove_tracks(pid, &ids)) {

@@ -1685,11 +1685,27 @@ impl App {
 
     /// Raise the export confirmation for a playlist (and, for a folder, its
     /// descendants) or, with `playlist` unset, for just `tracks`: rows
-    /// dropped on a stick's tab or sent from a row's menu. Either way the
-    /// modal defaults to adding to the stick, rekordbox-style.
+    /// dropped on a stick's tab (`usb_playlist` when they landed in one of
+    /// its playlists) or sent from a row's menu. Either way the modal
+    /// defaults to adding to the stick, rekordbox-style.
     #[cfg(feature = "usb-export")]
-    pub(crate) fn confirm_export(&mut self, playlist: Option<Id>, tracks: Vec<Id>, dest: PathBuf) {
-        let (playlist_ids, scope, n_tracks, n_playlists) = match playlist {
+    pub(crate) fn confirm_export(
+        &mut self,
+        playlist: Option<Id>,
+        tracks: Vec<Id>,
+        dest: PathBuf,
+        usb_playlist: Option<u32>,
+    ) {
+        let usb_playlist = usb_playlist.map(|pid| {
+            let name = self
+                .usb_playlists
+                .iter()
+                .find(|p| p.id == pid)
+                .map(|p| p.name.clone())
+                .unwrap_or_else(|| "playlist".into());
+            (pid, name)
+        });
+        let (playlist_ids, mut scope, n_tracks, n_playlists) = match playlist {
             Some(id) => self.playlist_export_scope(id),
             None => {
                 let scope = match tracks.as_slice() {
@@ -1704,10 +1720,14 @@ impl App {
                 (Vec::new(), scope, tracks.len(), 0)
             }
         };
+        if let Some((_, name)) = &usb_playlist {
+            scope = format!("{scope} into \u{201C}{name}\u{201D}");
+        }
         self.export_confirm = Some(ExportConfirm {
             dest,
             playlist_ids,
             track_ids: tracks,
+            usb_playlist,
             scope,
             n_tracks,
             n_playlists,
@@ -1723,7 +1743,7 @@ impl App {
     /// The export doesn't exist in this build (see the `usb-export` feature):
     /// nothing offers it, so nothing reaches here.
     #[cfg(not(feature = "usb-export"))]
-    pub(crate) fn confirm_export(&mut self, _: Option<Id>, _: Vec<Id>, _: PathBuf) {}
+    pub(crate) fn confirm_export(&mut self, _: Option<Id>, _: Vec<Id>, _: PathBuf, _: Option<u32>) {}
 
     /// Save a local playlist's tracks as a text file (save-dialog gated).
     pub(crate) fn save_playlist_text(&mut self, id: Id) {
@@ -3247,6 +3267,7 @@ impl App {
                 let usb_volumes = self.usb_volumes.clone();
                 let usb_loaded_for = self.usb_loaded_for.clone();
                 let usb_has_playlists = !self.usb_playlists.is_empty();
+                let stick_lists = self.usb_playlists.clone();
 
                 // The digital-library group: the "Library" / "New" tile pair
                 // and the PLAYLISTS header (the tree itself scrolls in the middle
@@ -3434,6 +3455,7 @@ impl App {
                                 ui,
                                 &usb_volumes,
                                 active_vol.as_deref(),
+                                usb_loaded_for.as_deref().map(|p| (p, stick_lists.as_slice())),
                             );
                             if let Some(target) = tabs.clicked {
                                 *view = match target {
@@ -3447,8 +3469,8 @@ impl App {
                             if let Some(vol) = tabs.eject {
                                 *sidebar_action = Some(SidebarAction::EjectUsb(vol));
                             }
-                            if let Some((vol, ids)) = tabs.dropped_tracks {
-                                *sidebar_action = Some(SidebarAction::ExportTracks(ids, vol));
+                            if let Some((vol, ids, pl)) = tabs.dropped_tracks {
+                                *sidebar_action = Some(SidebarAction::ExportTracks(ids, vol, pl));
                             }
                             ui.add_space(8.0);
                         }
@@ -3793,10 +3815,10 @@ impl App {
                 self.usb_add_to_library(ctx.clone(), ids);
             }
             Some(SidebarAction::ExportPlaylist(id, dest)) => {
-                self.confirm_export(Some(id), Vec::new(), dest);
+                self.confirm_export(Some(id), Vec::new(), dest, None);
             }
-            Some(SidebarAction::ExportTracks(ids, dest)) => {
-                self.confirm_export(None, ids, dest);
+            Some(SidebarAction::ExportTracks(ids, dest, pl)) => {
+                self.confirm_export(None, ids, dest, pl);
             }
             Some(SidebarAction::EjectUsb(vol)) => {
                 self.eject_usb(ctx, &vol);

@@ -75,7 +75,92 @@ pub fn dropdown(anchor: &egui::Response, width: f32, add: impl FnOnce(&mut MenuU
             ctx.data_mut(|d| d.insert_temp(id.with("at"), now));
         }
     }
+    // Dismissal context, sampled before the content draws so this frame's own
+    // interactions can't muddy it: a focused text field means Esc is aimed at
+    // the field (unfocus), not the menu; an open popup (a combo box inside the
+    // menu) means a click on one of its options — which lands outside this
+    // Area — must not read as click-away.
+    let field_focused = ctx.memory(|m| m.focused().is_some());
+    let nested_popup_open = ctx.memory(|m| m.any_popup_open());
+    let Some(panel) = draw_panel(&ctx, anchor, id, open, width, add) else {
+        ctx.data_mut(|d| d.insert_temp(id, open));
+        return;
+    };
+    if panel.want_close {
+        open = false;
+    }
+    if open {
+        // The menu is a surface Escape closes, above the window it opened
+        // in (see `escape`); a field being typed in keeps the press.
+        if super::escape::take(&ctx, panel.area.layer_id, field_focused) {
+            open = false;
+        } else if !anchor.clicked() && !nested_popup_open && panel.area.clicked_elsewhere() {
+            // The anchor guard matters on the frame the menu opens: that click
+            // is outside the area too, and without it the menu would dismiss
+            // itself the moment it was summoned.
+            open = false;
+        }
+    }
+    if open && panel.rows_entering() {
+        ctx.request_repaint();
+    }
+    ctx.data_mut(|d| d.insert_temp(id, open));
+}
 
+/// A dropdown the caller holds open instead of the anchor's click: `open` is
+/// decided every frame (a drag hovering the anchor, say), and the panel
+/// rises, stays and fades on that alone — no click-away, no Escape. Returns
+/// the panel's rect while it is on screen, so the caller can count the
+/// pointer on the panel as still on the anchor.
+pub fn held(
+    anchor: &egui::Response,
+    width: f32,
+    open: bool,
+    add: impl FnOnce(&mut MenuUi),
+) -> Option<egui::Rect> {
+    let ctx = anchor.ctx.clone();
+    let id = anchor.id.with("ord_dropdown");
+    let was: bool = ctx.data(|d| d.get_temp(id).unwrap_or(false));
+    if open && !was {
+        let now = ctx.input(|i| i.time);
+        ctx.data_mut(|d| d.insert_temp(id.with("at"), now));
+    }
+    ctx.data_mut(|d| d.insert_temp(id, open));
+    let panel = draw_panel(&ctx, anchor, id, open, width, add)?;
+    if open && panel.rows_entering() {
+        ctx.request_repaint();
+    }
+    Some(panel.area.rect)
+}
+
+/// What [`draw_panel`] reports back for the dismissal and repaint rules.
+struct Panel {
+    area: egui::Response,
+    rows: usize,
+    want_close: bool,
+    since_open: f32,
+}
+
+impl Panel {
+    /// The box's own open animation drives repaints while it runs; the row
+    /// cascade outlives it slightly, so frames must keep coming until the
+    /// last row has fully entered.
+    fn rows_entering(&self) -> bool {
+        self.since_open < ROW_ANIM + ROW_STAGGER * self.rows as f32
+    }
+}
+
+/// The panel itself: the rise-and-fade on `open`, the glass, the rows.
+/// `None` once a fade-out has settled, when nothing is drawn.
+fn draw_panel(
+    ctx: &egui::Context,
+    anchor: &egui::Response,
+    id: egui::Id,
+    open: bool,
+    width: f32,
+    add: impl FnOnce(&mut MenuUi),
+) -> Option<Panel> {
+    let now = ctx.input(|i| i.time);
     // How far up the panel is, 0 → 1. Drawing continues past a `false` in
     // `open` until the fade-out settles, so dismissing is as smooth as opening.
     let open_t = ctx.animate_bool_with_time_and_easing(
@@ -85,18 +170,10 @@ pub fn dropdown(anchor: &egui::Response, width: f32, add: impl FnOnce(&mut MenuU
         egui::emath::easing::cubic_out,
     );
     if open_t <= 0.0 {
-        ctx.data_mut(|d| d.insert_temp(id, open));
-        return;
+        return None;
     }
     let opened_at: f64 = ctx.data(|d| d.get_temp(id.with("at")).unwrap_or(now));
     let since_open = (now - opened_at) as f32;
-    // Dismissal context, sampled before the content draws so this frame's own
-    // interactions can't muddy it: a focused text field means Esc is aimed at
-    // the field (unfocus), not the menu; an open popup (a combo box inside the
-    // menu) means a click on one of its options — which lands outside this
-    // Area — must not read as click-away.
-    let field_focused = ctx.memory(|m| m.focused().is_some());
-    let nested_popup_open = ctx.memory(|m| m.any_popup_open());
     // Rise and fade share the one `open_t` so the two halves of the motion can
     // never drift apart.
     let rise = RISE * (1.0 - open_t);
@@ -126,7 +203,7 @@ pub fn dropdown(anchor: &egui::Response, width: f32, add: impl FnOnce(&mut MenuU
         .interactable(open && open_t > 0.99)
         .fixed_pos(egui::pos2(left, anchor.rect.bottom() + GAP - rise))
         .constrain(true)
-        .show(&ctx, |ui| {
+        .show(ctx, |ui| {
             ui.multiply_opacity(open_t);
             // The glass is the fill, painted under the rows once the panel's
             // rect is known (see `glass`); the frame keeps the shadow.
@@ -156,7 +233,7 @@ pub fn dropdown(anchor: &egui::Response, width: f32, add: impl FnOnce(&mut MenuU
         });
     if let Some(slot) = slot {
         super::glass::end(
-            &ctx,
+            ctx,
             slot,
             id,
             area.response.rect,
@@ -164,29 +241,12 @@ pub fn dropdown(anchor: &egui::Response, width: f32, add: impl FnOnce(&mut MenuU
             super::window::edge(),
         );
     }
-
-    if want_close {
-        open = false;
-    }
-    if open {
-        // The menu is a surface Escape closes, above the window it opened
-        // in (see `escape`); a field being typed in keeps the press.
-        if super::escape::take(&ctx, area.response.layer_id, field_focused) {
-            open = false;
-        } else if !anchor.clicked() && !nested_popup_open && area.response.clicked_elsewhere() {
-            // The anchor guard matters on the frame the menu opens: that click
-            // is outside the area too, and without it the menu would dismiss
-            // itself the moment it was summoned.
-            open = false;
-        }
-    }
-    // The box's own open animation drives repaints while it runs; the row
-    // cascade outlives it slightly, so keep frames coming until the last row
-    // has fully entered.
-    if open && since_open < ROW_ANIM + ROW_STAGGER * rows as f32 {
-        ctx.request_repaint();
-    }
-    ctx.data_mut(|d| d.insert_temp(id, open));
+    Some(Panel {
+        area: area.response,
+        rows,
+        want_close,
+        since_open,
+    })
 }
 
 /// A right-click menu on `resp`, in the dropdown's chrome. egui's context
@@ -322,7 +382,8 @@ pub struct MenuUi<'u> {
 impl MenuUi<'_> {
     /// A plain action row. Returns true on click.
     pub fn item(&mut self, label: impl Into<String>) -> bool {
-        self.row(None, label.into(), None, color::LABEL)
+        self.row(None, label.into(), None, color::LABEL, |_| false)
+            .clicked()
     }
 
     /// A plain action row with a quiet right-aligned detail — a price's
@@ -334,19 +395,37 @@ impl MenuUi<'_> {
             label.into(),
             (!detail.is_empty()).then_some(detail),
             color::LABEL,
+            |_| false,
         )
+        .clicked()
+    }
+
+    /// A drop target for a drag carrying a `T` payload: lit like a hovered
+    /// row while such a drag is over it (egui hovers nothing during a drag),
+    /// in the reading column with a quiet detail. Returns the response, for
+    /// the caller's release check.
+    pub fn drop_row<T: std::any::Any + Send + Sync>(
+        &mut self,
+        label: impl Into<String>,
+        detail: Option<String>,
+    ) -> egui::Response {
+        self.row(None, label.into(), detail, color::LABEL, |r| {
+            r.dnd_hover_payload::<T>().is_some()
+        })
     }
 
     /// An action row in the destructive red, for deletes and their kin.
     pub fn item_danger(&mut self, label: impl Into<String>) -> bool {
-        self.row(None, label.into(), None, color::RED)
+        self.row(None, label.into(), None, color::RED, |_| false)
+            .clicked()
     }
 
     /// A row with a ✓ column — for single- or multi-select lists. All
     /// selectable rows share the column so their labels align. Returns true on
     /// click; the caller decides whether that selects, toggles, or closes.
     pub fn selectable(&mut self, selected: bool, label: impl Into<String>) -> bool {
-        self.row(Some(selected), label.into(), None, color::LABEL)
+        self.row(Some(selected), label.into(), None, color::LABEL, |_| false)
+            .clicked()
     }
 
     /// A selectable row with a quiet right-aligned detail — a count, a
@@ -363,7 +442,9 @@ impl MenuUi<'_> {
             label.into(),
             Some(detail.into()),
             color::LABEL,
+            |_| false,
         )
+        .clicked()
     }
 
     /// A section caption — small caps, semibold, quiet — for a menu that
@@ -389,8 +470,13 @@ impl MenuUi<'_> {
         let since_open = self.since_open;
         let mut row = self.row;
         let mut close = false;
+        // The panel's Area hands its content last frame's height, so a run
+        // that starts short could never grow to its rows (a ratchet, with a
+        // scrollbar over a cut-off list). The minimum scrolled height sizes
+        // the run from the content instead, up to the cap.
         egui::ScrollArea::vertical()
             .max_height(max_height)
+            .min_scrolled_height(max_height)
             .show(self.ui, |ui| {
                 let mut m = MenuUi {
                     ui,
@@ -447,14 +533,16 @@ impl MenuUi<'_> {
     }
 
     /// One row: animated hover fill, staggered fade/slide entrance, optional
-    /// ✓ column and right-aligned detail, label in `text_color`.
+    /// ✓ column and right-aligned detail, label in `text_color`. `lit` adds
+    /// to the hover (a drag over a drop row); the response is returned.
     fn row(
         &mut self,
         selected: Option<bool>,
         label: String,
         detail: Option<String>,
         text_color: egui::Color32,
-    ) -> bool {
+        lit: impl FnOnce(&egui::Response) -> bool,
+    ) -> egui::Response {
         let i = self.row;
         self.row += 1;
         // This row's entrance, 0 → 1: rows trail each other by `ROW_STAGGER`
@@ -467,13 +555,14 @@ impl MenuUi<'_> {
             .ui
             .allocate_exact_size(egui::vec2(w, ROW_H), egui::Sense::click());
         if !self.ui.is_rect_visible(rect) {
-            return resp.clicked();
+            return resp;
         }
 
-        let hot =
-            self.ui
-                .ctx()
-                .animate_bool_with_time(resp.id.with("hot"), resp.hovered(), HOVER_ANIM);
+        let lit = resp.hovered() || lit(&resp);
+        let hot = self
+            .ui
+            .ctx()
+            .animate_bool_with_time(resp.id.with("hot"), lit, HOVER_ANIM);
         let painter = self.ui.painter();
         // A picked row wears a soft accent wash under everything else, so an
         // active filter reads at a glance without shouting; the ✓ carries the
@@ -538,7 +627,7 @@ impl MenuUi<'_> {
                 color::LABEL_3,
             );
         }
-        resp.clicked()
+        resp
     }
 }
 

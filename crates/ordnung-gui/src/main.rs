@@ -2439,9 +2439,10 @@ enum SidebarAction {
     /// Right-click on a local playlist/folder: export it (and, for a folder,
     /// its descendants) to the given mounted volume as a rekordbox stick.
     ExportPlaylist(Id, PathBuf),
-    /// Library rows dropped onto a stick's source tab: add just those tracks
-    /// to its export (track ids, volume).
-    ExportTracks(Vec<Id>, PathBuf),
+    /// Library rows dropped onto a stick's source tab, or onto one of the
+    /// stick's playlists in the panel under it: add just those tracks to its
+    /// export (track ids, volume, the playlist to put them in).
+    ExportTracks(Vec<Id>, PathBuf, Option<u32>),
     /// The eject mark on a volume's source tab (or the rail tile's menu).
     EjectUsb(PathBuf),
     /// Right-click on a local playlist: save its track list as a text file.
@@ -2486,6 +2487,9 @@ struct ExportConfirm {
     /// the stick's tab, or "Export to" from a row's menu): just these tracks,
     /// no playlist.
     track_ids: Vec<Id>,
+    /// With `track_ids`: the stick's own playlist (id, name) the tracks were
+    /// dropped into, appended on the stick once they are exported.
+    usb_playlist: Option<(u32, String)>,
     /// What the modal calls the selection ("your entire library",
     /// "playlist “warmup”", …).
     scope: String,

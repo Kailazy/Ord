@@ -1131,6 +1131,7 @@ pub(crate) fn source_tabs(
     ui: &mut egui::Ui,
     volumes: &[ordnung_core::usb::UsbVolume],
     active_vol: Option<&Path>,
+    stick_lists: Option<(&Path, &[ordnung_rbdb::pdb::RbPlaylist])>,
 ) -> SourceTabsResponse {
     let n = (volumes.len() + 1) as f32;
     // Each tab's outer budget: an equal share of the strip, minus the seams.
@@ -1294,9 +1295,48 @@ pub(crate) fn source_tabs(
                     }
                     if let Some(payload) = resp.dnd_release_payload::<DraggedTracks>() {
                         if !payload.0.is_empty() {
-                            dropped_tracks = Some((v.path.clone(), payload.0.clone()));
+                            dropped_tracks = Some((v.path.clone(), payload.0.clone(), None));
                         }
                     }
+                    // While library rows hover the tab, the stick's playlists
+                    // unroll beneath it in the dropdown's own motion, each a
+                    // drop target, so a drag can land in one of them instead
+                    // of on the whole stick. It stays while the pointer is on
+                    // the tab or the panel and goes with the drag. Only the
+                    // scanned stick's tree is known (see `poll_usb`).
+                    let lists: &[ordnung_rbdb::pdb::RbPlaylist] = stick_lists
+                        .filter(|(p, _)| *p == v.path.as_path())
+                        .map(|(_, l)| l)
+                        .unwrap_or(&[]);
+                    let ctx = ui.ctx().clone();
+                    let dragging = egui::DragAndDrop::has_payload_of_type::<DraggedTracks>(&ctx);
+                    let panel_id = resp.id.with("stick_lists");
+                    let panel = ctx
+                        .data(|d| d.get_temp::<Option<egui::Rect>>(panel_id))
+                        .flatten();
+                    let within = ctx.pointer_hover_pos().is_some_and(|p| {
+                        resp.rect.contains(p)
+                            || panel.is_some_and(|r| r.expand(space::S3).contains(p))
+                    });
+                    let open = dragging && within && !lists.is_empty();
+                    let shown = crate::ui::menu::held(&resp, 220.0, open, |m| {
+                        m.header(format!("Playlists on {}", v.name));
+                        m.scroll(320.0, |m| {
+                            for (p, folder) in stick_playlist_rows(lists) {
+                                let row = m.drop_row::<DraggedTracks>(p.name.clone(), folder);
+                                if let Some(payload) = row.dnd_release_payload::<DraggedTracks>() {
+                                    if !payload.0.is_empty() {
+                                        dropped_tracks = Some((
+                                            v.path.clone(),
+                                            payload.0.clone(),
+                                            Some(p.id),
+                                        ));
+                                    }
+                                }
+                            }
+                        });
+                    });
+                    ctx.data_mut(|d| d.insert_temp(panel_id, shown));
                 }
             }
             ui.spacing_mut().item_spacing.x = prev_spacing;
@@ -1329,9 +1369,42 @@ pub(crate) struct SourceTabsResponse {
     pub dropped: Option<Vec<Id>>,
     /// The eject mark on a volume's tab: unmount that volume.
     pub eject: Option<PathBuf>,
-    /// Library rows dropped onto a rekordbox stick's tab: add them to its
-    /// export (volume, track ids).
-    pub dropped_tracks: Option<(PathBuf, Vec<Id>)>,
+    /// Library rows dropped onto a rekordbox stick's tab, or onto one of the
+    /// stick's playlists in the panel under it: add them to its export
+    /// (volume, track ids, the playlist).
+    pub dropped_tracks: Option<(PathBuf, Vec<Id>, Option<u32>)>,
+}
+
+/// A stick's playlists in player order — folders walked depth-first,
+/// siblings by sort position — leaves only, each with its folder's name for
+/// the panel's quiet detail column. The depth cap keeps a malformed tree
+/// (a folder listing itself) from recursing forever.
+fn stick_playlist_rows(
+    lists: &[ordnung_rbdb::pdb::RbPlaylist],
+) -> Vec<(&ordnung_rbdb::pdb::RbPlaylist, Option<String>)> {
+    fn walk<'a>(
+        lists: &'a [ordnung_rbdb::pdb::RbPlaylist],
+        parent: u32,
+        folder: Option<&str>,
+        depth: u32,
+        out: &mut Vec<(&'a ordnung_rbdb::pdb::RbPlaylist, Option<String>)>,
+    ) {
+        if depth > 16 {
+            return;
+        }
+        let mut kids: Vec<_> = lists.iter().filter(|p| p.parent_id == parent).collect();
+        kids.sort_by_key(|p| p.sort_order);
+        for p in kids {
+            if p.is_folder {
+                walk(lists, p.id, Some(&p.name), depth + 1, out);
+            } else {
+                out.push((p, folder.map(str::to_string)));
+            }
+        }
+    }
+    let mut out = Vec::new();
+    walk(lists, 0, None, 0, &mut out);
+    out
 }
 
 /// The crates under the Vinyl tile, or the tags under the playlists

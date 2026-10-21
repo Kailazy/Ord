@@ -289,6 +289,7 @@ impl App {
         dest: PathBuf,
         playlist_ids: Vec<Id>,
         track_ids: Vec<Id>,
+        usb_playlist: Option<(u32, String)>,
         scope: String,
         replace: bool,
         player: ordnung_rbdb::export::PlayerTarget,
@@ -303,6 +304,7 @@ impl App {
                 dest,
                 playlist_ids,
                 track_ids,
+                usb_playlist,
                 replace,
                 player,
                 comment,
@@ -1254,6 +1256,7 @@ pub(crate) fn run_export(
     dest: PathBuf,
     playlist_ids: Vec<Id>,
     track_ids: Vec<Id>,
+    usb_playlist: Option<(u32, String)>,
     replace: bool,
     player: ordnung_rbdb::export::PlayerTarget,
     comment: crate::config::ExportComment,
@@ -1389,8 +1392,33 @@ pub(crate) fn run_export(
             } else {
                 String::new()
             };
+            // Rows dropped into one of the stick's playlists: they are on the
+            // stick now, so append them by path the way a device-row drop
+            // does (edit::PlaylistOp::AddTracks), leaving the rest of that
+            // playlist as it was.
+            let mut into = String::new();
+            // Nothing placed (every track skipped) means nothing to add, and
+            // the skip list above already says why.
+            if let Some((pid, name)) = usb_playlist.as_ref().filter(|_| !report.placed.is_empty()) {
+                use ordnung_rbdb::edit::{edit_stick_playlists, PlaylistOp};
+                let rel_paths: Vec<String> = report
+                    .placed
+                    .iter()
+                    .map(|(_, p)| p.trim_start_matches('/').to_string())
+                    .collect();
+                match edit_stick_playlists(&dest, &PlaylistOp::AddTracks { id: *pid, rel_paths }) {
+                    Ok(_) => into = format!(" Added to \u{201C}{name}\u{201D}."),
+                    Err(e) => {
+                        let _ = tx.send(JobMsg::Failed(format!(
+                            "Exported, but adding to \u{201C}{name}\u{201D} failed: {e}"
+                        )));
+                        ctx.request_repaint();
+                        return;
+                    }
+                }
+            }
             let _ = tx.send(JobMsg::Done(format!(
-                "Exported {} track(s), {} playlist node(s) to {} ({:.1} MB copied).{converted} \
+                "Exported {} track(s), {} playlist node(s) to {} ({:.1} MB copied).{converted}{into} \
 Eject before unplugging.",
                 report.tracks_exported,
                 report.playlists_exported,

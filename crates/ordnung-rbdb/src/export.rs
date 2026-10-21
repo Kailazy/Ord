@@ -199,6 +199,9 @@ pub struct ExportReport {
     /// Tracks left off the stick, with the reason (missing source, format).
     pub skipped: Vec<(Id, String)>,
     pub bytes_copied: u64,
+    /// Where each selected track sits on the stick, as the database stores
+    /// it (`/Contents/…`): what a follow-up playlist edit keys on.
+    pub placed: Vec<(Id, String)>,
 }
 
 /// One track fully resolved for the stick.
@@ -839,6 +842,7 @@ fn export_impl(
             filename: name.clone(),
             file_path: usb_path,
         };
+        report.placed.push((t.id, row.file_path.clone()));
         let dest = contents.join(&name);
         // A byte copy is current when the sizes agree; a conversion's size
         // isn't known ahead, so any non-empty output on the stick stands.
