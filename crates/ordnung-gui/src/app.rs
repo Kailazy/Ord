@@ -1684,15 +1684,32 @@ impl App {
     }
 
     /// Raise the export confirmation for a playlist (and, for a folder, its
-    /// descendants) or, with `playlist` unset, for just `tracks`: rows
-    /// dropped on a stick's tab (`usb_playlist` when they landed in one of
-    /// its playlists) or sent from a row's menu. Either way the modal
-    /// defaults to adding to the stick, rekordbox-style.
+    /// descendants): the one export that can replace a stick, so it asks.
     #[cfg(feature = "usb-export")]
-    pub(crate) fn confirm_export(
+    pub(crate) fn confirm_playlist_export(&mut self, id: Id, dest: PathBuf) {
+        let (playlist_ids, scope, n_tracks, n_playlists) = self.playlist_export_scope(id);
+        self.export_confirm = Some(ExportConfirm {
+            dest,
+            playlist_ids,
+            scope,
+            n_tracks,
+            n_playlists,
+            // Sending one playlist adds it to the stick, rekordbox-style.
+            replace: false,
+        });
+    }
+
+    /// Rows dropped on a stick's tab, into one of its playlists
+    /// (`usb_playlist`), or sent from a row's menu: added to the stick right
+    /// away, no dialog, the way dropping a track on a device in rekordbox
+    /// just adds it. The status line says what is going where; the export
+    /// options (older-player conversion, the player comment) are the ones
+    /// in Settings.
+    #[cfg(feature = "usb-export")]
+    pub(crate) fn add_to_stick(
         &mut self,
-        playlist: Option<Id>,
-        tracks: Vec<Id>,
+        ctx: &egui::Context,
+        ids: Vec<Id>,
         dest: PathBuf,
         usb_playlist: Option<u32>,
     ) {
@@ -1705,42 +1722,36 @@ impl App {
                 .unwrap_or_else(|| "playlist".into());
             (pid, name)
         });
-        let (playlist_ids, scope, n_tracks, n_playlists) = match playlist {
-            Some(id) => self.playlist_export_scope(id),
-            None => {
-                let scope = match tracks.as_slice() {
-                    [id] => self
-                        .rows
-                        .iter()
-                        .find(|r| r.id == *id)
-                        .map(|r| format!("\u{201C}{} – {}\u{201D}", r.artist, r.title))
-                        .unwrap_or_else(|| "1 track".into()),
-                    _ => format!("{} tracks", tracks.len()),
-                };
-                (Vec::new(), scope, tracks.len(), 0)
-            }
+        let scope = match ids.as_slice() {
+            [id] => self
+                .rows
+                .iter()
+                .find(|r| r.id == *id)
+                .map(|r| format!("\u{201C}{} – {}\u{201D}", r.artist, r.title))
+                .unwrap_or_else(|| "1 track".into()),
+            _ => format!("{} tracks", ids.len()),
         };
-        self.export_confirm = Some(ExportConfirm {
-            dest,
-            playlist_ids,
-            track_ids: tracks,
-            usb_playlist,
-            scope,
-            n_tracks,
-            n_playlists,
-            replace: false,
-            player: if self.config.export_convert_for_older_players {
-                ordnung_rbdb::export::PlayerTarget::Classic
-            } else {
-                ordnung_rbdb::export::PlayerTarget::Modern
-            },
-        });
+        let player = self.export_player();
+        self.spawn_export(ctx.clone(), dest, Vec::new(), ids, usb_playlist, scope, false, player);
+    }
+
+    /// The player generation exports convert for, from Settings.
+    #[cfg(feature = "usb-export")]
+    pub(crate) fn export_player(&self) -> ordnung_rbdb::export::PlayerTarget {
+        if self.config.export_convert_for_older_players {
+            ordnung_rbdb::export::PlayerTarget::Classic
+        } else {
+            ordnung_rbdb::export::PlayerTarget::Modern
+        }
     }
 
     /// The export doesn't exist in this build (see the `usb-export` feature):
     /// nothing offers it, so nothing reaches here.
     #[cfg(not(feature = "usb-export"))]
-    pub(crate) fn confirm_export(&mut self, _: Option<Id>, _: Vec<Id>, _: PathBuf, _: Option<u32>) {}
+    pub(crate) fn confirm_playlist_export(&mut self, _: Id, _: PathBuf) {}
+
+    #[cfg(not(feature = "usb-export"))]
+    pub(crate) fn add_to_stick(&mut self, _: &egui::Context, _: Vec<Id>, _: PathBuf, _: Option<u32>) {}
 
     /// Save a local playlist's tracks as a text file (save-dialog gated).
     pub(crate) fn save_playlist_text(&mut self, id: Id) {
@@ -3812,10 +3823,10 @@ impl App {
                 self.usb_add_to_library(ctx.clone(), ids);
             }
             Some(SidebarAction::ExportPlaylist(id, dest)) => {
-                self.confirm_export(Some(id), Vec::new(), dest, None);
+                self.confirm_playlist_export(id, dest);
             }
             Some(SidebarAction::ExportTracks(ids, dest, pl)) => {
-                self.confirm_export(None, ids, dest, pl);
+                self.add_to_stick(ctx, ids, dest, pl);
             }
             Some(SidebarAction::EjectUsb(vol)) => {
                 self.eject_usb(ctx, &vol);

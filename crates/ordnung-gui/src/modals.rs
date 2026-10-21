@@ -1807,6 +1807,21 @@ impl App {
                                         if convert_dirty {
                                             self.save_config();
                                         }
+                                        #[cfg(feature = "usb-export")]
+                                        {
+                                            ui.add_space(12.0);
+                                            ui.label(egui::RichText::new("USB export").strong());
+                                            ui.label(
+                                                egui::RichText::new(
+                                                    "Used when you drop tracks on a stick or export a \
+                                                     playlist to it.",
+                                                )
+                                                .small()
+                                                .weak(),
+                                            );
+                                            ui.add_space(4.0);
+                                            self.export_options(ui);
+                                        }
                                     }
                                     SettingsTab::Discogs => {
                                         if self.draw_discogs_tab(ui) {
@@ -1972,61 +1987,30 @@ impl App {
             .join("rekordbox")
             .join("export.pdb")
             .is_file();
-        // Rows dragged onto the stick (or sent from a row's menu) only ever
-        // add: the modal says what lands where and offers no replace, the
-        // way dropping a track on a device in rekordbox just adds it.
-        let is_drop = !confirm.track_ids.is_empty();
-        let title = if is_drop {
-            format!("Add to {name}?")
-        } else {
-            format!("Export to {name}?")
-        };
         let mut open = true;
-        crate::ui::window::Window::new(title)
+        crate::ui::window::Window::new(format!("Export to {name}?"))
             .open(&mut open)
             .show(ctx, |ui| {
                 ui.set_max_width(440.0);
-                if is_drop {
-                    let into = match &confirm.usb_playlist {
-                        Some((_, pl)) => format!("playlist \u{201C}{pl}\u{201D} on {name}"),
-                        None => name.clone(),
-                    };
-                    ui.label(format!(
-                        "Adds {} to {into}, with beatgrids, keys and waveforms.",
-                        confirm.scope
-                    ));
-                    ui.add_space(6.0);
-                    ui.label(
-                        egui::RichText::new(
-                            "The audio is copied onto the stick; nothing already there \
-changes. Library files on this Mac are only read.",
-                        )
-                        .weak(),
-                    );
-                } else {
-                    ui.label(format!(
-                        "Writes {} as a native rekordbox/CDJ export: {} track(s), {} playlist \
+                ui.label(format!(
+                    "Writes {} as a native rekordbox/CDJ export: {} track(s), {} playlist \
 node(s), with beatgrids, keys and waveforms.",
-                        confirm.scope, confirm.n_tracks, confirm.n_playlists
-                    ));
-                    ui.add_space(6.0);
-                    ui.label(
-                        egui::RichText::new(
-                            "Audio is copied into /Contents (files already there are kept). \
+                    confirm.scope, confirm.n_tracks, confirm.n_playlists
+                ));
+                ui.add_space(6.0);
+                ui.label(
+                    egui::RichText::new(
+                        "Audio is copied into /Contents (files already there are kept). \
 Library files on this Mac are only read.",
-                        )
-                        .weak(),
-                    );
-                }
+                    )
+                    .weak(),
+                );
                 ui.add_space(6.0);
                 // The mode is editable only when it's a live choice: an existing
-                // export on the stick that a playlist export could replace. On
-                // an empty stick merge and replace do the same thing, and a
-                // drop only adds, so neither offers the toggle.
+                // export on the stick. On an empty stick merge and replace do
+                // the same thing, so there's nothing to toggle.
                 let mut replace = confirm.replace;
-                if is_drop {
-                    replace = false;
-                } else if has_export {
+                if has_export {
                     ui.horizontal(|ui| {
                         ui.selectable_value(&mut replace, false, "Add to stick");
                         ui.selectable_value(&mut replace, true, "Replace stick");
@@ -2064,65 +2048,14 @@ selection.",
                         .weak(),
                     );
                 }
-                // The one export-time audio policy, framed the way rekordbox
-                // frames it: a conversion checkbox, not a player model. Older
-                // players can't read FLAC or >48 kHz, so for them those files
-                // go over as AIFF.
-                use ordnung_rbdb::export::PlayerTarget;
                 ui.add_space(8.0);
-                let mut convert = confirm.player == PlayerTarget::Classic;
-                ui.checkbox(
-                    &mut convert,
-                    "Convert FLAC and above 48 kHz to AIFF for older players",
-                )
-                .on_hover_note(
-                    "CDJ-2000, 2000NXS and 900 can't play FLAC or above 48 kHz. \
-Converted copies go on the stick; your library files stay as they are. Needs ffmpeg.",
-                );
-                let player = if convert {
-                    PlayerTarget::Classic
-                } else {
-                    PlayerTarget::Modern
-                };
-                if player != confirm.player {
-                    if let Some(c) = self.export_confirm.as_mut() {
-                        c.player = player;
-                    }
-                    self.config.export_convert_for_older_players = convert;
-                    self.save_config();
-                }
-                // What the player shows under the song info: the comment
-                // field, filled from the track's Notes, its tags, or both.
-                use crate::config::ExportComment;
-                ui.add_space(6.0);
-                let current = self.config.export_comment;
-                let mut picked = current;
-                ui.horizontal(|ui| {
-                    ui.label("Comment shown on the player:");
-                    egui::ComboBox::from_id_salt("export_comment")
-                        .selected_text(current.label())
-                        .show_ui(ui, |ui| {
-                            for c in ExportComment::ALL {
-                                ui.selectable_value(&mut picked, c, c.label());
-                            }
-                        });
-                })
-                .response
-                .on_hover_note(
-                    "CDJs show a comment line under the song info. Track notes is the \
-file's comment tag, which rekordbox exports too; Ord tags are the song's tags, as in \
-the table's Tags column.",
-                );
-                if picked != current {
-                    self.config.export_comment = picked;
-                    self.save_config();
-                }
+                let player = self.export_options(ui);
                 ui.add_space(12.0);
                 let busy = self.is_busy();
                 if busy {
                     ui.label(egui::RichText::new("another job is running").weak());
                 }
-                let label = if is_drop || (has_export && !replace) {
+                let label = if has_export && !replace {
                     "⇪ Add to stick"
                 } else {
                     "⇪ Export"
@@ -2138,8 +2071,8 @@ the table's Tags column.",
                             ctx.clone(),
                             confirm.dest.clone(),
                             confirm.playlist_ids.clone(),
-                            confirm.track_ids.clone(),
-                            confirm.usb_playlist.clone(),
+                            Vec::new(),
+                            None,
                             confirm.scope.clone(),
                             replace,
                             player,
@@ -2151,6 +2084,54 @@ the table's Tags column.",
         if !open {
             self.export_confirm = None;
         }
+    }
+
+    /// The two export-time choices, in Settings and in the playlist export
+    /// confirm alike, both editing the config: the older-player conversion
+    /// (framed the way rekordbox frames it, a checkbox, not a player model:
+    /// older players can't read FLAC or above 48 kHz, so for them those
+    /// files go over as AIFF) and what the player shows as the comment.
+    /// Returns the player generation the conversion choice stands for.
+    #[cfg(feature = "usb-export")]
+    pub(crate) fn export_options(&mut self, ui: &mut egui::Ui) -> ordnung_rbdb::export::PlayerTarget {
+        use crate::config::ExportComment;
+        let mut convert = self.config.export_convert_for_older_players;
+        ui.checkbox(
+            &mut convert,
+            "Convert FLAC and above 48 kHz to AIFF for older players",
+        )
+        .on_hover_note(
+            "CDJ-2000, 2000NXS and 900 can't play FLAC or above 48 kHz. \
+Converted copies go on the stick; your library files stay as they are. Needs ffmpeg.",
+        );
+        if convert != self.config.export_convert_for_older_players {
+            self.config.export_convert_for_older_players = convert;
+            self.save_config();
+        }
+        ui.add_space(6.0);
+        let current = self.config.export_comment;
+        let mut picked = current;
+        ui.horizontal(|ui| {
+            ui.label("Comment shown on the player:");
+            egui::ComboBox::from_id_salt("export_comment")
+                .selected_text(current.label())
+                .show_ui(ui, |ui| {
+                    for c in ExportComment::ALL {
+                        ui.selectable_value(&mut picked, c, c.label());
+                    }
+                });
+        })
+        .response
+        .on_hover_note(
+            "CDJs show a comment line under the song info. Track notes is the \
+file's comment tag, which rekordbox exports too; Ord tags are the song's tags, as in \
+the table's Tags column.",
+        );
+        if picked != current {
+            self.config.export_comment = picked;
+            self.save_config();
+        }
+        self.export_player()
     }
 
     /// "Set up this volume as a rekordbox device?" confirmation. This is the

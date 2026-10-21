@@ -299,7 +299,11 @@ impl App {
             .as_ref()
             .map(|(_, n)| format!(" into \u{201C}{n}\u{201D}"))
             .unwrap_or_default();
-        let status = format!("{verb} {scope}{into} to {}…", dest.display());
+        let name = dest
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_else(|| dest.display().to_string());
+        let status = format!("{verb} {scope}{into} to {name}…");
         let comment = self.config.export_comment;
         let to = dest.clone();
         if self.spawn_job(ctx, status, true, move |db, cancel, tx, ctx| {
@@ -1400,7 +1404,6 @@ pub(crate) fn run_export(
             // stick now, so append them by path the way a device-row drop
             // does (edit::PlaylistOp::AddTracks), leaving the rest of that
             // playlist as it was.
-            let mut into = String::new();
             // Nothing placed (every track skipped) means nothing to add, and
             // the skip list above already says why.
             if let Some((pid, name)) = usb_playlist.as_ref().filter(|_| !report.placed.is_empty()) {
@@ -1411,7 +1414,7 @@ pub(crate) fn run_export(
                     .map(|(_, p)| p.trim_start_matches('/').to_string())
                     .collect();
                 match edit_stick_playlists(&dest, &PlaylistOp::AddTracks { id: *pid, rel_paths }) {
-                    Ok(_) => into = format!(" Added to \u{201C}{name}\u{201D}."),
+                    Ok(_) => {}
                     Err(e) => {
                         let _ = tx.send(JobMsg::Failed(format!(
                             "Exported, but adding to \u{201C}{name}\u{201D} failed: {e}"
@@ -1421,16 +1424,36 @@ pub(crate) fn run_export(
                     }
                 }
             }
-            let _ = tx.send(JobMsg::Done(format!(
-                "Exported {} track(s), {} playlist node(s) to {} ({:.1} MB copied).{converted}{into} \
-Eject before unplugging.",
-                report.tracks_exported,
-                report.playlists_exported,
-                dest.file_name()
-                    .map(|n| n.to_string_lossy().into_owned())
-                    .unwrap_or_else(|| dest.display().to_string()),
-                report.bytes_copied as f64 / 1_048_576.0,
-            )));
+            let name = dest
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_else(|| dest.display().to_string());
+            // A drop reads as the gesture it was ("Added X to Y"); a playlist
+            // export reports the stick it built.
+            let msg = if track_ids.is_empty() {
+                format!(
+                    "Exported {} track(s), {} playlist node(s) to {name} ({:.1} MB copied).\
+{converted} Eject before unplugging.",
+                    report.tracks_exported,
+                    report.playlists_exported,
+                    report.bytes_copied as f64 / 1_048_576.0,
+                )
+            } else {
+                let what = match report.placed.as_slice() {
+                    [] => "nothing".to_string(),
+                    [(id, _)] => name_by_id
+                        .get(id)
+                        .map(|n| format!("\u{201C}{n}\u{201D}"))
+                        .unwrap_or_else(|| "1 track".into()),
+                    placed => format!("{} tracks", placed.len()),
+                };
+                let onto = match &usb_playlist {
+                    Some((_, pl)) => format!("\u{201C}{pl}\u{201D} on {name}"),
+                    None => name,
+                };
+                format!("Added {what} to {onto}.{converted} Eject before unplugging.")
+            };
+            let _ = tx.send(JobMsg::Done(msg));
         }
         Err(ExportError::Canceled) => {
             let _ = tx.send(JobMsg::Done(

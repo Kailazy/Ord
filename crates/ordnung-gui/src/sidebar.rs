@@ -407,11 +407,14 @@ pub(crate) fn draw_playlist_nodes(
 
 /// Shared "Export to <device>…" items: one per mounted volume, or a disabled
 /// hint when nothing is plugged in. Used by the playlist and folder menus in
-/// the sidebar and by a track row's context menu; returns the volume picked.
+/// the sidebar and, with `direct`, by a track row's context menu, where the
+/// rows are added to the stick outright and the item says so ("Add to");
+/// returns the volume picked.
 #[cfg(feature = "usb-export")]
 pub(crate) fn export_menu_items(
     ui: &mut egui::Ui,
     volumes: &[ordnung_core::usb::UsbVolume],
+    direct: bool,
 ) -> Option<PathBuf> {
     if volumes.is_empty() {
         ui.add_enabled(false, egui::Button::new("Export to device (none mounted)"));
@@ -425,8 +428,13 @@ pub(crate) fn export_menu_items(
     let mut picked = None;
     for v in volumes {
         if v.is_rekordbox_export {
+            let label = if direct {
+                format!("⇪ Add to {}", v.name)
+            } else {
+                format!("⇪ Export to {}…", v.name)
+            };
             if ui
-                .button(format!("⇪ Export to {}…", v.name))
+                .button(label)
                 .on_hover_note("Write this selection to the device as a native rekordbox export")
                 .clicked()
             {
@@ -453,6 +461,7 @@ pub(crate) fn export_menu_items(
 pub(crate) fn export_menu_items(
     _: &mut egui::Ui,
     _: &[ordnung_core::usb::UsbVolume],
+    _: bool,
 ) -> Option<PathBuf> {
     None
 }
@@ -825,7 +834,7 @@ pub(crate) fn draw_playlist_leaf(
         *view = LibraryView::Playlist(p.id);
     }
     crate::ui::menu::context(&resp, |ui| {
-        if let Some(dest) = export_menu_items(ui, volumes) {
+        if let Some(dest) = export_menu_items(ui, volumes, false) {
             *action = Some(SidebarAction::ExportPlaylist(p.id, dest));
         }
         if ui
@@ -1498,7 +1507,7 @@ pub(crate) fn folder_context_menu(
         ui.close_menu();
     }
     ui.separator();
-    if let Some(dest) = export_menu_items(ui, volumes) {
+    if let Some(dest) = export_menu_items(ui, volumes, false) {
         *action = Some(SidebarAction::ExportPlaylist(p.id, dest));
     }
     ui.separator();

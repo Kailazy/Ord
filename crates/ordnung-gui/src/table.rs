@@ -1917,7 +1917,7 @@ impl App {
                                         // playlist's sidebar menu offers, for
                                         // these rows alone.
                                         if let Some(dest) =
-                                            crate::sidebar::export_menu_items(ui, menu_volumes)
+                                            crate::sidebar::export_menu_items(ui, menu_volumes, true)
                                         {
                                             menu_action = Some(TrackMenuAction::ExportTo(
                                                 drag_ids.clone(),
@@ -2500,7 +2500,7 @@ impl App {
                 self.set_tag(tag, on, specs);
             }
             Some(TrackMenuAction::ExportTo(ids, dest)) => {
-                self.confirm_export(None, ids, dest, None);
+                self.add_to_stick(&ctx_clone, ids, dest, None);
             }
             Some(TrackMenuAction::RemoveFromPlaylist(pid, ids)) => {
                 match Catalog::open(&self.db_path).and_then(|c| c.remove_tracks(pid, &ids)) {
