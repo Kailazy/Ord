@@ -3121,101 +3121,11 @@ impl App {
     /// opens direct tag editing — Save writes to the file on the stick. When
     /// the volume is a rekordbox export, a banner warns that players read
     /// export.pdb/ANLZ, not file tags, so direct edits desync until re-export.
-    pub(crate) fn draw_usb(&mut self, ui: &mut egui::Ui, vol: &Path) {
-        let name = vol
-            .file_name()
-            .map(|n| n.to_string_lossy().into_owned())
-            .unwrap_or_else(|| vol.display().to_string());
-        // When a playlist from the export is selected, name it in the header.
-        let playlist_name = match &self.view {
-            LibraryView::Usb(_, Some(pid)) => self
-                .usb_playlists
-                .iter()
-                .find(|p| p.id == *pid)
-                .map(|p| p.name.clone()),
-            _ => None,
-        };
-
-        // Whether this volume already carries a rekordbox export. Read from the
-        // polled volume list (kept live every 2s) so a just-finished setup or
-        // export flips the header without a manual rescan; an unlisted path
-        // (ORDNUNG_FAKE_USB race) falls back to checking the disk directly.
-        let is_rb = self
-            .usb_volumes
-            .iter()
-            .find(|v| v.path == vol)
-            .map(|v| v.is_rekordbox_export)
-            .unwrap_or_else(|| ordnung_core::usb::is_rekordbox_export(vol));
-
-        let mut rescan = false;
-        ui.add_space(6.0);
-        ui.horizontal(|ui| {
-            match &playlist_name {
-                Some(pl) => ui.heading(format!("⏏  {name}  ▸  ♪ {pl}")),
-                None => ui.heading(format!("⏏  {name}")),
-            };
-            // Say plainly which kind of device this is — the whole export
-            // machinery hinges on the distinction, so it shouldn't be invisible.
-            ui.label(
-                egui::RichText::new(if is_rb {
-                    "rekordbox device"
-                } else {
-                    "plain storage"
-                })
-                .weak(),
-            )
-            .on_hover_note(match (is_rb, cfg!(feature = "usb-export")) {
-                (true, true) => "Carries a rekordbox export. CDJs read it, and library exports can target it",
-                (true, false) => "Carries a rekordbox export. CDJs read it",
-                (false, true) => "Just files. Exports never touch it unless you set it up for rekordbox",
-                (false, false) => "Just files. Nothing on it is changed",
-            });
-            if !self.usb_loading {
-                ui.label(egui::RichText::new(format!("{} track(s)", self.rows.len())).weak());
-                // The instant pdb-built view is already browsable while the
-                // full file scan still runs behind it; say so quietly rather
-                // than blocking the table behind a spinner.
-                if self.usb_rx.is_some() {
-                    ui.label(egui::RichText::new("reading files…").weak().italics());
-                }
-            }
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if ui
-                    .button("Show in Finder")
-                    .on_hover_note("Open the volume in Finder")
-                    .clicked()
-                {
-                    let _ = std::process::Command::new("open").arg(vol).spawn();
-                }
-                if ui
-                    .button("↻ Rescan")
-                    .on_hover_note("Re-read the device's files")
-                    .clicked()
-                {
-                    rescan = true;
-                }
-                // The commitment point for a plain volume: only this button
-                // (via its confirmation) ever writes rekordbox structure onto
-                // a device. Until it's used, a music bank on a hard drive
-                // stays exactly as it is and export menus won't target it.
-                #[cfg(feature = "usb-export")]
-                if !is_rb
-                    && ui
-                        .button("⇪ Set up for rekordbox…")
-                        .on_hover_note(
-                            "Write the rekordbox folder structure so this device \
-                             can receive exports and play on CDJs",
-                        )
-                        .clicked()
-                {
-                    self.usb_setup_confirm = Some(vol.to_path_buf());
-                }
-            });
-        });
-        if rescan {
-            self.usb_loaded_for = None; // poll_usb respawns the scan
-            return;
-        }
+    pub(crate) fn draw_usb(&mut self, ui: &mut egui::Ui) {
+        // The same filter bar the library draws above its table (it already
+        // narrows `usb_rows`). The sidebar tab names the device, and its
+        // right-click menu holds the device actions (`usb_volume_menu`).
+        self.draw_table_filter_bar(ui);
 
         if self.usb_loading {
             ui.add_space(24.0);

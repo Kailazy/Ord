@@ -2445,6 +2445,12 @@ enum SidebarAction {
     ExportTracks(Vec<Id>, PathBuf, Option<u32>),
     /// The eject mark on a volume's source tab (or the rail tile's menu).
     EjectUsb(PathBuf),
+    /// A volume's right-click menu: re-read the device's files.
+    RescanUsb(PathBuf),
+    /// A volume's right-click menu on plain storage: write the rekordbox
+    /// folder structure so it can receive exports (after confirmation).
+    #[cfg(feature = "usb-export")]
+    SetupUsb(PathBuf),
     /// Right-click on a local playlist: save its track list as a text file.
     SavePlaylistText(Id),
     /// Create a playlist on the mounted device, under the given rekordbox

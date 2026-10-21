@@ -1141,6 +1141,7 @@ pub(crate) fn source_tabs(
     volumes: &[ordnung_core::usb::UsbVolume],
     active_vol: Option<&Path>,
     stick_lists: Option<(&Path, &[ordnung_rbdb::pdb::RbPlaylist])>,
+    action: &mut Option<SidebarAction>,
 ) -> SourceTabsResponse {
     let n = (volumes.len() + 1) as f32;
     // Each tab's outer budget: an equal share of the strip, minus the seams.
@@ -1289,6 +1290,7 @@ pub(crate) fn source_tabs(
                         clicked = Some(Some(v.path.clone()));
                     }
                 }
+                usb_volume_menu(&resp, v, action);
                 // Library rows dragged over a rekordbox stick: the same
                 // landing-zone outline as a playlist row, and the drop adds
                 // them to the stick. Plain storage takes nothing (an export
@@ -1368,6 +1370,57 @@ pub(crate) fn source_tabs(
         eject,
         dropped_tracks,
     }
+}
+
+/// A mounted volume's right-click menu, on its source tab and on its rail
+/// tile: the device actions. The USB view itself is just the table under
+/// the library's filter bar, so this is where they live.
+pub(crate) fn usb_volume_menu(
+    resp: &egui::Response,
+    v: &ordnung_core::usb::UsbVolume,
+    action: &mut Option<SidebarAction>,
+) {
+    crate::ui::menu::context(resp, |ui| {
+        if ui
+            .button("Eject")
+            .on_hover_note("Unmount the volume so it's safe to unplug")
+            .clicked()
+        {
+            *action = Some(SidebarAction::EjectUsb(v.path.clone()));
+            ui.close_menu();
+        }
+        if ui
+            .button("Rescan")
+            .on_hover_note("Re-read the device's files")
+            .clicked()
+        {
+            *action = Some(SidebarAction::RescanUsb(v.path.clone()));
+            ui.close_menu();
+        }
+        if ui
+            .button("Show in Finder")
+            .on_hover_note("Open the volume in Finder")
+            .clicked()
+        {
+            let _ = std::process::Command::new("open").arg(&v.path).spawn();
+            ui.close_menu();
+        }
+        // The commitment point for a plain volume: only this (via its
+        // confirmation) ever writes rekordbox structure onto a device.
+        #[cfg(feature = "usb-export")]
+        if !v.is_rekordbox_export
+            && ui
+                .button("Set up for rekordbox…")
+                .on_hover_note(
+                    "Write the rekordbox folder structure so this device \
+                     can receive exports and play on CDJs",
+                )
+                .clicked()
+        {
+            *action = Some(SidebarAction::SetupUsb(v.path.clone()));
+            ui.close_menu();
+        }
+    });
 }
 
 /// What the source-tab strip reported this frame.

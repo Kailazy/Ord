@@ -3464,6 +3464,7 @@ impl App {
                                 &usb_volumes,
                                 active_vol.as_deref(),
                                 usb_loaded_for.as_deref().map(|p| (p, stick_lists.as_slice())),
+                                sidebar_action,
                             );
                             if let Some(target) = tabs.clicked {
                                 *view = match target {
@@ -3701,12 +3702,7 @@ impl App {
                                 }
                                 // The rail has no tab to carry the eject
                                 // mark, so the tile's menu holds it.
-                                crate::ui::menu::context(&resp, |ui| {
-                                    if ui.button("Eject").clicked() {
-                                        sidebar_action = Some(SidebarAction::EjectUsb(v.path.clone()));
-                                        ui.close_menu();
-                                    }
-                                });
+                                crate::sidebar::usb_volume_menu(&resp, &v, &mut sidebar_action);
                                 ui.add_space(space::S2);
                             }
                             ui.add_space(space::S4);
@@ -3830,6 +3826,17 @@ impl App {
             }
             Some(SidebarAction::EjectUsb(vol)) => {
                 self.eject_usb(ctx, &vol);
+            }
+            Some(SidebarAction::RescanUsb(vol)) => {
+                // Only the loaded volume has a scan cache to drop; poll_usb
+                // respawns the scan. Any other volume scans fresh on its next visit.
+                if self.usb_loaded_for.as_deref() == Some(vol.as_path()) {
+                    self.usb_loaded_for = None;
+                }
+            }
+            #[cfg(feature = "usb-export")]
+            Some(SidebarAction::SetupUsb(vol)) => {
+                self.usb_setup_confirm = Some(vol);
             }
             Some(SidebarAction::SavePlaylistText(id)) => {
                 self.save_playlist_text(id);
@@ -4069,8 +4076,8 @@ impl App {
                     self.draw_vinyl(ui, ctx);
                 } else if let LibraryView::CrateSet(id) = self.view {
                     self.draw_crate_set(ui, ctx, id);
-                } else if let LibraryView::Usb(vol, _) = self.view.clone() {
-                    self.draw_usb(ui, &vol);
+                } else if matches!(self.view, LibraryView::Usb(..)) {
+                    self.draw_usb(ui);
                 } else if self.rows.is_empty()
                     && self.load_error.is_none()
                     && self.filter.trim().is_empty()
