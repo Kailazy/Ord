@@ -2840,14 +2840,16 @@ impl App {
                         }
                         ui.separator();
                         // Tracklist search: paste a mix's tracklist and match
-                        // every line to its record. A compact clipboard mark
-                        // hard against the counts' divider, not a tab: a tool
-                        // you reach for, not a place you live in. Only the
-                        // mark, so a narrow window keeps the search field off
-                        // it; the hover note carries the name.
+                        // every line to its record. A clipboard mark hard
+                        // against the counts' divider, not a tab: a tool you
+                        // reach for, not a place you live in. Only the mark,
+                        // so a narrow window keeps the search field off it;
+                        // the hover note carries the name. A full-height
+                        // button like Settings: the compact one was too small
+                        // to find.
                         {
                             let n = self.tracklists.len();
-                            let resp = crate::ui::button::compact_icon(
+                            let resp = crate::ui::button::icon_toggle(
                                 ui,
                                 named(icons::CLIPBOARD_TEXT),
                                 self.tracklist_open,
