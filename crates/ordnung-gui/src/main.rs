@@ -2438,8 +2438,12 @@ enum SidebarAction {
     ImportUsbTracks(Vec<Id>),
     /// Right-click on a local playlist/folder: export it (and, for a folder,
     /// its descendants) to the given mounted volume as a rekordbox stick.
-    #[cfg(feature = "usb-export")]
     ExportPlaylist(Id, PathBuf),
+    /// Library rows dropped onto a stick's source tab: add just those tracks
+    /// to its export (track ids, volume).
+    ExportTracks(Vec<Id>, PathBuf),
+    /// The eject mark on a volume's source tab (or the rail tile's menu).
+    EjectUsb(PathBuf),
     /// Right-click on a local playlist: save its track list as a text file.
     SavePlaylistText(Id),
     /// Create a playlist on the mounted device, under the given rekordbox
@@ -2478,6 +2482,10 @@ enum RenameTree {
 struct ExportConfirm {
     dest: PathBuf,
     playlist_ids: Vec<Id>,
+    /// Set instead of `playlist_ids` for a row-level export (rows dropped on
+    /// the stick's tab, or "Export to" from a row's menu): just these tracks,
+    /// no playlist.
+    track_ids: Vec<Id>,
     /// What the modal calls the selection ("your entire library",
     /// "playlist “warmup”", …).
     scope: String,
@@ -2509,6 +2517,9 @@ enum TrackMenuAction {
     Analyze(Vec<Id>),
     /// Link the target tracks into a playlist (playlist id, track ids).
     AddToPlaylist(Id, Vec<Id>),
+    /// Add the target tracks to a mounted rekordbox stick's export (track
+    /// ids, volume) — the row-level twin of a playlist's "Export to".
+    ExportTo(Vec<Id>, PathBuf),
     /// Mark the target tracks' songs with a tag (`true`), or take the tag
     /// off them (tag id, on, track ids). See `crates`.
     SetTag(Id, bool, Vec<Id>),

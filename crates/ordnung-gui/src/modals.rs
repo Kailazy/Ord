@@ -1977,10 +1977,18 @@ impl App {
             .open(&mut open)
             .show(ctx, |ui| {
                 ui.set_max_width(440.0);
+                let what = if confirm.n_playlists == 0 {
+                    format!("{} track(s)", confirm.n_tracks)
+                } else {
+                    format!(
+                        "{} track(s), {} playlist node(s)",
+                        confirm.n_tracks, confirm.n_playlists
+                    )
+                };
                 ui.label(format!(
-                    "Writes {} as a native rekordbox/CDJ export: {} track(s), {} playlist \
-node(s), with beatgrids, keys and waveforms.",
-                    confirm.scope, confirm.n_tracks, confirm.n_playlists
+                    "Writes {} as a native rekordbox/CDJ export: {what}, with beatgrids, \
+keys and waveforms.",
+                    confirm.scope
                 ));
                 ui.add_space(6.0);
                 ui.label(
@@ -2106,6 +2114,7 @@ Ord tags, as in the table's Tags column.",
                             ctx.clone(),
                             confirm.dest.clone(),
                             confirm.playlist_ids.clone(),
+                            confirm.track_ids.clone(),
                             confirm.scope.clone(),
                             replace,
                             player,

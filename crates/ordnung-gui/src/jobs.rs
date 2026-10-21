@@ -288,6 +288,7 @@ impl App {
         ctx: egui::Context,
         dest: PathBuf,
         playlist_ids: Vec<Id>,
+        track_ids: Vec<Id>,
         scope: String,
         replace: bool,
         player: ordnung_rbdb::export::PlayerTarget,
@@ -297,7 +298,18 @@ impl App {
         let comment = self.config.export_comment;
         let to = dest.clone();
         if self.spawn_job(ctx, status, true, move |db, cancel, tx, ctx| {
-            run_export(db, dest, playlist_ids, replace, player, comment, cancel, tx, ctx)
+            run_export(
+                db,
+                dest,
+                playlist_ids,
+                track_ids,
+                replace,
+                player,
+                comment,
+                cancel,
+                tx,
+                ctx,
+            )
         }) {
             // Remember where we're exporting so the completion handler can refresh
             // the device view (the stick's on-disk playlists just changed).
@@ -1241,6 +1253,7 @@ pub(crate) fn run_export(
     db: PathBuf,
     dest: PathBuf,
     playlist_ids: Vec<Id>,
+    track_ids: Vec<Id>,
     replace: bool,
     player: ordnung_rbdb::export::PlayerTarget,
     comment: crate::config::ExportComment,
@@ -1255,9 +1268,14 @@ pub(crate) fn run_export(
     let Some(catalog) = open_or_fail(&db, &tx, &ctx) else {
         return;
     };
-    // Whole library (empty ids) or the chosen playlist/folder subtree, with
-    // analyses attached — see Catalog::export_selection.
-    let (mut tracks, playlists) = match catalog.export_selection(&playlist_ids) {
+    // Whole library (empty ids), the chosen playlist/folder subtree, or just
+    // the given tracks, with analyses attached — see Catalog::export_selection.
+    let selection = if track_ids.is_empty() {
+        catalog.export_selection(&playlist_ids)
+    } else {
+        catalog.export_tracks(&track_ids).map(|t| (t, Vec::new()))
+    };
+    let (mut tracks, playlists) = match selection {
         Ok(v) => v,
         Err(e) => {
             let _ = tx.send(JobMsg::Failed(format!("Couldn't read the catalog: {e}")));

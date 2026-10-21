@@ -1683,6 +1683,48 @@ impl App {
         (vec![id], label, n_tracks, nodes.len())
     }
 
+    /// Raise the export confirmation for a playlist (and, for a folder, its
+    /// descendants) or, with `playlist` unset, for just `tracks`: rows
+    /// dropped on a stick's tab or sent from a row's menu. Either way the
+    /// modal defaults to adding to the stick, rekordbox-style.
+    #[cfg(feature = "usb-export")]
+    pub(crate) fn confirm_export(&mut self, playlist: Option<Id>, tracks: Vec<Id>, dest: PathBuf) {
+        let (playlist_ids, scope, n_tracks, n_playlists) = match playlist {
+            Some(id) => self.playlist_export_scope(id),
+            None => {
+                let scope = match tracks.as_slice() {
+                    [id] => self
+                        .rows
+                        .iter()
+                        .find(|r| r.id == *id)
+                        .map(|r| format!("\u{201C}{} – {}\u{201D}", r.artist, r.title))
+                        .unwrap_or_else(|| "1 track".into()),
+                    _ => format!("{} tracks", tracks.len()),
+                };
+                (Vec::new(), scope, tracks.len(), 0)
+            }
+        };
+        self.export_confirm = Some(ExportConfirm {
+            dest,
+            playlist_ids,
+            track_ids: tracks,
+            scope,
+            n_tracks,
+            n_playlists,
+            replace: false,
+            player: if self.config.export_convert_for_older_players {
+                ordnung_rbdb::export::PlayerTarget::Classic
+            } else {
+                ordnung_rbdb::export::PlayerTarget::Modern
+            },
+        });
+    }
+
+    /// The export doesn't exist in this build (see the `usb-export` feature):
+    /// nothing offers it, so nothing reaches here.
+    #[cfg(not(feature = "usb-export"))]
+    pub(crate) fn confirm_export(&mut self, _: Option<Id>, _: Vec<Id>, _: PathBuf) {}
+
     /// Save a local playlist's tracks as a text file (save-dialog gated).
     pub(crate) fn save_playlist_text(&mut self, id: Id) {
         let Some(pl) = self.playlists.iter().find(|p| p.id == id).cloned() else {
@@ -3402,6 +3444,12 @@ impl App {
                             if let Some(ids) = tabs.dropped {
                                 *sidebar_action = Some(SidebarAction::ImportUsbTracks(ids));
                             }
+                            if let Some(vol) = tabs.eject {
+                                *sidebar_action = Some(SidebarAction::EjectUsb(vol));
+                            }
+                            if let Some((vol, ids)) = tabs.dropped_tracks {
+                                *sidebar_action = Some(SidebarAction::ExportTracks(ids, vol));
+                            }
                             ui.add_space(8.0);
                         }
                         // Re-read the view so a tab click switches the group in
@@ -3603,7 +3651,7 @@ impl App {
                             for v in self.usb_volumes.clone() {
                                 let active =
                                     matches!(&self.view, LibraryView::Usb(p, _) if *p == v.path);
-                                if nav_button_dense(
+                                let resp = nav_button_dense(
                                     ui,
                                     density,
                                     named(icons::EJECT),
@@ -3612,16 +3660,23 @@ impl App {
                                     PLAYLIST_ROW_H,
                                     font::body(),
                                 )
-                                    .on_hover_note(if v.is_rekordbox_export {
-                                        "Removable volume with a rekordbox export. \
-                                         Browse and edit its files directly."
-                                    } else {
-                                        "Removable volume. Browse and edit its files directly."
-                                    })
-                                    .clicked()
-                                {
+                                .on_hover_note(if v.is_rekordbox_export {
+                                    "Removable volume with a rekordbox export. \
+                                     Browse and edit its files directly."
+                                } else {
+                                    "Removable volume. Browse and edit its files directly."
+                                });
+                                if resp.clicked() {
                                     self.view = LibraryView::Usb(v.path.clone(), None);
                                 }
+                                // The rail has no tab to carry the eject
+                                // mark, so the tile's menu holds it.
+                                crate::ui::menu::context(&resp, |ui| {
+                                    if ui.button("Eject").clicked() {
+                                        sidebar_action = Some(SidebarAction::EjectUsb(v.path.clone()));
+                                        ui.close_menu();
+                                    }
+                                });
                                 ui.add_space(space::S2);
                             }
                             ui.add_space(space::S4);
@@ -3737,23 +3792,14 @@ impl App {
             Some(SidebarAction::ImportUsbTracks(ids)) => {
                 self.usb_add_to_library(ctx.clone(), ids);
             }
-            #[cfg(feature = "usb-export")]
             Some(SidebarAction::ExportPlaylist(id, dest)) => {
-                let (playlist_ids, scope, n_tracks, n_playlists) = self.playlist_export_scope(id);
-                self.export_confirm = Some(ExportConfirm {
-                    dest,
-                    playlist_ids,
-                    scope,
-                    n_tracks,
-                    n_playlists,
-                    // Sending one playlist adds it to the stick, rekordbox-style.
-                    replace: false,
-                    player: if self.config.export_convert_for_older_players {
-                        ordnung_rbdb::export::PlayerTarget::Classic
-                    } else {
-                        ordnung_rbdb::export::PlayerTarget::Modern
-                    },
-                });
+                self.confirm_export(Some(id), Vec::new(), dest);
+            }
+            Some(SidebarAction::ExportTracks(ids, dest)) => {
+                self.confirm_export(None, ids, dest);
+            }
+            Some(SidebarAction::EjectUsb(vol)) => {
+                self.eject_usb(ctx, &vol);
             }
             Some(SidebarAction::SavePlaylistText(id)) => {
                 self.save_playlist_text(id);

@@ -406,23 +406,23 @@ pub(crate) fn draw_playlist_nodes(
 }
 
 /// Shared "Export to <device>…" items: one per mounted volume, or a disabled
-/// hint when nothing is plugged in. Used by both playlist and folder menus.
+/// hint when nothing is plugged in. Used by the playlist and folder menus in
+/// the sidebar and by a track row's context menu; returns the volume picked.
 #[cfg(feature = "usb-export")]
-fn export_menu_items(
+pub(crate) fn export_menu_items(
     ui: &mut egui::Ui,
-    id: Id,
     volumes: &[ordnung_core::usb::UsbVolume],
-    action: &mut Option<SidebarAction>,
-) {
+) -> Option<PathBuf> {
     if volumes.is_empty() {
         ui.add_enabled(false, egui::Button::new("Export to device (none mounted)"));
-        return;
+        return None;
     }
     // Only devices already set up for rekordbox are export targets. A plain
     // volume (someone's hard-drive music bank) is listed but disabled, so the
     // distinction is visible and an export can never quietly write rekordbox
     // structure onto it — that takes the device view's explicit
     // "Set up for rekordbox" commitment first.
+    let mut picked = None;
     for v in volumes {
         if v.is_rekordbox_export {
             if ui
@@ -430,7 +430,7 @@ fn export_menu_items(
                 .on_hover_note("Write this selection to the device as a native rekordbox export")
                 .clicked()
             {
-                *action = Some(SidebarAction::ExportPlaylist(id, v.path.clone()));
+                picked = Some(v.path.clone());
                 ui.close_menu();
             }
         } else {
@@ -443,18 +443,18 @@ fn export_menu_items(
             );
         }
     }
+    picked
 }
 
 /// Builds without the USB export (every distribution build while the export
 /// is in beta) don't even show the disabled hint: the export isn't
 /// "unavailable right now", it doesn't exist in this build.
 #[cfg(not(feature = "usb-export"))]
-fn export_menu_items(
+pub(crate) fn export_menu_items(
     _: &mut egui::Ui,
-    _: Id,
     _: &[ordnung_core::usb::UsbVolume],
-    _: &mut Option<SidebarAction>,
-) {
+) -> Option<PathBuf> {
+    None
 }
 
 /// If `p` is the entry currently being renamed, draw its inline text editor and
@@ -825,7 +825,9 @@ pub(crate) fn draw_playlist_leaf(
         *view = LibraryView::Playlist(p.id);
     }
     crate::ui::menu::context(&resp, |ui| {
-        export_menu_items(ui, p.id, volumes, action);
+        if let Some(dest) = export_menu_items(ui, volumes) {
+            *action = Some(SidebarAction::ExportPlaylist(p.id, dest));
+        }
         if ui
             .button("Save track list…")
             .on_hover_note("Write this playlist's tracks to a text file")
@@ -1121,7 +1123,10 @@ fn tight_caption(ui: &mut egui::Ui, caption: &str, action: impl FnOnce(&mut egui
 /// The Library tab doubles as a drop target for device rows: dragging tracks
 /// off a stick onto it copies them into the library (see
 /// [`crate::DraggedUsbTracks`]) — the same gesture as dragging files into a
-/// crate, pointed at the whole collection.
+/// crate, pointed at the whole collection. A rekordbox stick's tab is the
+/// mirror target: library rows dropped on it are added to the stick's export
+/// (the same path as a playlist's "Export to <device>…", without the
+/// playlist). Each volume tab also carries the eject mark at its right edge.
 pub(crate) fn source_tabs(
     ui: &mut egui::Ui,
     volumes: &[ordnung_core::usb::UsbVolume],
@@ -1131,15 +1136,28 @@ pub(crate) fn source_tabs(
     // Each tab's outer budget: an equal share of the strip, minus the seams.
     let budget = ((ui.available_width() - space::S1 * (n - 1.0)) / n).max(44.0);
 
-    let tab = |ui: &mut egui::Ui, label: &str, active: bool, tip: &str| -> egui::Response {
+    // One tab: the label, and for a volume the eject mark in a square the
+    // tab's own height at its right edge, so mark and label share one box.
+    // Returns the response and whether the pointer is on the mark.
+    let tab = |ui: &mut egui::Ui,
+               label: &str,
+               active: bool,
+               tip: &str,
+               ejectable: bool|
+     -> (egui::Response, bool) {
         let text_font = if active {
             font::strong(font::callout().size)
         } else {
             font::callout()
         };
+        let eject_w = if ejectable {
+            ui.fonts(|f| f.row_height(&text_font)) + space::S2 * 2.0
+        } else {
+            0.0
+        };
         // Truncate the label to this tab's share of the strip, the same way
         // playlist tiles do — a long volume name must not push "Library" out.
-        let inner = budget - space::S3 * 2.0;
+        let inner = budget - space::S3 * 2.0 - eject_w;
         let text_w =
             |s: &str| ui.fonts(|f| s.chars().map(|c| f.glyph_width(&text_font, c)).sum::<f32>());
         let shown = if text_w(label) <= inner {
@@ -1154,7 +1172,7 @@ pub(crate) fn source_tabs(
         // Colour is overridden at paint time (hover lifts an inactive label).
         let galley = ui.painter().layout_no_wrap(shown, text_font, color::LABEL);
         let size = egui::vec2(
-            galley.size().x + space::S3 * 2.0,
+            galley.size().x + space::S3 * 2.0 + eject_w,
             galley.size().y + space::S2 * 2.0,
         );
         let (rect, resp) = ui.allocate_exact_size(size, egui::Sense::click());
@@ -1185,28 +1203,48 @@ pub(crate) fn source_tabs(
                 egui::Stroke::new(2.0, color::ACCENT),
             );
         }
-        let text_pos = rect.center() - galley.size() * 0.5;
+        let eject_rect = rect.with_min_x(rect.right() - eject_w);
+        let over_eject = ejectable && resp.hover_pos().is_some_and(|p| eject_rect.contains(p));
+        let label_rect = rect.with_max_x(eject_rect.left());
+        let text_pos = label_rect.center() - galley.size() * 0.5;
         let ink = if active || resp.hovered() {
             color::LABEL
         } else {
             color::LABEL_2
         };
         ui.painter().galley(text_pos, galley, ink);
-        resp.on_hover_note(tip)
+        if ejectable {
+            ui.painter().text(
+                eject_rect.center(),
+                egui::Align2::CENTER_CENTER,
+                named(icons::EJECT),
+                font::icon(font::callout().size + 2.0),
+                if over_eject { color::LABEL } else { color::LABEL_2 },
+            );
+        }
+        let resp = resp.on_hover_note(if over_eject {
+            "Eject. Unmounts the volume so it's safe to unplug"
+        } else {
+            tip
+        });
+        (resp, over_eject)
     };
 
     let mut clicked = None;
     let mut dropped = None;
+    let mut eject = None;
+    let mut dropped_tracks = None;
     let strip = ui
         .horizontal(|ui| {
             let prev_spacing = ui.spacing().item_spacing.x;
             ui.spacing_mut().item_spacing.x = space::S1;
-            let lib = tab(
+            let (lib, _) = tab(
                 ui,
                 "Library",
                 active_vol.is_none(),
                 "Your catalog and playlists. Drop device tracks here to copy \
                  them in",
+                false,
             );
             if lib.clicked() {
                 clicked = Some(None);
@@ -1224,13 +1262,41 @@ pub(crate) fn source_tabs(
                 dropped = Some(payload.0.clone());
             }
             for v in volumes {
-                let tip = if v.is_rekordbox_export {
+                let tip = if v.is_rekordbox_export && cfg!(feature = "usb-export") {
+                    "This USB's files and rekordbox playlists. Drop library tracks \
+                     here to add them to the stick"
+                } else if v.is_rekordbox_export {
                     "This USB's files and rekordbox playlists"
                 } else {
                     "This volume's files"
                 };
-                if tab(ui, &v.name, active_vol == Some(v.path.as_path()), tip).clicked() {
-                    clicked = Some(Some(v.path.clone()));
+                let (resp, over_eject) =
+                    tab(ui, &v.name, active_vol == Some(v.path.as_path()), tip, true);
+                if resp.clicked() {
+                    if over_eject {
+                        eject = Some(v.path.clone());
+                    } else {
+                        clicked = Some(Some(v.path.clone()));
+                    }
+                }
+                // Library rows dragged over a rekordbox stick: the same
+                // landing-zone outline as a playlist row, and the drop adds
+                // them to the stick. Plain storage takes nothing (an export
+                // never writes rekordbox structure uninvited), and a build
+                // without the export has no drop to offer.
+                if v.is_rekordbox_export && cfg!(feature = "usb-export") {
+                    if resp.dnd_hover_payload::<DraggedTracks>().is_some() {
+                        ui.painter().rect_stroke(
+                            resp.rect,
+                            egui::Rounding::same(radius::SM),
+                            egui::Stroke::new(1.5, color::ACCENT),
+                        );
+                    }
+                    if let Some(payload) = resp.dnd_release_payload::<DraggedTracks>() {
+                        if !payload.0.is_empty() {
+                            dropped_tracks = Some((v.path.clone(), payload.0.clone()));
+                        }
+                    }
                 }
             }
             ui.spacing_mut().item_spacing.x = prev_spacing;
@@ -1247,7 +1313,12 @@ pub(crate) fn source_tabs(
         ],
         egui::Stroke::new(1.0, crate::ui::tokens::color::SEPARATOR_OPAQUE),
     );
-    SourceTabsResponse { clicked, dropped }
+    SourceTabsResponse {
+        clicked,
+        dropped,
+        eject,
+        dropped_tracks,
+    }
 }
 
 /// What the source-tab strip reported this frame.
@@ -1256,6 +1327,11 @@ pub(crate) struct SourceTabsResponse {
     pub clicked: Option<Option<PathBuf>>,
     /// Device rows dropped onto the Library tab — a request to copy them in.
     pub dropped: Option<Vec<Id>>,
+    /// The eject mark on a volume's tab: unmount that volume.
+    pub eject: Option<PathBuf>,
+    /// Library rows dropped onto a rekordbox stick's tab: add them to its
+    /// export (volume, track ids).
+    pub dropped_tracks: Option<(PathBuf, Vec<Id>)>,
 }
 
 /// The crates under the Vinyl tile, or the tags under the playlists
@@ -1349,7 +1425,9 @@ pub(crate) fn folder_context_menu(
         ui.close_menu();
     }
     ui.separator();
-    export_menu_items(ui, p.id, volumes, action);
+    if let Some(dest) = export_menu_items(ui, volumes) {
+        *action = Some(SidebarAction::ExportPlaylist(p.id, dest));
+    }
     ui.separator();
     if ui.button("Rename").clicked() {
         *renaming = Some(Renaming {

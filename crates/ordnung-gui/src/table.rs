@@ -939,6 +939,7 @@ impl App {
             .map(|p| (p.id, p.name.clone()))
             .collect();
         let menu_playlist_view = self.view.playlist_id();
+        let menu_volumes = &self.usb_volumes;
         // USB rows aren't catalog tracks (synthetic ids, files on the device):
         // catalog actions — convert, analyze, playlists, Discogs, delete — are
         // hidden for them, drag-to-playlist is disabled (⌥ file drag-out still
@@ -1912,6 +1913,17 @@ impl App {
                                         if let Some((tag, on)) = crate::crates::tag_menu(ui, menu_sets, &tagged) {
                                             menu_action = Some(TrackMenuAction::SetTag(tag, on, drag_ids.clone()));
                                         }
+                                        // Export to <stick>: the same items a
+                                        // playlist's sidebar menu offers, for
+                                        // these rows alone.
+                                        if let Some(dest) =
+                                            crate::sidebar::export_menu_items(ui, menu_volumes)
+                                        {
+                                            menu_action = Some(TrackMenuAction::ExportTo(
+                                                drag_ids.clone(),
+                                                dest,
+                                            ));
+                                        }
                                         if let Some(pid) = menu_playlist_view {
                                             ui.separator();
                                             if ui.button("Remove from playlist").clicked() {
@@ -2486,6 +2498,9 @@ impl App {
             Some(TrackMenuAction::SetTag(tag, on, ids)) => {
                 let specs = self.track_specs(&ids);
                 self.set_tag(tag, on, specs);
+            }
+            Some(TrackMenuAction::ExportTo(ids, dest)) => {
+                self.confirm_export(None, ids, dest);
             }
             Some(TrackMenuAction::RemoveFromPlaylist(pid, ids)) => {
                 match Catalog::open(&self.db_path).and_then(|c| c.remove_tracks(pid, &ids)) {

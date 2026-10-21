@@ -3019,6 +3019,19 @@ impl Catalog {
         Ok((tracks, playlists))
     }
 
+    /// The track-level twin of [`export_selection`]: just `ids`, in that
+    /// order, with analyses and cues attached and no playlists. Behind
+    /// library rows dropped onto a stick.
+    pub fn export_tracks(&self, ids: &[Id]) -> Result<Vec<Track>> {
+        let mut tracks = ids
+            .iter()
+            .map(|&id| self.get_track(id))
+            .collect::<Result<Vec<_>>>()?;
+        self.attach_analyses(&mut tracks)?;
+        self.attach_cues(&mut tracks)?;
+        Ok(tracks)
+    }
+
     /// Look up a track id by its exact source path. `None` when not cataloged.
     pub fn track_id_by_path(&self, path: &str) -> Result<Option<Id>> {
         Ok(self

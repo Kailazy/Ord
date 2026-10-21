@@ -3077,6 +3077,45 @@ impl App {
         }
     }
 
+    /// Unmount a volume: the eject mark on its tab in the sidebar's source
+    /// strip (and the rail tile's context menu). Handed to diskutil on a
+    /// worker, since it can take seconds, and its actual outcome reported:
+    /// an eject refused because a file is open would otherwise look like a
+    /// dead button. On success the sidebar poll notices the volume disappear
+    /// and the view drops back to the Library.
+    pub(crate) fn eject_usb(&mut self, ctx: &egui::Context, vol: &Path) {
+        let name = vol
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_else(|| vol.display().to_string());
+        let vol = vol.to_path_buf();
+        let n = name.clone();
+        self.usb_eject_rx = Some(util::spawn_oneshot(ctx, move || {
+            match std::process::Command::new("diskutil")
+                .arg("eject")
+                .arg(&vol)
+                .output()
+            {
+                Ok(o) if o.status.success() => format!("Ejected {n}. Safe to unplug."),
+                Ok(o) => {
+                    // diskutil writes some refusals to stdout, not stderr.
+                    let err = String::from_utf8_lossy(&o.stderr).trim().to_string();
+                    let err = if err.is_empty() {
+                        String::from_utf8_lossy(&o.stdout).trim().to_string()
+                    } else {
+                        err
+                    };
+                    // Translate diskutil's jargon ("dissented by PID 501")
+                    // into something actionable, asking lsof which apps
+                    // actually hold files open on the drive.
+                    eject_failure_message(&n, &err, &volume_users(&vol))
+                }
+                Err(e) => format!("Couldn't eject {n}: {e}"),
+            }
+        }));
+        self.status = format!("Ejecting {name}…");
+    }
+
     /// The USB device view: every audio file on the mounted volume, scanned
     /// straight off the device (nothing here touches the catalog). A row click
     /// opens direct tag editing — Save writes to the file on the stick. When
@@ -3109,7 +3148,6 @@ impl App {
             .unwrap_or_else(|| ordnung_core::usb::is_rekordbox_export(vol));
 
         let mut rescan = false;
-        let mut eject = false;
         ui.add_space(6.0);
         ui.horizontal(|ui| {
             match &playlist_name {
@@ -3143,13 +3181,6 @@ impl App {
             }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if ui
-                    .button("⏏ Eject")
-                    .on_hover_note("Unmount the volume so it's safe to unplug")
-                    .clicked()
-                {
-                    eject = true;
-                }
-                if ui
                     .button("Show in Finder")
                     .on_hover_note("Open the volume in Finder")
                     .clicked()
@@ -3181,39 +3212,6 @@ impl App {
                 }
             });
         });
-        if eject {
-            // Hand the unmount to diskutil on a worker (it can take seconds)
-            // and report its actual outcome — an eject refused because a file
-            // is open would otherwise look like a dead button. On success the
-            // sidebar poll notices the volume disappear and the view drops
-            // back to the Library.
-            let vol = vol.to_path_buf();
-            let n = name.clone();
-            self.usb_eject_rx = Some(util::spawn_oneshot(ui.ctx(), move || {
-                match std::process::Command::new("diskutil")
-                    .arg("eject")
-                    .arg(&vol)
-                    .output()
-                {
-                    Ok(o) if o.status.success() => format!("Ejected {n}. Safe to unplug."),
-                    Ok(o) => {
-                        // diskutil writes some refusals to stdout, not stderr.
-                        let err = String::from_utf8_lossy(&o.stderr).trim().to_string();
-                        let err = if err.is_empty() {
-                            String::from_utf8_lossy(&o.stdout).trim().to_string()
-                        } else {
-                            err
-                        };
-                        // Translate diskutil's jargon ("dissented by PID 501")
-                        // into something actionable, asking lsof which apps
-                        // actually hold files open on the drive.
-                        eject_failure_message(&n, &err, &volume_users(&vol))
-                    }
-                    Err(e) => format!("Couldn't eject {n}: {e}"),
-                }
-            }));
-            self.status = format!("Ejecting {name}…");
-        }
         if rescan {
             self.usb_loaded_for = None; // poll_usb respawns the scan
             return;
