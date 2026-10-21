@@ -1705,7 +1705,7 @@ impl App {
                 .unwrap_or_else(|| "playlist".into());
             (pid, name)
         });
-        let (playlist_ids, mut scope, n_tracks, n_playlists) = match playlist {
+        let (playlist_ids, scope, n_tracks, n_playlists) = match playlist {
             Some(id) => self.playlist_export_scope(id),
             None => {
                 let scope = match tracks.as_slice() {
@@ -1720,9 +1720,6 @@ impl App {
                 (Vec::new(), scope, tracks.len(), 0)
             }
         };
-        if let Some((_, name)) = &usb_playlist {
-            scope = format!("{scope} into \u{201C}{name}\u{201D}");
-        }
         self.export_confirm = Some(ExportConfirm {
             dest,
             playlist_ids,

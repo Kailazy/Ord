@@ -578,11 +578,12 @@ impl ExportComment {
         ExportComment::None,
     ];
 
-    /// The dropdown's wording.
+    /// The dropdown's wording. Notes is the default because it is what
+    /// rekordbox itself puts there: the track's comment tag.
     pub fn label(self) -> &'static str {
         match self {
-            ExportComment::Notes => "Notes",
-            ExportComment::Tags => "Tags",
+            ExportComment::Notes => "Track notes (what rekordbox shows)",
+            ExportComment::Tags => "Ord tags",
             ExportComment::NotesAndTags => "Notes and tags",
             ExportComment::None => "Nothing",
         }

@@ -1972,38 +1972,61 @@ impl App {
             .join("rekordbox")
             .join("export.pdb")
             .is_file();
+        // Rows dragged onto the stick (or sent from a row's menu) only ever
+        // add: the modal says what lands where and offers no replace, the
+        // way dropping a track on a device in rekordbox just adds it.
+        let is_drop = !confirm.track_ids.is_empty();
+        let title = if is_drop {
+            format!("Add to {name}?")
+        } else {
+            format!("Export to {name}?")
+        };
         let mut open = true;
-        crate::ui::window::Window::new(format!("Export to {name}?"))
+        crate::ui::window::Window::new(title)
             .open(&mut open)
             .show(ctx, |ui| {
                 ui.set_max_width(440.0);
-                let what = if confirm.n_playlists == 0 {
-                    format!("{} track(s)", confirm.n_tracks)
+                if is_drop {
+                    let into = match &confirm.usb_playlist {
+                        Some((_, pl)) => format!("playlist \u{201C}{pl}\u{201D} on {name}"),
+                        None => name.clone(),
+                    };
+                    ui.label(format!(
+                        "Adds {} to {into}, with beatgrids, keys and waveforms.",
+                        confirm.scope
+                    ));
+                    ui.add_space(6.0);
+                    ui.label(
+                        egui::RichText::new(
+                            "The audio is copied onto the stick; nothing already there \
+changes. Library files on this Mac are only read.",
+                        )
+                        .weak(),
+                    );
                 } else {
-                    format!(
-                        "{} track(s), {} playlist node(s)",
-                        confirm.n_tracks, confirm.n_playlists
-                    )
-                };
-                ui.label(format!(
-                    "Writes {} as a native rekordbox/CDJ export: {what}, with beatgrids, \
-keys and waveforms.",
-                    confirm.scope
-                ));
-                ui.add_space(6.0);
-                ui.label(
-                    egui::RichText::new(
-                        "Audio is copied into /Contents (files already there are kept). \
+                    ui.label(format!(
+                        "Writes {} as a native rekordbox/CDJ export: {} track(s), {} playlist \
+node(s), with beatgrids, keys and waveforms.",
+                        confirm.scope, confirm.n_tracks, confirm.n_playlists
+                    ));
+                    ui.add_space(6.0);
+                    ui.label(
+                        egui::RichText::new(
+                            "Audio is copied into /Contents (files already there are kept). \
 Library files on this Mac are only read.",
-                    )
-                    .weak(),
-                );
+                        )
+                        .weak(),
+                    );
+                }
                 ui.add_space(6.0);
                 // The mode is editable only when it's a live choice: an existing
-                // export on the stick. On an empty stick merge and replace do
-                // the same thing, so there's nothing to toggle.
+                // export on the stick that a playlist export could replace. On
+                // an empty stick merge and replace do the same thing, and a
+                // drop only adds, so neither offers the toggle.
                 let mut replace = confirm.replace;
-                if has_export {
+                if is_drop {
+                    replace = false;
+                } else if has_export {
                     ui.horizontal(|ui| {
                         ui.selectable_value(&mut replace, false, "Add to stick");
                         ui.selectable_value(&mut replace, true, "Replace stick");
@@ -2075,7 +2098,7 @@ Converted copies go on the stick; your library files stay as they are. Needs ffm
                 let current = self.config.export_comment;
                 let mut picked = current;
                 ui.horizontal(|ui| {
-                    ui.label("Comment on the player:");
+                    ui.label("Comment shown on the player:");
                     egui::ComboBox::from_id_salt("export_comment")
                         .selected_text(current.label())
                         .show_ui(ui, |ui| {
@@ -2086,8 +2109,9 @@ Converted copies go on the stick; your library files stay as they are. Needs ffm
                 })
                 .response
                 .on_hover_note(
-                    "CDJs show the comment under the song info. Tags are the song's \
-Ord tags, as in the table's Tags column.",
+                    "CDJs show a comment line under the song info. Track notes is the \
+file's comment tag, which rekordbox exports too; Ord tags are the song's tags, as in \
+the table's Tags column.",
                 );
                 if picked != current {
                     self.config.export_comment = picked;
@@ -2098,7 +2122,7 @@ Ord tags, as in the table's Tags column.",
                 if busy {
                     ui.label(egui::RichText::new("another job is running").weak());
                 }
-                let label = if has_export && !replace {
+                let label = if is_drop || (has_export && !replace) {
                     "⇪ Add to stick"
                 } else {
                     "⇪ Export"

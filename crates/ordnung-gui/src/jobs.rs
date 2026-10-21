@@ -295,7 +295,11 @@ impl App {
         player: ordnung_rbdb::export::PlayerTarget,
     ) {
         let verb = if replace { "Exporting" } else { "Adding" };
-        let status = format!("{verb} {scope} to {}…", dest.display());
+        let into = usb_playlist
+            .as_ref()
+            .map(|(_, n)| format!(" into \u{201C}{n}\u{201D}"))
+            .unwrap_or_default();
+        let status = format!("{verb} {scope}{into} to {}…", dest.display());
         let comment = self.config.export_comment;
         let to = dest.clone();
         if self.spawn_job(ctx, status, true, move |db, cancel, tx, ctx| {
