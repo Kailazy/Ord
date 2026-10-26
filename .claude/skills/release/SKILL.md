@@ -1,6 +1,6 @@
 ---
 name: release
-description: Semantic versioning contract and the exact release procedure for Ordnung — bump the workspace version, tag, and let CI publish the macOS DMG. Use when cutting a release, bumping the version, or deciding whether a change is a patch/minor/major bump. Also read at the end of a session that changed code, since a session's code changes ship as one release.
+description: Semantic versioning contract, the end-of-session version bump + local make app, and the release procedure (tag, CI dev DMG, promote to prod) that runs only when Kai asks. Use when bumping the version, deciding whether a change is a patch/minor/major bump, or when Kai asks for a release. Also read at the end of a session that changed code.
 ---
 
 # Ordnung releases (semver + procedure)
@@ -53,10 +53,10 @@ current notes as the no-script fallback, so refresh `docs/index.html`'s
 When one release rolls up several commits, the highest-ranking change wins.
 If the user names a version explicitly, use exactly that.
 
-## Release procedure
+## Every session: bump and install locally
 
 Work must already be verified in the running app and committed (see
-CLAUDE.md). Then:
+CLAUDE.md). When the session's code changes are done:
 
 1. Edit `[workspace.package] version` in the root `Cargo.toml` to the new
    `X.Y.Z`.
@@ -68,30 +68,38 @@ CLAUDE.md). Then:
    compile the rebased head, then fast-forward push; if the rebase pulled
    in a peer's feature, re-judge the bump (the highest-ranking change in
    the roll-up wins).
-4. Tag and push the tag:
-   `git tag vX.Y.Z && git push origin vX.Y.Z`
-5. CI takes over: the `Release` workflow builds the universal DMG
-   (`Ord-X.Y.Z-macos-universal.dmg`) and publishes it as the `dev` release.
-   Confirm it started with `gh run list --workflow=release.yml --limit 1`
-   and report the outcome; if it fails, read the log with
-   `gh run view <id> --log-failed` and fix before re-tagging. The result
-   replaces the `dev` prerelease; it reaches users only when promoted (see
-   Channels).
-6. Install it locally: from the tagged commit run `make app`, which builds,
-   signs and installs the bundle to `/Applications` and relaunches it. The
-   installed app must never lag the latest tag; also run it after
-   fast-forwarding `main` to a newer tag at session start.
+4. From that commit run `make app`, which builds, signs and installs the
+   bundle to `/Applications` and relaunches it. The installed app must
+   never lag `main`; also run it after fast-forwarding `main` at session
+   start.
+
+No tag and no CI run: a session publishes nothing on its own. Kai set
+this on 2026-10-26 after a session's `v0.192.0` tag push started the
+`Release` workflow and had to be cancelled (the tag stays; its version is
+simply never built).
+
+## Only when Kai asks: release
+
+1. Tag the bumped commit and push the tag:
+   `git tag vX.Y.Z && git push origin vX.Y.Z`. The `Release` workflow
+   builds the universal DMG (`Ord-X.Y.Z-macos-universal.dmg`) and
+   publishes it as the `dev` prerelease. Confirm it started with
+   `gh run list --workflow=release.yml --limit 1` and report the outcome;
+   if it fails, read the log with `gh run view <id> --log-failed` and fix
+   before re-tagging. A manual `workflow_dispatch` run publishes nothing,
+   so a version whose tag was pushed without a build needs a new patch
+   version and tag.
+2. Once the dev build is up, `make promote V=X.Y.Z` makes it `latest`,
+   then write the release notes (see Channels).
 
 Never re-use or move a tag that has already been pushed; a botched release
 gets a new patch version.
 
 ## When to release
 
-Once per working session, not once per commit (Kai, 2026-10-13: a CI
-release build for every merged commit is not wanted). Commits land on `main`
-as they are verified; when the session's code changes are done, or when Kai
-asks, roll them into one bump + tag as above, the highest-ranking change
-deciding the bump. A session that changed only docs, skills, tests or suite
-baselines needs no release. A session that changed code should not end with
-those changes untagged, so the installed app and the dev DMG keep matching
-`main`.
+Only when Kai asks. Sessions never tag or publish on their own; a session
+that changed code ends with the bump and `make app` above, so the
+installed app keeps matching `main` (Kai, 2026-10-13: no CI build per
+merged commit; 2026-10-26: none per session either, local builds only
+until a prod release is requested). A session that changed only docs,
+skills, tests or suite baselines needs no bump.
