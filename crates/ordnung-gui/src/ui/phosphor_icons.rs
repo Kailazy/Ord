@@ -58,11 +58,12 @@ pub mod app {
     pub const CLIPBOARD_TEXT: &str = "clipboard-text";
     pub const LOCK_KEY: &str = "lock-key";
     pub const WAVE_SINE: &str = "wave-sine";
+    pub const INFO: &str = "info";
 
     #[cfg(test)]
     pub const ALL: &[&str] = &[
         MUSIC_NOTE, VINYL, HEART, SPARKLE, WARNING, EJECT, LIGHTNING, PLUS, PACKAGE, TAG, FOLDER,
-        FILE_AUDIO, CARET_UP, CARET_DOWN, CLIPBOARD_TEXT, LOCK_KEY, WAVE_SINE,
+        FILE_AUDIO, CARET_UP, CARET_DOWN, CLIPBOARD_TEXT, LOCK_KEY, WAVE_SINE, INFO,
     ];
 }
 

@@ -658,15 +658,6 @@ impl App {
                                 match self.settings_tab {
                                     SettingsTab::General => {
                                         ui.label(egui::RichText::new("Navigation").strong());
-                                        ui.label(
-                    egui::RichText::new(
-                        "Which library leads the sidebar, and which section the app \
-                         opens on. A vinyl-first collector can put the shelf on top \
-                         and keep the digital library below it.",
-                    )
-                    .small()
-                    .weak(),
-                );
                                         ui.add_space(4.0);
                                         let mut nav_dirty = false;
                                         let nav_primary = self.config.nav_primary;
@@ -728,14 +719,6 @@ impl App {
                                         ui.label(
                                             egui::RichText::new("Library folder").strong(),
                                         );
-                                        ui.label(
-                    egui::RichText::new(
-                        "Where your music lives. Scanning it imports anything new into \
-                         the catalog; your files are never moved, renamed or modified.",
-                    )
-                    .small()
-                    .weak(),
-                );
                                         ui.add_space(4.0);
                                         match &self.config.library_root {
                                             Some(root) => {
@@ -790,17 +773,6 @@ impl App {
                                         ui.separator();
                                         ui.add_space(10.0);
                                         ui.label(egui::RichText::new("Playback").strong());
-                                        ui.label(
-                    egui::RichText::new(
-                        "Start tracks part-way in, past the intro and the build. \
-                         Records and their YouTube videos have their own switch \
-                         from your library files: a record you are sizing up wants \
-                         the drop, a track you own you may want to hear whole. \
-                         ← → or A D nudge the playhead either way.",
-                    )
-                    .small()
-                    .weak(),
-                );
                                         ui.add_space(4.0);
                                         if ui
                                             .checkbox(
@@ -831,18 +803,15 @@ impl App {
                                         ui.add_space(14.0);
                                         ui.separator();
                                         ui.add_space(10.0);
-                                        ui.label(egui::RichText::new("Tags").strong());
-                                        ui.label(
-                    egui::RichText::new(
-                        "On, Ord keeps the source files in sync as you edit and as \
-                         Discogs fills in fields and cover art. Files change on disk, so \
-                         those tracks get re-analyzed on the next Analyze. Turn it off to \
-                         keep edits in the catalog until you press the toolbar's Write \
-                         button.",
-                    )
-                    .small()
-                    .weak(),
-                );
+                                        ui.horizontal(|ui| {
+                                            ui.label(egui::RichText::new("Tags").strong());
+                                            crate::ui::info_note(
+                                                ui,
+                                                "On, edits and Discogs fills are written into the source files, \
+                                                 and a changed file is re-analyzed on the next Analyze. Off, \
+                                                 edits stay in the catalog until you press Write in the toolbar.",
+                                            );
+                                        });
                                         ui.add_space(4.0);
                                         if ui
                                             .checkbox(
@@ -866,7 +835,7 @@ impl App {
                                         );
                                         ui.label(
                     egui::RichText::new(
-                        "The tour shown on first launch: what Ord does, what Discogs                          adds, and how tag writeback works.",
+                        "The tour shown on first launch: what Ord does, what Discogs adds, and how tag writeback works.",
                     )
                     .small()
                     .weak(),

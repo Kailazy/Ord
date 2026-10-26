@@ -76,6 +76,22 @@ pub fn icon_text(glyph: &str, text: &str, font: egui::FontId) -> egui::WidgetTex
     job.into()
 }
 
+/// A small info mark beside a header, with `text` as its hover note: the
+/// short explanation for a setting whose label alone cannot carry it. A
+/// setting whose label explains itself gets no note at all.
+pub fn info_note(ui: &mut egui::Ui, text: impl Into<String>) {
+    use hover::HoverNoteExt;
+    ui.add(
+        egui::Label::new(
+            egui::RichText::new(phosphor_icons::named(phosphor_icons::app::INFO))
+                .font(tokens::font::icon(tokens::font::body().size + 2.0))
+                .color(icon::REST),
+        )
+        .selectable(false),
+    )
+    .on_hover_note(text);
+}
+
 /// The chip that floats at the pointer while something is dragged inside
 /// the app ("3 track(s)", "1 song"), so it's clear something is being
 /// carried toward a drop target. Painted in the tooltip layer, above all.
