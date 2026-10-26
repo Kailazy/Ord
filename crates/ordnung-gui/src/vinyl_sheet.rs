@@ -1479,11 +1479,12 @@ impl App {
             .and_then(|s| s.detail.as_ref())
             .map(|d| d.artists.clone())
             .unwrap_or_default();
-        let price_line = match &self.vinyl_sheet.as_ref().map(|s| &s.price) {
-            Some(PriceState::Ready(Some(p))) => Some(format!("From {}", fmt_market_price(p))),
-            Some(PriceState::Ready(None)) => Some("No copies for sale".to_string()),
-            Some(PriceState::Loading) => Some("Checking price…".to_string()),
-            _ => None,
+        // Always a line, since it doubles as the link to the release page.
+        let price_line = match &self.vinyl_sheet.as_ref().unwrap().price {
+            PriceState::Ready(Some(p)) => format!("From {}", fmt_market_price(p)),
+            PriceState::Ready(None) | PriceState::Elsewhere { .. } => "No copies for sale".to_string(),
+            PriceState::Loading => "Checking price…".to_string(),
+            PriceState::Idle | PriceState::Failed => "Price unknown".to_string(),
         };
         // The concrete copy this sheet was opened on (a seller card): what
         // that shop wants for it, at what grading. Snapshot like `alt` so the
@@ -1790,99 +1791,101 @@ impl App {
                         // price under the name of the shop it comes from:
                         // the Discogs market on the left, the same record
                         // new from the artist or label on Bandcamp on the
-                        // right, a rule between them. Next to the Discogs
+                        // right, a rule between them. Each price is the link
+                        // to its page. Next to the Discogs
                         // price, the shops the user already digs through
                         // that have this pressing in stock, folded into one
                         // dropdown so five copies don't take five lines; it
                         // reads from the sellers' cached crates, so it's
                         // exactly as fresh as the last sweep.
-                        let discogs_side = price_line.is_some() || !stocked.is_empty();
-                        if discogs_side || bandcamp.is_some() {
-                            ui.horizontal_wrapped(|ui| {
-                                ui.spacing_mut().item_spacing.x = 6.0;
-                                let price_ink = egui::Color32::from_rgb(120, 200, 140);
-                                if discogs_side {
-                                    ui.label(egui::RichText::new("Discogs").weak());
-                                }
-                                if let Some(line) = &price_line {
-                                    ui.label(egui::RichText::new(line).color(price_ink));
-                                }
-                                if !stocked.is_empty() {
-                                    let shops = stocked
-                                        .iter()
-                                        .map(|r| r.seller.as_str())
-                                        .collect::<std::collections::BTreeSet<_>>()
-                                        .len();
-                                    let label = if offer.is_some() {
-                                        format!("More from your sellers ({shops})")
-                                    } else {
-                                        format!("From your sellers ({shops})")
-                                    };
-                                    let btn = crate::ui::button::menu_button(ui, label)
-                                        .on_hover_note(
-                                            "Copies in the shops you follow, cheapest first",
-                                        );
-                                    crate::ui::menu::dropdown(&btn, 420.0, |m| {
-                                        for r in &stocked {
-                                            if m.item_detail(&r.label, &r.detail) {
-                                                let url = r.uri.clone().unwrap_or_else(|| {
-                                                    format!(
-                                                        "https://www.discogs.com/release/{release_id}"
-                                                    )
-                                                });
-                                                open_url(&url);
+                        ui.horizontal_wrapped(|ui| {
+                            ui.spacing_mut().item_spacing.x = 6.0;
+                            let price_ink = egui::Color32::from_rgb(120, 200, 140);
+                            ui.label(egui::RichText::new("Discogs").weak());
+                            if crate::ui::button::name_link(
+                                ui,
+                                &price_line,
+                                crate::ui::tokens::font::body(),
+                                price_ink,
+                            )
+                            .on_hover_note("Open on discogs.com")
+                            .clicked()
+                            {
+                                open_url(&format!("https://www.discogs.com/release/{release_id}"));
+                            }
+                            if !stocked.is_empty() {
+                                let shops = stocked
+                                    .iter()
+                                    .map(|r| r.seller.as_str())
+                                    .collect::<std::collections::BTreeSet<_>>()
+                                    .len();
+                                let label = if offer.is_some() {
+                                    format!("More from your sellers ({shops})")
+                                } else {
+                                    format!("From your sellers ({shops})")
+                                };
+                                let btn = crate::ui::button::menu_button(ui, label)
+                                    .on_hover_note(
+                                        "Copies in the shops you follow, cheapest first",
+                                    );
+                                crate::ui::menu::dropdown(&btn, 420.0, |m| {
+                                    for r in &stocked {
+                                        if m.item_detail(&r.label, &r.detail) {
+                                            let url = r.uri.clone().unwrap_or_else(|| {
+                                                format!(
+                                                    "https://www.discogs.com/release/{release_id}"
+                                                )
+                                            });
+                                            open_url(&url);
+                                            m.close();
+                                        }
+                                    }
+                                });
+                            }
+                            if let Some((line, rows, page)) = &bandcamp {
+                                ui.separator();
+                                // Name and price wrap as one, so a narrow
+                                // sheet never strands the name on the line
+                                // above.
+                                ui.horizontal(|ui| {
+                                ui.label(egui::RichText::new("Bandcamp").weak());
+                                // The line is the dropdown only when there
+                                // is something to choose: several formats
+                                // open the list, one format is the link
+                                // to it.
+                                if rows.len() > 1 {
+                                    let btn = crate::ui::button::menu_button(ui, line.as_str())
+                                        .on_hover_note("Formats on Bandcamp");
+                                    crate::ui::menu::dropdown(&btn, 360.0, |m| {
+                                        for (name, detail, url) in rows {
+                                            if m.item_detail(name, detail) {
+                                                open_url(url);
                                                 m.close();
                                             }
                                         }
-                                    });
-                                }
-                                if let Some((line, rows, page)) = &bandcamp {
-                                    if discogs_side {
-                                        ui.separator();
-                                    }
-                                    // Name and price wrap as one, so a narrow
-                                    // sheet never strands the name on the line
-                                    // above.
-                                    ui.horizontal(|ui| {
-                                    ui.label(egui::RichText::new("Bandcamp").weak());
-                                    // The line is the dropdown only when there
-                                    // is something to choose: several formats
-                                    // open the list, one format is the link
-                                    // to it.
-                                    if rows.len() > 1 {
-                                        let btn = crate::ui::button::menu_button(ui, line.as_str())
-                                            .on_hover_note("Formats on Bandcamp");
-                                        crate::ui::menu::dropdown(&btn, 360.0, |m| {
-                                            for (name, detail, url) in rows {
-                                                if m.item_detail(name, detail) {
-                                                    open_url(url);
-                                                    m.close();
-                                                }
-                                            }
-                                            m.separator();
-                                            if m.item("Open album page") {
-                                                open_url(page);
-                                                m.close();
-                                            }
-                                        });
-                                    } else {
-                                        let url = rows.first().map_or(page.as_str(), |r| r.2.as_str());
-                                        if crate::ui::button::name_link(
-                                            ui,
-                                            line,
-                                            crate::ui::tokens::font::body(),
-                                            price_ink,
-                                        )
-                                        .on_hover_note("Open on Bandcamp")
-                                        .clicked()
-                                        {
-                                            open_url(url);
+                                        m.separator();
+                                        if m.item("Open album page") {
+                                            open_url(page);
+                                            m.close();
                                         }
-                                    }
                                     });
+                                } else {
+                                    let url = rows.first().map_or(page.as_str(), |r| r.2.as_str());
+                                    if crate::ui::button::name_link(
+                                        ui,
+                                        line,
+                                        crate::ui::tokens::font::body(),
+                                        price_ink,
+                                    )
+                                    .on_hover_note("Open on Bandcamp")
+                                    .clicked()
+                                    {
+                                        open_url(url);
+                                    }
                                 }
-                            });
-                        }
+                                });
+                            }
+                        });
                         // The copy the user was actually looking at, when the
                         // sheet was opened from a seller card: that shop's
                         // price and grading, with the buy link one click away.
@@ -1981,12 +1984,6 @@ impl App {
                             }
                             if resp.clicked() {
                                 act = Some(Act::TogglePlay);
-                            }
-                            if crate::ui::button::button(ui, "↗  Discogs")
-                                .on_hover_note("Open this release on discogs.com")
-                                .clicked()
-                            {
-                                open_url(&format!("https://www.discogs.com/release/{release_id}"));
                             }
                             // Collection and wantlist, each showing this
                             // record's actual state — so one button always says
