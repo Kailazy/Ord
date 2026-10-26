@@ -97,5 +97,8 @@ waveform_smooth_release_ms = 60.0
 waveform_bass_floor_threshold = 0.20000000298023224
 waveform_bass_floor_amount = 0.25
 waveform_presets = []
+zebra_rows = true
+zebra_shade = 8
+accent = ""
 
 [column_widths]

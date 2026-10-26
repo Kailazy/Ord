@@ -87,7 +87,7 @@ fn draw_basket_header(ui: &mut egui::Ui, b: &SellerBasket) {
     ui.horizontal(|ui| {
         ui.vertical(|ui| {
             ui.spacing_mut().item_spacing.y = 1.0;
-            ui.label(egui::RichText::new(&b.seller).strong().color(color::ACCENT_HOVER));
+            ui.label(egui::RichText::new(&b.seller).strong().color(color::accent_hover()));
             ui.label(egui::RichText::new(meta).small().weak());
         });
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {

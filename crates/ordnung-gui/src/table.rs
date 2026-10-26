@@ -1140,7 +1140,7 @@ impl App {
                     // width in every view (see below) so the data columns keep the
                     // same positional indices AND the same x-offset in every view.
                     .id_salt("songs_table")
-                    .striped(false)
+                    .striped(self.config.zebra_rows)
                     .resizable(true)
                     .cell_layout(egui::Layout::left_to_right(egui::Align::Center));
                 // Leading fixed-width gutter for the row-order index. Always the first

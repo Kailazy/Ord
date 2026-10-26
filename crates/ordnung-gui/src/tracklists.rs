@@ -683,7 +683,7 @@ impl App {
             builder.reset();
         }
         builder
-            .striped(true)
+            .striped(self.config.zebra_rows)
             // Click opens the record; a drag carries the song to a crate.
             .sense(egui::Sense::click_and_drag())
             .cell_layout(egui::Layout::left_to_right(egui::Align::Center))
@@ -803,7 +803,7 @@ impl App {
                                     if self.vinyl_owned.contains(&r) {
                                         badge(ui, "OWNED", color::GREEN, "In your collection");
                                     } else if self.vinyl_wanted.contains(&r) {
-                                        badge(ui, "WANT", color::ACCENT_HOVER, "On your wantlist");
+                                        badge(ui, "WANT", color::accent_hover(), "On your wantlist");
                                     }
                                 }
                                 if self.local_track(&e.song(), e.local_track_id).is_some() {
@@ -1069,7 +1069,7 @@ impl App {
                         let w = ui.available_width();
                         let (rect, resp) = ui.allocate_exact_size(egui::vec2(w, 52.0), egui::Sense::click());
                         if current {
-                            ui.painter().rect_filled(rect, egui::Rounding::same(6.0), color::ACCENT_SOFT.gamma_multiply(0.45));
+                            ui.painter().rect_filled(rect, egui::Rounding::same(6.0), color::accent_soft().gamma_multiply(0.45));
                         } else if resp.hovered() {
                             ui.painter().rect_filled(rect, egui::Rounding::same(6.0), color::SURFACE);
                         }

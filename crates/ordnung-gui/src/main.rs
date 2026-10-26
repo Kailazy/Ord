@@ -1184,6 +1184,7 @@ pub(crate) enum DiscogsAuth {
 pub(crate) enum SettingsTab {
     #[default]
     General,
+    Appearance,
     Analysis,
     Waveform,
     Sorting,
@@ -1194,8 +1195,9 @@ pub(crate) enum SettingsTab {
 
 impl SettingsTab {
     /// All tabs in rail order.
-    pub(crate) const ALL: [SettingsTab; 7] = [
+    pub(crate) const ALL: [SettingsTab; 8] = [
         SettingsTab::General,
+        SettingsTab::Appearance,
         SettingsTab::Analysis,
         SettingsTab::Waveform,
         SettingsTab::Sorting,
@@ -1208,6 +1210,7 @@ impl SettingsTab {
     pub(crate) fn label(self) -> &'static str {
         match self {
             SettingsTab::General => "General",
+            SettingsTab::Appearance => "Appearance",
             SettingsTab::Analysis => "Analysis",
             SettingsTab::Waveform => "Waveform",
             SettingsTab::Sorting => "Sorting",

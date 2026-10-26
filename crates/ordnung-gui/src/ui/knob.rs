@@ -104,9 +104,9 @@ pub fn volume(ui: &mut egui::Ui, value: f32) -> Option<f32> {
     let fill = if shown <= 0.0 {
         color::LABEL_4
     } else if active {
-        color::ACCENT_HOVER
+        color::accent_hover()
     } else {
-        color::ACCENT
+        color::accent()
     };
     if shown > 0.0 {
         arc(

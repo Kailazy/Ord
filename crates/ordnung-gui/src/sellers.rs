@@ -1050,7 +1050,7 @@ impl App {
                         egui::Align2::RIGHT_TOP,
                         seller,
                         crate::ui::tokens::font::callout(),
-                        color::ACCENT_HOVER,
+                        color::accent_hover(),
                     );
                     let terms_rect = ui.painter().text(
                         egui::pos2(right_x, rect.bottom() - 6.0),
@@ -1192,7 +1192,7 @@ impl App {
                     ui.painter().rect_stroke(
                         rect,
                         egui::Rounding::same(6.0),
-                        egui::Stroke::new(2.0, color::ACCENT),
+                        egui::Stroke::new(2.0, color::accent()),
                     );
                 }
                 // The find box's pick: a ring just outside the cover, so it
@@ -1201,7 +1201,7 @@ impl App {
                     ui.painter().rect_stroke(
                         rect.expand(3.0),
                         egui::Rounding::same(8.0),
-                        egui::Stroke::new(3.0, color::ACCENT_HOVER),
+                        egui::Stroke::new(3.0, color::accent_hover()),
                     );
                 }
                 // Membership chips: a record already on a shelf is the one
@@ -1441,12 +1441,12 @@ impl App {
             ui.painter().rect_filled(
                 rect.shrink(1.0),
                 egui::Rounding::same(6.0),
-                crate::ui::tokens::color::ACCENT_SOFT.gamma_multiply(0.45),
+                crate::ui::tokens::color::accent_soft().gamma_multiply(0.45),
             );
             ui.painter().rect_stroke(
                 rect.shrink(1.0),
                 egui::Rounding::same(6.0),
-                egui::Stroke::new(2.0, crate::ui::tokens::color::ACCENT_HOVER),
+                egui::Stroke::new(2.0, crate::ui::tokens::color::accent_hover()),
             );
         }
         ui.painter().line_segment(

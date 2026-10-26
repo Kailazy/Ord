@@ -137,6 +137,9 @@ waveform_smooth_attack_ms = 2.5
 waveform_smooth_release_ms = 45.0
 waveform_bass_floor_threshold = 0.375
 waveform_bass_floor_amount = 0.25
+zebra_rows = false
+zebra_shade = 20
+accent = "purple"
 
 [column_widths]
 artist = 180.5

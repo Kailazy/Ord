@@ -276,6 +276,16 @@ pub struct Config {
     /// plain `Vec` (not `[Option<_>; 5]`) because TOML can't represent `None`
     /// holes in an array.
     pub waveform_presets: Vec<WaveformPreset>,
+    /// Shade every other row of the song and record tables, so a wide row
+    /// can be followed across its columns. On by default.
+    pub zebra_rows: bool,
+    /// How much lighter a shaded row is, as added luminance: a few steps
+    /// is a whisper, thirty a clear band. Ignored while `zebra_rows` is off.
+    pub zebra_shade: u8,
+    /// The accent colour (selections, links, the primary button) as a
+    /// lowercase `color::TAG_PALETTE` name. Empty, the default, is the
+    /// stock blue; an unknown name falls back to it too.
+    pub accent: String,
 }
 
 /// One saved snapshot of every tunable on the Waveform settings tab. Saving to
@@ -690,11 +700,29 @@ impl Default for Config {
             waveform_bass_floor_threshold: default_waveform_bass_floor_threshold(),
             waveform_bass_floor_amount: default_waveform_bass_floor_amount(),
             waveform_presets: Vec::new(),
+            zebra_rows: true,
+            zebra_shade: crate::ui::tokens::color::ZEBRA_SHADE,
+            accent: String::new(),
         }
     }
 }
 
 impl Config {
+    /// The chosen accent, `None` for the stock blue.
+    pub fn accent_color(&self) -> Option<eframe::egui::Color32> {
+        crate::ui::tokens::color::TAG_PALETTE
+            .iter()
+            .find(|(name, _)| name.eq_ignore_ascii_case(&self.accent))
+            .map(|(_, c)| *c)
+    }
+
+    /// Push the appearance settings into the running style: at launch,
+    /// and again whenever one of them changes.
+    pub fn apply_appearance(&self, ctx: &eframe::egui::Context) {
+        crate::ui::tokens::color::set_accent(self.accent_color());
+        crate::ui::theme::restyle(ctx, self.zebra_shade);
+    }
+
     /// Whether releases on `medium` should be shown in the release picker.
     pub fn shows_release_medium(&self, medium: ReleaseMedium) -> bool {
         !self
@@ -1062,6 +1090,9 @@ mod tests {
                     bass_floor_amount: 0.875,
                 },
             ],
+            zebra_rows: false,
+            zebra_shade: 20,
+            accent: "purple".to_string(),
         };
         let parsed: Config = toml::from_str(FULL).unwrap();
         // Every field, through Debug: exact for every type the config holds,

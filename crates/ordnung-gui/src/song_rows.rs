@@ -154,7 +154,7 @@ impl App {
         };
         TableBuilder::new(ui)
             .id_salt(salt)
-            .striped(true)
+            .striped(self.config.zebra_rows)
             // Click opens the record; a drag carries the song to a crate.
             .sense(egui::Sense::click_and_drag())
             .cell_layout(egui::Layout::left_to_right(egui::Align::Center))

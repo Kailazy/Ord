@@ -791,7 +791,7 @@ pub(crate) fn dig_controls(
         let mut btn = egui::Button::new(label);
         if accent {
             btn = btn.fill(if can_walk {
-                crate::ui::tokens::color::ACCENT
+                crate::ui::tokens::color::accent()
             } else {
                 crate::ui::tokens::color::SURFACE_HI
             });

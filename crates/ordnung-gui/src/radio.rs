@@ -1452,7 +1452,7 @@ impl App {
             let x0 = rect.left() + space::S2;
             // Position, or the playing mark where there's none to show.
             if on {
-                p.circle_filled(egui::pos2(x0 + 4.0, cy), 2.5, color::ACCENT);
+                p.circle_filled(egui::pos2(x0 + 4.0, cy), 2.5, color::accent());
             }
             if !song.position.is_empty() {
                 p.text(
@@ -1460,7 +1460,7 @@ impl App {
                     egui::Align2::RIGHT_CENTER,
                     &song.position,
                     font::caption(),
-                    if on { color::ACCENT } else { color::LABEL_4 },
+                    if on { color::accent() } else { color::LABEL_4 },
                 );
             }
             let dur = p.layout_no_wrap(song.duration.clone(), font::caption(), color::LABEL_4);
@@ -1647,7 +1647,7 @@ impl App {
             let kx = x0 + shown * (x1 - x0);
             p.line_segment(
                 [egui::pos2(x0, y), egui::pos2(kx, y)],
-                egui::Stroke::new(track, if hot { color::ACCENT_HOVER } else { color::ACCENT }),
+                egui::Stroke::new(track, if hot { color::accent_hover() } else { color::accent() }),
             );
             if hot {
                 p.circle_filled(egui::pos2(kx, y), 5.0, egui::Color32::WHITE);
@@ -1794,7 +1794,7 @@ impl App {
             );
             let p = ui.painter();
             let (sw, sc) = if live {
-                (2.0, color::ACCENT)
+                (2.0, color::accent())
             } else if resp.hovered() {
                 (1.5, color::LABEL_2)
             } else {
@@ -1804,7 +1804,7 @@ impl App {
             let galley = p.layout_no_wrap(
                 num.to_string(),
                 font::strong(10.0),
-                if live { color::ACCENT_HOVER } else { color::LABEL_3 },
+                if live { color::accent_hover() } else { color::LABEL_3 },
             );
             p.galley(
                 egui::pos2(thumb.center().x - galley.size().x * 0.5, thumb.bottom() + 2.0),

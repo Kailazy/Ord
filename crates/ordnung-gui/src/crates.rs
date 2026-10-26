@@ -523,7 +523,7 @@ impl App {
                 ui.painter().rect_stroke(
                     rect.shrink(2.0),
                     egui::Rounding::same(6.0),
-                    egui::Stroke::new(1.5, color::ACCENT),
+                    egui::Stroke::new(1.5, color::accent()),
                 );
                 if ctx.input(|i| i.pointer.any_released()) {
                     egui::DragAndDrop::clear_payload(ctx);
@@ -583,7 +583,7 @@ impl App {
         const THUMB: f32 = 48.0;
         TableBuilder::new(ui)
             .id_salt(("crate_record_rows", crate_id))
-            .striped(true)
+            .striped(self.config.zebra_rows)
             .sense(egui::Sense::click())
             .cell_layout(egui::Layout::left_to_right(egui::Align::Center))
             .column(Column::exact(THUMB + 6.0))
@@ -629,7 +629,7 @@ impl App {
                                 if self.vinyl_owned.contains(&r) {
                                     badge(ui, "OWNED", color::GREEN, "In your collection");
                                 } else if self.vinyl_wanted.contains(&r) {
-                                    badge(ui, "WANT", color::ACCENT_HOVER, "On your wantlist");
+                                    badge(ui, "WANT", color::accent_hover(), "On your wantlist");
                                 }
                             }
                         });

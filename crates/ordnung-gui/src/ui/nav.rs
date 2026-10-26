@@ -278,7 +278,7 @@ impl<'a> Nav<'a> {
                 egui::pos2(snap_x + 1.5, screen.bottom()),
             ),
             egui::Rounding::ZERO,
-            ACCENT,
+            super::tokens::color::accent(),
         );
         // The pointer's own position, dimmer and hairline: it explains why
         // the snap marker sits where it does while the two are apart, and
@@ -296,8 +296,6 @@ impl<'a> Nav<'a> {
     }
 }
 
-/// The ghost's landing marker: the app's accent.
-const ACCENT: egui::Color32 = super::tokens::color::ACCENT;
 
 #[cfg(test)]
 mod tests {

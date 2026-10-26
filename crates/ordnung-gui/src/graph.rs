@@ -278,7 +278,7 @@ impl Knob {
     fn tint(self) -> egui::Color32 {
         match self {
             Knob::Thread(t) => thread_tint(t),
-            Knob::Radio => crate::ui::tokens::color::ACCENT,
+            Knob::Radio => crate::ui::tokens::color::accent(),
         }
     }
 }
@@ -2043,7 +2043,7 @@ impl App {
             }
             let ring = match rel.status {
                 Status::Owned => (1.0, color::SEPARATOR_OPAQUE),
-                Status::Wanted => (2.0, color::ACCENT),
+                Status::Wanted => (2.0, color::accent()),
                 Status::Dug => (2.0, color::ORANGE),
             };
             let (w, c) = ring;
@@ -2058,7 +2058,7 @@ impl App {
                 painter.rect_stroke(
                     sq.expand(3.0),
                     rounding + 2.0,
-                    egui::Stroke::new(1.0, color::ACCENT.gamma_multiply(0.6)),
+                    egui::Stroke::new(1.0, color::accent().gamma_multiply(0.6)),
                 );
             }
             // A title only when the cover is big enough on screen for the
@@ -2144,7 +2144,7 @@ impl App {
                 painter.rect_stroke(
                     ring,
                     (r * 0.18).clamp(2.0, 6.0) + 5.0,
-                    egui::Stroke::new(2.0, color::ACCENT.gamma_multiply(0.35 + 0.45 * breath)),
+                    egui::Stroke::new(2.0, color::accent().gamma_multiply(0.35 + 0.45 * breath)),
                 );
                 ctx.request_repaint();
             }
@@ -2180,7 +2180,7 @@ impl App {
                     c,
                     tr,
                     if on_air {
-                        color::ACCENT_SOFT
+                        color::accent_soft()
                     } else if lit {
                         color::SURFACE_HOVER
                     } else {
@@ -2258,7 +2258,7 @@ impl App {
                     pill,
                     pill.height() * 0.5,
                     dim(
-                        if live { color::ACCENT_HOVER } else { color::ACCENT },
+                        if live { color::accent_hover() } else { color::accent() },
                         on,
                     ),
                 );
@@ -2341,7 +2341,7 @@ impl App {
                     }
                     let (word, c) = match rel.status {
                         Status::Owned => ("In your collection", color::LABEL_2),
-                        Status::Wanted => ("On your wantlist", color::ACCENT),
+                        Status::Wanted => ("On your wantlist", color::accent()),
                         Status::Dug => ("Discovered", color::ORANGE),
                     };
                     ui.label(egui::RichText::new(word).color(c).small());
@@ -2399,7 +2399,7 @@ impl App {
             };
             for (list, n, c) in [
                 (VinylList::Collection, owned, color::LABEL_3),
-                (VinylList::Wantlist, wanted, color::ACCENT),
+                (VinylList::Wantlist, wanted, color::accent()),
             ] {
                 crate::ui::icon::shelf(&painter, egui::pos2(x + 5.5, y), 5.5, c, true, list);
                 x += 16.0;

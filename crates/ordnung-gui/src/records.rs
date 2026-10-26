@@ -685,7 +685,6 @@ const SCOPE_SLIDE_ANIM: f32 = 0.16;
 /// `color::BLUE`/`color::GREEN` status hues — those are tuned for small marks
 /// and glare as a filled pill under white text. This is the app's accent blue
 /// and a green matched to its weight, so the two positions read as equals.
-const SCOPE_LIBRARY: egui::Color32 = color::ACCENT;
 const SCOPE_DISCOGS: egui::Color32 = egui::Color32::from_rgb(58, 158, 92);
 
 impl App {
@@ -724,7 +723,7 @@ impl App {
         // "out on Discogs", so the switch says which world you're searching
         // without reading the label. Crossfading along the slide keeps it one
         // moving object — a hard colour swap mid-travel would read as two.
-        let pill_fill = SCOPE_LIBRARY.lerp_to_gamma(SCOPE_DISCOGS, t);
+        let pill_fill = color::accent().lerp_to_gamma(SCOPE_DISCOGS, t);
         painter.rect_filled(pill, egui::Rounding::same(radius::XS), pill_fill);
 
         let mut clicked: Option<SearchScope> = None;

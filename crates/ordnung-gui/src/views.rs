@@ -138,7 +138,7 @@ fn vinyl_tabs(
                     egui::pos2(rect.left() + space::S2, y),
                     egui::pos2(rect.right() - space::S2, y),
                 ],
-                egui::Stroke::new(2.0, color::ACCENT),
+                egui::Stroke::new(2.0, color::accent()),
             );
         }
         let text_pos = rect.center() - galley.size() * 0.5 + egui::vec2(mark_w * 0.5, 0.0);
@@ -186,13 +186,13 @@ fn vinyl_tabs(
                     egui::pos2(rect.left() + space::S2, y),
                     egui::pos2(rect.right() - space::S2, y),
                 ],
-                egui::Stroke::new(2.0, color::ACCENT),
+                egui::Stroke::new(2.0, color::accent()),
             );
         } else if resp.hovered() {
             ui.painter().rect_filled(rect, rounding, color::SURFACE);
         }
         let ink = if active {
-            color::ACCENT_HOVER
+            color::accent_hover()
         } else if resp.hovered() {
             color::LABEL
         } else {

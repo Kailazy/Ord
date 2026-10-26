@@ -411,6 +411,7 @@ impl App {
         util::mark("config loaded");
         app.token_input = config.discogs_token.clone();
         app.config = config;
+        app.config.apply_appearance(&egui_ctx);
         // The video player's level. It has no panel yet — that's built on the
         // first video — but the level is recorded now so the first one to play
         // comes in at the saved volume rather than at full.
@@ -2441,7 +2442,7 @@ impl App {
             egui::TopBottomPanel::top("update_banner")
                 .frame(
                     egui::Frame::none()
-                        .fill(crate::sidebar::NAV_ACCENT)
+                        .fill(crate::ui::tokens::color::nav_accent())
                         .inner_margin(egui::Margin::symmetric(10.0, 6.0)),
                 )
                 .show(ctx, |ui| {
@@ -2527,7 +2528,7 @@ impl App {
                         let add_btn = egui::Button::new(
                             egui::RichText::new("Add songs…").color(egui::Color32::WHITE),
                         )
-                        .fill(crate::sidebar::NAV_ACCENT)
+                        .fill(crate::ui::tokens::color::nav_accent())
                         .stroke(egui::Stroke::NONE);
                         let add = crate::ui::menu::custom_menu_button(ui, add_btn, |ui| {
                             if ui

@@ -608,7 +608,7 @@ impl App {
                     // lock mark, and the scrubber after it gets the width.
                     let compact = ui.available_width() < KEY_WORD_ROOM;
                     crate::ui::control_row(ui, |ui| {
-                        let lit = key_lock.then_some(crate::ui::tokens::color::ACCENT_HOVER);
+                        let lit = key_lock.then_some(crate::ui::tokens::color::accent_hover());
                         let key = if compact {
                             crate::ui::button::deck_icon(
                                 ui,
@@ -635,7 +635,7 @@ impl App {
                         // turntable's pitch shift; its own toggle, not the
                         // lock's inverse.
                         let vinyl_lit =
-                            self.config.vinyl_mode.then_some(crate::ui::tokens::color::ACCENT_HOVER);
+                            self.config.vinyl_mode.then_some(crate::ui::tokens::color::accent_hover());
                         let vinyl = if compact {
                             crate::ui::button::deck_icon(
                                 ui,
@@ -1445,7 +1445,7 @@ pub(crate) fn lane_tab(
         ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
     }
     let (fill, text) = match (lit, tab.hovered()) {
-        (true, _) => (color::ACCENT, color::LABEL),
+        (true, _) => (color::accent(), color::LABEL),
         (false, true) => (
             egui::Color32::from_rgba_unmultiplied(150, 150, 150, 120),
             color::LABEL,
@@ -2320,7 +2320,7 @@ pub(crate) fn segmented(
         }
         if resp.is_pointer_button_down_on() {
             ui.painter()
-                .rect_filled(cell, rounding, crate::ui::tokens::color::ACCENT_SOFT);
+                .rect_filled(cell, rounding, crate::ui::tokens::color::accent_soft());
             if repeat {
                 let id = resp.id.with("hold");
                 let now = ui.input(|i| i.time);

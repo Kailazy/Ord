@@ -265,7 +265,7 @@ impl App {
     /// instead of failing silently later.
     fn draw_discogs_tab(&mut self, ui: &mut egui::Ui) -> bool {
         let mut save = false;
-        let accent = crate::sidebar::NAV_ACCENT;
+        let accent = crate::ui::tokens::color::nav_accent();
 
         ui.label(egui::RichText::new("Discogs account").strong());
         ui.label(
@@ -406,7 +406,7 @@ impl App {
         );
         ui.add_space(6.0);
         if ui
-            .add(egui::Button::new("Get my token on Discogs ↗").fill(crate::sidebar::NAV_ACCENT))
+            .add(egui::Button::new("Get my token on Discogs ↗").fill(crate::ui::tokens::color::nav_accent()))
             .on_hover_note("Opens discogs.com/settings/developers")
             .clicked()
         {
@@ -904,6 +904,85 @@ impl App {
                                             // isn't opening behind the window
                                             // that launched it.
                                             open_tour = true;
+                                        }
+                                    }
+                                    SettingsTab::Appearance => {
+                                        use crate::ui::tokens::{color, space};
+                                        ui.label(egui::RichText::new("Table rows").strong());
+                                        ui.label(
+                    egui::RichText::new(
+                        "Every other row of a song or record table takes a faint \
+                         shade, so a wide row can be followed across its columns.",
+                    )
+                    .small()
+                    .weak(),
+                );
+                                        ui.add_space(4.0);
+                                        let mut dirty = ui
+                                            .checkbox(
+                                                &mut self.config.zebra_rows,
+                                                "Shade alternating rows",
+                                            )
+                                            .changed();
+                                        ui.add_enabled_ui(self.config.zebra_rows, |ui| {
+                                            egui::Grid::new("settings_appearance_grid")
+                                                .num_columns(2)
+                                                .spacing([12.0, 8.0])
+                                                .show(ui, |ui| {
+                                                    ui.label("Shade:");
+                                                    if ui
+                                                        .add(
+                                                            egui::Slider::new(
+                                                                &mut self.config.zebra_shade,
+                                                                2..=40,
+                                                            )
+                                                            .show_value(false),
+                                                        )
+                                                        .on_hover_note(
+                                                            "How much lighter the shaded rows are",
+                                                        )
+                                                        .changed()
+                                                    {
+                                                        dirty = true;
+                                                    }
+                                                    ui.end_row();
+                                                });
+                                        });
+                                        ui.add_space(14.0);
+                                        ui.separator();
+                                        ui.add_space(10.0);
+                                        ui.label(egui::RichText::new("Accent").strong());
+                                        ui.label(
+                    egui::RichText::new(
+                        "The colour of selections, links and the primary button.",
+                    )
+                    .small()
+                    .weak(),
+                );
+                                        ui.add_space(4.0);
+                                        ui.horizontal(|ui| {
+                                            ui.spacing_mut().item_spacing.x = space::S2;
+                                            let chosen = self.config.accent_color();
+                                            let swatch = crate::ui::swatch::swatch;
+                                            if swatch(
+                                                ui,
+                                                Some(color::ACCENT_STOCK),
+                                                "Blue (default)",
+                                                chosen.is_none(),
+                                            ) {
+                                                self.config.accent.clear();
+                                                dirty = true;
+                                            }
+                                            for (name, c) in color::TAG_PALETTE {
+                                                if swatch(ui, Some(*c), name, chosen == Some(*c)) {
+                                                    self.config.accent = name.to_ascii_lowercase();
+                                                    dirty = true;
+                                                }
+                                            }
+                                        });
+                                        if dirty {
+                                            self.config.apply_appearance(ui.ctx());
+                                            self.save_config();
                                         }
                                     }
                                     SettingsTab::Analysis => {
@@ -3547,38 +3626,7 @@ impl App {
                 ui.add_space(space::S2);
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing.x = space::S2;
-                    let d = 22.0;
-                    let swatch = |ui: &mut egui::Ui, fill: Option<egui::Color32>, name: &str, chosen: bool| -> bool {
-                        let (rect, resp) = ui.allocate_exact_size(egui::vec2(d, d), egui::Sense::click());
-                        let c = rect.center();
-                        match fill {
-                            Some(f) => {
-                                ui.painter().circle_filled(c, d * 0.36, f);
-                            }
-                            None => {
-                                // "No colour": an empty ring with a slash.
-                                ui.painter().circle_stroke(c, d * 0.36, egui::Stroke::new(1.5, color::LABEL_3));
-                                let k = d * 0.26;
-                                ui.painter().line_segment(
-                                    [c + egui::vec2(-k, k), c + egui::vec2(k, -k)],
-                                    egui::Stroke::new(1.5, color::LABEL_3),
-                                );
-                            }
-                        }
-                        if chosen || resp.hovered() {
-                            ui.painter().circle_stroke(
-                                c,
-                                d * 0.5,
-                                egui::Stroke::new(
-                                    if chosen { 2.0 } else { 1.0 },
-                                    if chosen { color::LABEL } else { color::LABEL_3 },
-                                ),
-                            );
-                        }
-                        resp.on_hover_cursor(egui::CursorIcon::PointingHand)
-                            .on_hover_note(name)
-                            .clicked()
-                    };
+                    let swatch = crate::ui::swatch::swatch;
                     if swatch(ui, None, "No color", p.color.is_none()) {
                         pick = Some((p.icon.clone(), None));
                     }
@@ -3640,7 +3688,7 @@ impl App {
                                     .min_size(egui::vec2(CELL, CELL))
                                     .rounding(radius::SM);
                                     if chosen {
-                                        btn = btn.fill(color::ACCENT);
+                                        btn = btn.fill(color::accent());
                                     }
                                     if ui.add(btn).on_hover_note(*name).clicked() {
                                         pick = Some((Some((*name).to_string()), p.color));

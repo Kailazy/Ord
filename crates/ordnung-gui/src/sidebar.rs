@@ -113,12 +113,6 @@ impl App {
 use crate::ui::phosphor_icons::{app as icons, named};
 use crate::ui::tokens::{color, font, radius, space};
 
-/// The primary-action blue: the "Add songs…" button, the onboarding and
-/// token buttons. The one saturated element on screen. The sidebar's
-/// selected tile does *not* share it any more: it sits on the muted
-/// `color::ACCENT_SOFT`, so where you are never competes with what to do.
-pub(crate) const NAV_ACCENT: egui::Color32 = egui::Color32::from_rgb(64, 110, 180);
-
 /// Height of a top-level source tile ("Library", "Vinyl"). One number for
 /// both, because they are peers: two sizes for two siblings was the loudest
 /// tell that the panel was several parts rather than one system.
@@ -168,7 +162,7 @@ pub(crate) fn nav_button_text_sized(
         .min_size(egui::vec2(w, height))
         .rounding(egui::Rounding::same(NAV_TILE_RADIUS));
     if selected {
-        btn = btn.fill(color::ACCENT_SOFT);
+        btn = btn.fill(color::accent_soft());
     }
     // Indent the label off the left edge so it reads as a roomy nav tile rather
     // than text crammed against the border. `button_padding` is the left inset
@@ -292,7 +286,7 @@ fn nav_tile_pill(
     );
     let resp = ui.interact(rect, ui.id().with(salt), egui::Sense::click());
     let fill = match (selected, resp.hovered()) {
-        (true, _) => color::ACCENT_SOFT,
+        (true, _) => color::accent_soft(),
         (false, true) => color::SURFACE_ACTIVE,
         (false, false) => color::SURFACE_HOVER,
     };
@@ -822,7 +816,7 @@ pub(crate) fn draw_playlist_leaf(
         ui.painter().rect_stroke(
             resp.rect.shrink(1.0),
             egui::Rounding::same(NAV_TILE_RADIUS),
-            egui::Stroke::new(1.5, color::ACCENT),
+            egui::Stroke::new(1.5, color::accent()),
         );
     }
     if let Some(payload) = resp.dnd_release_payload::<DraggedTracks>() {
@@ -978,7 +972,7 @@ pub(crate) fn draw_usb_playlist_nodes(
                 ui.painter().rect_stroke(
                     resp.rect.shrink(1.0),
                     egui::Rounding::same(NAV_TILE_RADIUS),
-                    egui::Stroke::new(1.5, color::ACCENT),
+                    egui::Stroke::new(1.5, color::accent()),
                 );
             }
             if let Some(payload) = resp.dnd_release_payload::<crate::DraggedUsbTracks>() {
@@ -1211,7 +1205,7 @@ pub(crate) fn source_tabs(
                     egui::pos2(rect.left() + space::S2, y),
                     egui::pos2(rect.right() - space::S2, y),
                 ],
-                egui::Stroke::new(2.0, color::ACCENT),
+                egui::Stroke::new(2.0, color::accent()),
             );
         }
         let eject_rect = rect.with_min_x(rect.right() - eject_w);
@@ -1266,7 +1260,7 @@ pub(crate) fn source_tabs(
                 ui.painter().rect_stroke(
                     lib.rect,
                     egui::Rounding::same(radius::SM),
-                    egui::Stroke::new(1.5, color::ACCENT),
+                    egui::Stroke::new(1.5, color::accent()),
                 );
             }
             if let Some(payload) = lib.dnd_release_payload::<crate::DraggedUsbTracks>() {
@@ -1301,7 +1295,7 @@ pub(crate) fn source_tabs(
                         ui.painter().rect_stroke(
                             resp.rect,
                             egui::Rounding::same(radius::SM),
-                            egui::Stroke::new(1.5, color::ACCENT),
+                            egui::Stroke::new(1.5, color::accent()),
                         );
                     }
                     if let Some(payload) = resp.dnd_release_payload::<DraggedTracks>() {
@@ -1501,7 +1495,7 @@ pub(crate) fn draw_crate_rows(
             ui.painter().rect_stroke(
                 resp.rect.shrink(1.0),
                 egui::Rounding::same(NAV_TILE_RADIUS),
-                egui::Stroke::new(1.5, color::ACCENT),
+                egui::Stroke::new(1.5, color::accent()),
             );
         }
         if let Some(payload) = resp.dnd_release_payload::<DraggedSongs>() {
@@ -1841,7 +1835,7 @@ pub(crate) fn rail_add_tile(ui: &mut egui::Ui) -> egui::Response {
                 outline,
                 rounding,
                 color::SURFACE_HI,
-                egui::Stroke::new(1.0, color::ACCENT),
+                egui::Stroke::new(1.0, color::accent()),
             );
         } else {
             let mut path = Vec::new();

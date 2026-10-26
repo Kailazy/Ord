@@ -14,7 +14,14 @@ use super::tokens::{color, font, radius, space};
 /// Install fonts and the global style. Call once, before any frame is laid out.
 pub fn install(ctx: &egui::Context) {
     install_fonts(ctx);
-    apply_style(ctx);
+    restyle(ctx, color::ZEBRA_SHADE);
+}
+
+/// Push the style again after the appearance changed (Settings →
+/// Appearance): the accent set through [`color::set_accent`] and the
+/// added luminance of a shaded table row. Fonts are left alone.
+pub fn restyle(ctx: &egui::Context, zebra_shade: u8) {
+    apply_style(ctx, zebra_shade);
 }
 
 /// Install Inter as the primary UI face, with DejaVu Sans behind it as a
@@ -204,11 +211,14 @@ fn load_system_fallback_fonts(fonts: &mut FontDefinitions) -> Vec<String> {
 }
 
 /// Build the global [`egui::Style`] from the design tokens.
-fn apply_style(ctx: &egui::Context) {
+fn apply_style(ctx: &egui::Context, zebra_shade: u8) {
     let mut style = (*ctx.style()).clone();
     let v = &mut style.visuals;
 
     v.dark_mode = true;
+    // Every other table row (`TableBuilder::striped`) is painted in this;
+    // additive, so it lifts whatever surface the table sits on.
+    v.faint_bg_color = egui::Color32::from_additive_luminance(zebra_shade);
 
     // Surfaces.
     v.panel_fill = color::BG;
@@ -219,9 +229,9 @@ fn apply_style(ctx: &egui::Context) {
     v.menu_rounding = Rounding::same(radius::MD);
 
     // Selection (text + list highlight) uses the accent.
-    v.selection.bg_fill = color::ACCENT_SOFT;
-    v.selection.stroke = Stroke::new(1.0, color::ACCENT);
-    v.hyperlink_color = color::ACCENT;
+    v.selection.bg_fill = color::accent_soft();
+    v.selection.stroke = Stroke::new(1.0, color::accent());
+    v.hyperlink_color = color::accent();
 
     // Widget states. Apple-ish: soft fills and no outline, so a button or a
     // field is marked by its fill alone; consistent small rounding, and no

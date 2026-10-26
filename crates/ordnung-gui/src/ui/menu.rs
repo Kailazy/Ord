@@ -571,7 +571,7 @@ impl MenuUi<'_> {
             painter.rect_filled(
                 rect,
                 egui::Rounding::same(radius::SM),
-                color::ACCENT_SOFT.gamma_multiply(0.45 * enter),
+                color::accent_soft().gamma_multiply(0.45 * enter),
             );
         }
         if hot > 0.0 {
@@ -597,7 +597,7 @@ impl MenuUi<'_> {
                 egui::Align2::LEFT_CENTER,
                 "✓",
                 font::body(),
-                color::ACCENT.gamma_multiply(enter),
+                color::accent().gamma_multiply(enter),
             );
         }
         if selected.is_some() {

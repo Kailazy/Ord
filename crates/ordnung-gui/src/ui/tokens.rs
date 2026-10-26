@@ -45,6 +45,7 @@ pub mod space {
 /// hues follow Apple's dark-mode HIG values for status accents.
 pub mod color {
     use super::Color32;
+    use std::sync::atomic::{AtomicU32, Ordering};
 
     // --- Surfaces, low → high elevation ---
     /// App background behind panels. Matches egui's prior default dark fill
@@ -94,10 +95,60 @@ pub mod color {
     pub const LABEL_4: Color32 = Color32::from_rgb(88, 88, 96);
 
     // --- Accent ---
-    pub const ACCENT: Color32 = Color32::from_rgb(74, 134, 232);
-    pub const ACCENT_HOVER: Color32 = Color32::from_rgb(98, 156, 245);
+    // The one hue the user can change (Settings → Appearance). It is read
+    // through the functions below, never a const, so every selection,
+    // link and primary button follows the choice at once. The stock blue
+    // keeps its hand-tuned companions; a chosen hue derives them.
+    /// The stock accent, for showing the default choice. Draw with [`accent`].
+    pub const ACCENT_STOCK: Color32 = Color32::from_rgb(74, 134, 232);
+    const ACCENT_HOVER_STOCK: Color32 = Color32::from_rgb(98, 156, 245);
+    const ACCENT_SOFT_STOCK: Color32 = Color32::from_rgb(44, 70, 120);
+    const NAV_ACCENT_STOCK: Color32 = Color32::from_rgb(64, 110, 180);
+    static ACCENT_RT: AtomicU32 = AtomicU32::new(0x4A86E8);
+
+    /// Set the accent, `None` for the stock blue. The style is pushed
+    /// separately (`theme::restyle`), so call that after.
+    pub fn set_accent(c: Option<Color32>) {
+        ACCENT_RT.store(to_packed(c.unwrap_or(ACCENT_STOCK)), Ordering::Relaxed);
+    }
+    fn accent_is_stock() -> bool {
+        ACCENT_RT.load(Ordering::Relaxed) == to_packed(ACCENT_STOCK)
+    }
+    /// The accent: selections, links, the active control.
+    pub fn accent() -> Color32 {
+        from_packed(ACCENT_RT.load(Ordering::Relaxed))
+    }
+    /// The accent under the pointer, a step lighter.
+    pub fn accent_hover() -> Color32 {
+        if accent_is_stock() {
+            ACCENT_HOVER_STOCK
+        } else {
+            accent().lerp_to_gamma(Color32::WHITE, 0.15)
+        }
+    }
     /// Pre-blended translucent accent for selection fills over a dark surface.
-    pub const ACCENT_SOFT: Color32 = Color32::from_rgb(44, 70, 120);
+    pub fn accent_soft() -> Color32 {
+        if accent_is_stock() {
+            ACCENT_SOFT_STOCK
+        } else {
+            BG.lerp_to_gamma(accent(), 0.42)
+        }
+    }
+    /// The primary-action fill: the "Add songs…" button, the onboarding and
+    /// token buttons. The one saturated element on screen, a shade under
+    /// the accent so white text sits on it.
+    pub fn nav_accent() -> Color32 {
+        if accent_is_stock() {
+            NAV_ACCENT_STOCK
+        } else {
+            accent().lerp_to_gamma(BG, 0.25)
+        }
+    }
+
+    /// Added luminance of a shaded table row by default (Settings →
+    /// Appearance): a whisper over `CONTENT_BG`, enough to follow a wide
+    /// row across its columns.
+    pub const ZEBRA_SHADE: u8 = 8;
 
     // --- System status hues (Apple HIG, dark) ---
     pub const RED: Color32 = Color32::from_rgb(255, 69, 58);

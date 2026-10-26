@@ -27,6 +27,7 @@ pub mod nav;
 pub mod phosphor_icons;
 pub mod sheet;
 pub mod sidebar;
+pub mod swatch;
 pub mod text;
 pub mod theme;
 pub mod tokens;

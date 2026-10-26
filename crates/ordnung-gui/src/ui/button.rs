@@ -65,7 +65,7 @@ pub fn icon_toggle(ui: &mut egui::Ui, glyph: &str, selected: bool) -> egui::Resp
 pub fn primary(ui: &mut egui::Ui, label: &str) -> egui::Response {
     ui.add(
         egui::Button::new(egui::RichText::new(label).color(egui::Color32::WHITE))
-            .fill(color::ACCENT),
+            .fill(color::accent()),
     )
 }
 

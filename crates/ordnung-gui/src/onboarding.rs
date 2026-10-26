@@ -157,7 +157,7 @@ type Mark = fn(&egui::Painter, egui::Pos2, egui::Color32, f32);
 /// sits a step up from the dense table chrome elsewhere in the app.
 fn feature_row(ui: &mut egui::Ui, mark: Mark, title: &str, body: &str) {
     const TILE: f32 = 38.0;
-    let accent = crate::sidebar::NAV_ACCENT;
+    let accent = crate::ui::tokens::color::nav_accent();
     ui.horizontal_top(|ui| {
         let (rect, _) = ui.allocate_exact_size(egui::vec2(TILE, TILE), egui::Sense::hover());
         // Soft accent wash so the mark sits on a surface rather than floating.
@@ -298,7 +298,7 @@ impl App {
         let Some(tour) = self.tour.clone() else {
             return;
         };
-        let accent = crate::sidebar::NAV_ACCENT;
+        let accent = crate::ui::tokens::color::nav_accent();
         let mut open = true;
         // Deferred so the step's body can borrow `self` immutably while the
         // footer decides what to do.

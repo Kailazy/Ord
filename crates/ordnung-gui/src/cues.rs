@@ -872,7 +872,7 @@ impl App {
                         let q = crate::ui::button::deck(
                             ui,
                             "Q",
-                            quantize.then_some(color::ACCENT_HOVER),
+                            quantize.then_some(color::accent_hover()),
                             true,
                         );
                         if q

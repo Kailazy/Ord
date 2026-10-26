@@ -484,12 +484,12 @@ impl App {
                 painter.rect_filled(
                     rect,
                     egui::Rounding::same(radius::SM),
-                    color::ACCENT.gamma_multiply(0.18),
+                    color::accent().gamma_multiply(0.18),
                 );
                 painter.rect_stroke(
                     rect,
                     egui::Rounding::same(radius::SM),
-                    egui::Stroke::new(stroke::OUTLINE, color::ACCENT),
+                    egui::Stroke::new(stroke::OUTLINE, color::accent()),
                 );
             } else if let Some(rect) = over_table.then_some(self.table_screen_rect).flatten() {
                 // Over the library table: outline just the table as the
@@ -499,12 +499,12 @@ impl App {
                 painter.rect_filled(
                     rect,
                     egui::Rounding::same(radius::MD),
-                    color::ACCENT.gamma_multiply(0.08),
+                    color::accent().gamma_multiply(0.08),
                 );
                 painter.rect_stroke(
                     rect,
                     egui::Rounding::same(radius::MD),
-                    egui::Stroke::new(stroke::OUTLINE, color::ACCENT),
+                    egui::Stroke::new(stroke::OUTLINE, color::accent()),
                 );
                 let galley = painter.layout_no_wrap(
                     "Drop to add to your library".into(),
@@ -516,7 +516,7 @@ impl App {
                     rect.right_top() + egui::vec2(-(galley.size().x + pad.x * 2.0 + 10.0), 10.0),
                     galley.size() + pad * 2.0,
                 );
-                painter.rect_filled(pill, egui::Rounding::same(radius::SM), color::ACCENT);
+                painter.rect_filled(pill, egui::Rounding::same(radius::SM), color::accent());
                 painter.galley(pill.min + pad, galley, color::LABEL);
             } else {
                 painter.rect_filled(screen, 0.0, egui::Color32::from_black_alpha(160));
