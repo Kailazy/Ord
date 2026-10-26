@@ -1552,224 +1552,7 @@ impl App {
                                             self.reload();
                                         }
                                     }
-                                    SettingsTab::Conversion => {
-                                        ui.label(egui::RichText::new("Conversion").strong());
-                                        ui.label(
-                    egui::RichText::new(
-                        "Defaults used when you open a Convert dialog (you can still \
-                         change them per conversion), and by auto-convert below when \
-                         it's enabled.",
-                    )
-                    .small()
-                    .weak(),
-                );
-                                        ui.add_space(4.0);
-                                        // The converter itself: Ordnung fetches its own
-                                        // ffmpeg at startup (`ordnung_core::tools`), so this
-                                        // row is where a failed download shows and where it
-                                        // can be retried.
-                                        ui.horizontal(|ui| {
-                                            ui.label("Converter:");
-                                            let (text, retry) = match &self.ffmpeg_state {
-                                                FfmpegState::Unknown => ("checking…".to_string(), false),
-                                                FfmpegState::Ready(v) => {
-                                                    (format!("ffmpeg {v}, installed by Ord"), false)
-                                                }
-                                                FfmpegState::Downloading { read, total } if *total > 0 => (
-                                                    format!("downloading… {} of {} MB", read >> 20, total >> 20),
-                                                    false,
-                                                ),
-                                                FfmpegState::Downloading { .. } => {
-                                                    ("downloading…".to_string(), false)
-                                                }
-                                                FfmpegState::Failed(e) => (format!("download failed: {e}"), true),
-                                                FfmpegState::Absent => ("not installed".to_string(), true),
-                                            };
-                                            ui.label(egui::RichText::new(text).weak());
-                                            if retry && crate::ui::button::button(ui, "Download").clicked() {
-                                                self.ffmpeg_state = FfmpegState::Unknown;
-                                                let ctx = ui.ctx().clone();
-                                                self.ensure_ffmpeg(ctx);
-                                            }
-                                        });
-                                        ui.add_space(4.0);
-                                        let mut convert_dirty = false;
-                                        let mut target =
-                                            format_from_key(&self.config.convert_format)
-                                                .unwrap_or(Format::Aiff);
-                                        egui::Grid::new("settings_convert_grid")
-                                            .num_columns(2)
-                                            .spacing([12.0, 8.0])
-                                            .show(ui, |ui| {
-                                                ui.label("Default format:");
-                                                let before = target;
-                                                egui::ComboBox::from_id_salt(
-                                                    "settings_convert_format",
-                                                )
-                                                .selected_text(format_label(target))
-                                                .show_ui(ui, |ui| {
-                                                    for &f in &CONVERT_TARGETS {
-                                                        ui.selectable_value(
-                                                            &mut target,
-                                                            f,
-                                                            format_label(f),
-                                                        );
-                                                    }
-                                                });
-                                                if target != before {
-                                                    self.config.convert_format =
-                                                        format_key(target).to_string();
-                                                    convert_dirty = true;
-                                                }
-                                                ui.end_row();
-
-                                                ui.label("Default bitrate (kbps):");
-                                                let lossy =
-                                                    matches!(target, Format::Mp3 | Format::Aac);
-                                                let resp = ui.add_enabled(
-                                                    lossy,
-                                                    crate::ui::field::Field::singleline(
-                                                        &mut self.config.convert_bitrate_kbps,
-                                                    )
-                                                    .hint(default_bitrate_hint(target))
-                                                    .width(80.0),
-                                                );
-                                                if resp.lost_focus() {
-                                                    convert_dirty = true;
-                                                }
-                                                ui.end_row();
-
-                                                ui.label("Default output folder:");
-                                                ui.horizontal(|ui| {
-                                                    let text = match &self.config.convert_out_dir {
-                                                        Some(p) => p.display().to_string(),
-                                                        None => "(alongside each source)".into(),
-                                                    };
-                                                    ui.label(egui::RichText::new(text).monospace());
-                                                    if ui.small_button("Pick…").clicked() {
-                                                        self.open_panel(
-                                                            crate::pick::Panel::Folder,
-                                                            crate::pick::Then::ConvertSettingOutDir,
-                                                        );
-                                                    }
-                                                    if self.config.convert_out_dir.is_some()
-                                                        && ui.small_button("Clear").clicked()
-                                                    {
-                                                        self.config.convert_out_dir = None;
-                                                        convert_dirty = true;
-                                                    }
-                                                });
-                                                ui.end_row();
-
-                                                ui.label("In-place by default:");
-                                                if ui
-                            .checkbox(
-                                &mut self.config.convert_in_place,
-                                "Replace each source file",
-                            )
-                            .on_hover_note(
-                                "Conversions replace the original file. The catalog \
-                                 is repointed automatically.",
-                            )
-                            .changed()
-                        {
-                            convert_dirty = true;
-                        }
-                                                ui.end_row();
-                                            });
-                                        if self.config.convert_in_place {
-                                            ui.colored_label(
-                                        egui::Color32::LIGHT_YELLOW,
-                                        "In-place removes the original file on each conversion.",
-                                    );
-                                        }
-                                        ui.add_space(10.0);
-                                        ui.label(
-                                            egui::RichText::new("Auto-convert").strong(),
-                                        );
-                                        if ui
-                                            .checkbox(
-                                                &mut self.config.auto_convert,
-                                                "Convert files automatically on import",
-                                            )
-                                            .on_hover_note(
-                                                "New files (scan, drag and drop, USB \
-                                                 transfer) are converted to the default \
-                                                 format above using these defaults.",
-                                            )
-                                            .changed()
-                                        {
-                                            convert_dirty = true;
-                                        }
-                                        if self.config.auto_convert {
-                                            ui.horizontal_wrapped(|ui| {
-                                                ui.label("Only these types:");
-                                                for &f in &[
-                                                    Format::Flac,
-                                                    Format::Wav,
-                                                    Format::Aiff,
-                                                    Format::Mp3,
-                                                    Format::Aac,
-                                                ] {
-                                                    let key = format_key(f);
-                                                    let mut on = self
-                                                        .config
-                                                        .auto_convert_sources
-                                                        .iter()
-                                                        .any(|k| k == key);
-                                                    if ui
-                                                        .checkbox(&mut on, format_label(f))
-                                                        .changed()
-                                                    {
-                                                        if on {
-                                                            self.config
-                                                                .auto_convert_sources
-                                                                .push(key.to_string());
-                                                        } else {
-                                                            self.config
-                                                                .auto_convert_sources
-                                                                .retain(|k| k != key);
-                                                        }
-                                                        convert_dirty = true;
-                                                    }
-                                                }
-                                            });
-                                            ui.label(
-                                                egui::RichText::new(
-                                                    "Leave all unchecked to convert every \
-                                                     type. Files already in the target \
-                                                     format are always skipped.",
-                                                )
-                                                .small()
-                                                .weak(),
-                                            );
-                                            if self.config.convert_in_place {
-                                                ui.colored_label(
-                                                    egui::Color32::LIGHT_YELLOW,
-                                                    "With in-place on, originals are \
-                                                     replaced as files are imported.",
-                                                );
-                                            }
-                                        }
-                                        if convert_dirty {
-                                            self.save_config();
-                                        }
-                                        #[cfg(feature = "usb-export")]
-                                        {
-                                            ui.add_space(12.0);
-                                            ui.label(egui::RichText::new("USB export").strong());
-                                            ui.label(
-                                                egui::RichText::new(
-                                                    "Used when you drop tracks on a stick or export a \
-                                                     playlist to it.",
-                                                )
-                                                .small()
-                                                .weak(),
-                                            );
-                                            ui.add_space(4.0);
-                                            self.export_options(ui);
-                                        }
-                                    }
+                                    SettingsTab::Conversion => self.draw_conversion_tab(ui),
                                     SettingsTab::Discogs => {
                                         if self.draw_discogs_tab(ui) {
                                             save = true;
@@ -2030,6 +1813,152 @@ selection.",
             });
         if !open {
             self.export_confirm = None;
+        }
+    }
+
+    /// Settings › Conversion: what a convert writes and where, and whether
+    /// imports convert on their own. One live sentence under the controls
+    /// says what will happen, in place of captions.
+    pub(crate) fn draw_conversion_tab(&mut self, ui: &mut egui::Ui) {
+        use crate::ui::button::{self, Segment};
+        let mut dirty = false;
+        let mut target = format_from_key(&self.config.convert_format).unwrap_or(Format::Aiff);
+        ui.label(egui::RichText::new("Convert to").strong());
+        ui.add_space(6.0);
+        let segs: Vec<Segment> = CONVERT_TARGETS
+            .iter()
+            .map(|&f| Segment { label: format_label(f), tip: format_tip(f) })
+            .collect();
+        let picked = CONVERT_TARGETS.iter().position(|&f| f == target);
+        if let Some(i) = button::segmented(ui, picked, &segs) {
+            target = CONVERT_TARGETS[i];
+            self.config.convert_format = format_key(target).to_string();
+            dirty = true;
+        }
+        if matches!(target, Format::Mp3 | Format::Aac) {
+            ui.add_space(6.0);
+            crate::ui::control_row(ui, |ui| ui.horizontal(|ui| {
+                ui.label("Bitrate:");
+                if ui
+                    .add(
+                        crate::ui::field::Field::singleline(&mut self.config.convert_bitrate_kbps)
+                            .hint(default_bitrate_hint(target))
+                            .width(64.0),
+                    )
+                    .lost_focus()
+                {
+                    dirty = true;
+                }
+                ui.label("kbps");
+            }));
+        }
+        ui.add_space(6.0);
+        crate::ui::control_row(ui, |ui| ui.horizontal(|ui| {
+            ui.label("Save to:");
+            match &self.config.convert_out_dir {
+                Some(dir) => ui.label(dir.display().to_string()),
+                None => ui.label(egui::RichText::new("next to the original").weak()),
+            };
+            if button::button(ui, "Choose folder…").clicked() {
+                self.open_panel(
+                    crate::pick::Panel::Folder,
+                    crate::pick::Then::ConvertSettingOutDir,
+                );
+            }
+            if self.config.convert_out_dir.is_some()
+                && button::button(ui, "Next to the original").clicked()
+            {
+                self.config.convert_out_dir = None;
+                dirty = true;
+            }
+        }));
+        ui.add_space(6.0);
+        if ui
+            .checkbox(&mut self.config.convert_in_place, "Replace the original file")
+            .on_hover_note(
+                "The original goes once its conversion is written; the catalog follows the new file",
+            )
+            .changed()
+        {
+            dirty = true;
+        }
+
+        ui.add_space(14.0);
+        ui.separator();
+        ui.add_space(10.0);
+        ui.label(egui::RichText::new("Auto-convert").strong());
+        ui.add_space(6.0);
+        if ui
+            .checkbox(&mut self.config.auto_convert, "Convert new files on import")
+            .on_hover_note("Files that arrive by scan, drag and drop or USB transfer are converted as above")
+            .changed()
+        {
+            dirty = true;
+        }
+        if self.config.auto_convert {
+            ui.add_space(6.0);
+            ui.horizontal(|ui| {
+                ui.label("Only from:");
+                for &f in &AUTO_CONVERT_SOURCES {
+                    let key = format_key(f);
+                    let on = self.config.auto_convert_sources.iter().any(|k| k == key);
+                    if button::compact(ui, format_label(f), on).clicked() {
+                        if on {
+                            self.config.auto_convert_sources.retain(|k| k != key);
+                        } else {
+                            self.config.auto_convert_sources.push(key.to_string());
+                        }
+                        dirty = true;
+                    }
+                }
+                crate::ui::info_note(
+                    ui,
+                    "Lit formats convert on import. None lit converts every type.",
+                );
+            });
+        }
+        ui.add_space(10.0);
+        let summary = egui::RichText::new(convert_summary(&self.config, target)).small();
+        ui.label(if self.config.convert_in_place {
+            summary.color(egui::Color32::LIGHT_YELLOW)
+        } else {
+            summary.weak()
+        });
+        if dirty {
+            self.save_config();
+        }
+
+        // The converter itself: Ord fetches its own ffmpeg at startup
+        // (`ordnung_core::tools`), so a failed download shows and retries here.
+        ui.add_space(14.0);
+        ui.separator();
+        ui.add_space(10.0);
+        ui.horizontal(|ui| {
+            let (text, retry) = match &self.ffmpeg_state {
+                FfmpegState::Unknown => ("checking…".to_string(), false),
+                FfmpegState::Ready(v) => (format!("ffmpeg {v}, installed by Ord"), false),
+                FfmpegState::Downloading { read, total } if *total > 0 => {
+                    (format!("downloading… {} of {} MB", read >> 20, total >> 20), false)
+                }
+                FfmpegState::Downloading { .. } => ("downloading…".to_string(), false),
+                FfmpegState::Failed(e) => (format!("download failed: {e}"), true),
+                FfmpegState::Absent => ("not installed".to_string(), true),
+            };
+            ui.label(egui::RichText::new(format!("Converter: {text}")).small().weak());
+            if retry && button::button(ui, "Download").clicked() {
+                self.ffmpeg_state = FfmpegState::Unknown;
+                let ctx = ui.ctx().clone();
+                self.ensure_ffmpeg(ctx);
+            }
+        });
+        #[cfg(feature = "usb-export")]
+        {
+            ui.add_space(14.0);
+            ui.separator();
+            ui.add_space(10.0);
+            ui.label(egui::RichText::new("USB export").strong());
+            ui.add_space(6.0);
+            self.export_options(ui);
         }
     }
 

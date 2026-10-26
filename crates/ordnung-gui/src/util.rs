@@ -249,6 +249,92 @@ pub(crate) fn default_bitrate_hint(f: Format) -> &'static str {
     }
 }
 
+/// The formats auto-convert can take as its sources, in the order the
+/// Settings chips show them: the lossless ones first, since those are what
+/// a collector turns into AIFF.
+pub(crate) const AUTO_CONVERT_SOURCES: [Format; 5] =
+    [Format::Flac, Format::Wav, Format::Aiff, Format::Mp3, Format::Aac];
+
+/// What a format means to a DJ, for the Settings picker's hover notes.
+pub(crate) fn format_tip(f: Format) -> &'static str {
+    match f {
+        Format::Mp3 => "Lossy, plays on everything",
+        Format::Aac => "Lossy, Apple's format",
+        Format::Flac => "Lossless and compressed. Older CDJs can't play it",
+        Format::Wav => "Lossless, uncompressed",
+        Format::Aiff => "Lossless, uncompressed, the CDJ standard",
+        Format::Other => "",
+    }
+}
+
+/// One sentence saying what the conversion settings will do, shown under
+/// the Settings controls in place of captions.
+pub(crate) fn convert_summary(cfg: &Config, target: Format) -> String {
+    let fmt = format_label(target);
+    let rate = if matches!(target, Format::Mp3 | Format::Aac) {
+        let kbps = short(cfg.convert_bitrate_kbps.trim(), default_bitrate_hint(target));
+        format!(" at {kbps} kbps")
+    } else {
+        String::new()
+    };
+    let fate = match (cfg.convert_in_place, &cfg.convert_out_dir) {
+        (true, _) => "the original is removed".to_string(),
+        (false, None) => "the copy goes next to the original".to_string(),
+        (false, Some(dir)) => format!(
+            "the copy goes to {}",
+            dir.file_name().unwrap_or(dir.as_os_str()).to_string_lossy()
+        ),
+    };
+    if !cfg.auto_convert {
+        return format!("Nothing converts on its own. Convert… writes {fmt}{rate}; {fate}.");
+    }
+    let from: Vec<&str> = AUTO_CONVERT_SOURCES
+        .iter()
+        .filter(|&&f| cfg.auto_convert_sources.iter().any(|k| k == format_key(f)))
+        .map(|&f| format_label(f))
+        .collect();
+    let what = match from.as_slice() {
+        [] => "Every new file becomes".to_string(),
+        [one] => format!("New {one} files become"),
+        [head @ .., last] => format!("New {} and {last} files become", head.join(", ")),
+    };
+    let skip = if from.is_empty() || from.contains(&fmt) {
+        format!(" Files already {fmt} are left alone.")
+    } else {
+        String::new()
+    };
+    format!("{what} {fmt}{rate} on import; {fate}.{skip}")
+}
+
+#[cfg(test)]
+mod convert_summary_tests {
+    use super::*;
+
+    #[test]
+    fn says_what_will_happen() {
+        let mut cfg = Config::default();
+        cfg.auto_convert = true;
+        cfg.convert_in_place = true;
+        cfg.auto_convert_sources = vec!["flac".into(), "wav".into()];
+        assert_eq!(
+            convert_summary(&cfg, Format::Aiff),
+            "New FLAC and WAV files become AIFF on import; the original is removed."
+        );
+        cfg.auto_convert_sources.clear();
+        cfg.convert_in_place = false;
+        assert_eq!(
+            convert_summary(&cfg, Format::Aiff),
+            "Every new file becomes AIFF on import; the copy goes next to the original. \
+             Files already AIFF are left alone."
+        );
+        cfg.auto_convert = false;
+        assert_eq!(
+            convert_summary(&cfg, Format::Mp3),
+            "Nothing converts on its own. Convert… writes MP3 at 320 kbps; the copy goes next to the original."
+        );
+    }
+}
+
 /// Reveal a file in macOS Finder, selecting it in its containing folder.
 /// Best-effort: a spawn failure is ignored — this is a convenience shortcut, not
 /// a catalog operation, and never touches the file itself.
