@@ -4225,6 +4225,7 @@ mod vinyl_resync_tests {
             price: None,
             price_currency: None,
             genres: Vec::new(),
+            notes: None,
         }
     }
 

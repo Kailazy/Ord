@@ -294,6 +294,8 @@ struct VinylCell {
     /// there would ask Discogs for a second copy (collection adds aren't
     /// idempotent), so the move is shown as already done instead.
     also_in_other: bool,
+    /// Your own Discogs note on the item, when you wrote one.
+    notes: Option<String>,
 }
 
 /// The caption line under a cover, e.g. `1993 · Vinyl, 12"`. Also part of the
@@ -424,6 +426,26 @@ fn catalog_badge(
     resp.on_hover_cursor(egui::CursorIcon::PointingHand)
         .on_hover_note(tip)
         .clicked()
+}
+
+/// Your own Discogs note on a record: a small bubble in the grid's corner or
+/// beside the list row's badge, with the note itself as its hover note.
+fn note_bubble(ui: &egui::Ui, rect: egui::Rect, resp: egui::Response, note: &str) {
+    let rounding = egui::Rounding::same(5.0);
+    ui.painter().rect_filled(rect, rounding, egui::Color32::from_gray(40));
+    ui.painter().rect_stroke(
+        rect,
+        rounding,
+        egui::Stroke::new(1.0, egui::Color32::from_gray(120)),
+    );
+    ui.painter().text(
+        rect.center(),
+        egui::Align2::CENTER_CENTER,
+        crate::ui::phosphor_icons::named(crate::ui::phosphor_icons::app::CHAT_TEARDROP_TEXT),
+        crate::ui::tokens::font::icon(14.0),
+        egui::Color32::from_gray(230),
+    );
+    resp.on_hover_note(note);
 }
 
 /// Render a marketplace price the way the grid shows it: symbol for the
@@ -2342,6 +2364,7 @@ impl App {
                     added: v.added.clone(),
                     price: v.price,
                     price_currency: v.price_currency.clone(),
+                    notes: v.notes.clone(),
                 }
             })
             .collect()
@@ -2503,9 +2526,25 @@ impl App {
                             );
                             (badge_rect, badge)
                         });
+                        // Your own Discogs note on the record: a bubble in the
+                        // cover's top-left corner, the note itself on hover.
+                        // Hover only, so a click on it still opens the sheet.
+                        let note = c.notes.as_deref().map(|note| {
+                            let bubble = egui::Rect::from_min_size(
+                                egui::pos2(rect.left() + 4.0, rect.top() + 4.0),
+                                egui::vec2(22.0, 22.0),
+                            );
+                            let hit = ui.interact(
+                                bubble,
+                                ui.id().with(("vinyl-note", c.key)),
+                                egui::Sense::hover(),
+                            );
+                            (bubble, hit, note)
+                        });
                         let play_hovered = hit.hovered();
                         let dig_hovered = dig_hit.hovered();
                         let badge_hovered = badge.as_ref().is_some_and(|(_, b)| b.hovered());
+                        let note_hovered = note.as_ref().is_some_and(|(_, h, _)| h.hovered());
                         // The discs sit on top of the cover, so pointing at one
                         // takes the hover away from it. Count the card as hovered
                         // whenever the pointer is on it at all, so the frame stays
@@ -2514,7 +2553,8 @@ impl App {
                             || resp.hovered()
                             || play_hovered
                             || dig_hovered
-                            || badge_hovered;
+                            || badge_hovered
+                            || note_hovered;
                         match &tex {
                             Some(h) => {
                                 egui::Image::new(h)
@@ -2557,6 +2597,9 @@ impl App {
                                 action =
                                     Some(VinylGridAction::Goto(c.title.clone(), c.linked.clone()));
                             }
+                        }
+                        if let Some((bubble, hit, note)) = note {
+                            note_bubble(ui, bubble, hit, note);
                         }
                         // Play disc, bottom-right: start the record. Shown while
                         // the pointer is anywhere on the card, so the wall stays a
@@ -2814,6 +2857,21 @@ impl App {
                         badge_clicked = true;
                         action = Some(VinylGridAction::Goto(c.title.clone(), c.linked.clone()));
                     }
+                }
+                // Your Discogs note, left of the badge: the wall's bubble.
+                if let Some(note) = c.notes.as_deref() {
+                    const B: f32 = 22.0;
+                    let bubble = egui::Rect::from_center_size(
+                        egui::pos2(right_edge - B / 2.0, rect.center().y),
+                        egui::vec2(B, B),
+                    );
+                    right_edge = bubble.left() - 8.0;
+                    let hit = ui.interact(
+                        bubble,
+                        ui.id().with(("vinyl-row-note", c.key)),
+                        egui::Sense::hover(),
+                    );
+                    note_bubble(ui, bubble, hit, note);
                 }
                 // Price, right-aligned so the column scans. Same "what the
                 // sort orders by" role as the wall's corner chip.
@@ -3180,6 +3238,7 @@ mod tests {
             artist: artist.into(),
             sub: String::new(),
             has_cover: false,
+            notes: None,
             linked: Vec::new(),
             also_in_other: false,
             added: added.map(str::to_string),

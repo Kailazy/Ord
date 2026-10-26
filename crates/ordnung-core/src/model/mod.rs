@@ -420,6 +420,9 @@ pub struct VinylRecord {
     /// finer styles, deduplicated (see [`crate::discogs::genre_tags`]). Empty on
     /// rows cached before this field existed; a vinyl refresh backfills them.
     pub genres: Vec<String>,
+    /// The user's own note on this item as written on Discogs: a want's note,
+    /// or a collection copy's "Notes" field. `None` when there is none.
+    pub notes: Option<String>,
 }
 
 /// A release the user dug to (walked onto while following artist, label or

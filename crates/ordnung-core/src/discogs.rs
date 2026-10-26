@@ -2702,7 +2702,25 @@ struct CollectionItem {
     date_added: String,
     #[serde(default, deserialize_with = "null_as_default")]
     basic_information: BasicInformation,
+    /// The copy's custom-field values (media and sleeve condition, Notes, any
+    /// field the user added). Discogs sends them to the owner only.
+    #[serde(default, deserialize_with = "null_as_default")]
+    notes: Vec<CollectionNote>,
 }
+
+/// One custom-field value on a collection copy.
+#[derive(Debug, Default, Deserialize)]
+struct CollectionNote {
+    #[serde(default, deserialize_with = "null_as_default")]
+    field_id: u32,
+    #[serde(default, deserialize_with = "null_as_default")]
+    value: String,
+}
+
+/// Discogs's default "Notes" field on a collection copy; fields 1 and 2 are
+/// the media and sleeve condition dropdowns every account starts with.
+// ponytail: fixed id; read /collection/fields if a user's own textarea ever matters.
+const COLLECTION_NOTES_FIELD: u32 = 3;
 
 #[derive(Debug, Default, Deserialize)]
 struct BasicInformation {
@@ -2752,6 +2770,9 @@ struct WantItem {
     date_added: String,
     #[serde(default, deserialize_with = "null_as_default")]
     basic_information: BasicInformation,
+    /// The user's own note on the want.
+    #[serde(default, deserialize_with = "null_as_default")]
+    notes: String,
 }
 
 impl WantItem {
@@ -2759,8 +2780,9 @@ impl WantItem {
     /// A want has no per-copy instance, so `instance_id` mirrors the release id
     /// (which is what keys the wantlist cache).
     fn into_record(self) -> Option<VinylRecord> {
+        let notes = none_if_empty(self.notes.trim().to_string());
         self.basic_information
-            .into_record(self.id, self.id, None, self.date_added)
+            .into_record(self.id, self.id, None, self.date_added, notes)
     }
 }
 
@@ -2895,11 +2917,17 @@ struct CollectionFormat {
 impl CollectionItem {
     /// Build a [`VinylRecord`], or `None` if this item isn't a vinyl pressing.
     fn into_record(self) -> Option<VinylRecord> {
+        let notes = self
+            .notes
+            .into_iter()
+            .find(|n| n.field_id == COLLECTION_NOTES_FIELD)
+            .and_then(|n| none_if_empty(n.value.trim().to_string()));
         self.basic_information.into_record(
             self.instance_id,
             self.id,
             Some(self.folder_id),
             self.date_added,
+            notes,
         )
     }
 }
@@ -2938,6 +2966,7 @@ impl BasicInformation {
         release_id: u64,
         folder_id: Option<u32>,
         date_added: String,
+        notes: Option<String>,
     ) -> Option<VinylRecord> {
         let bi = self;
         if !is_vinyl(&bi.formats) {
@@ -2970,6 +2999,7 @@ impl BasicInformation {
             price: None,
             price_currency: None,
             genres: genre_tags(&bi.genres, &bi.styles),
+            notes,
         })
     }
 }
@@ -3904,6 +3934,8 @@ impl ReleaseResponse {
             price: None,
             price_currency: None,
             genres: genre_tags(&self.genres, &self.styles),
+            // A copy just added carries no note; the next sync brings one.
+            notes: None,
         })
     }
 
@@ -5529,6 +5561,16 @@ mod tests {
                 genres: vec!["Electronic".into()],
                 styles: vec!["Techno".into(), "Acid".into()],
             },
+            notes: vec![
+                CollectionNote {
+                    field_id: 1,
+                    value: "Mint (M)".into(),
+                },
+                CollectionNote {
+                    field_id: 3,
+                    value: " Bought at Hardwax\n".into(),
+                },
+            ],
         }
     }
 
@@ -5539,6 +5581,8 @@ mod tests {
         assert_eq!(rec.release_id, 42);
         assert_eq!(rec.title, "Plastikman EP");
         assert_eq!(rec.artist, "Plastikman"); // disambiguation number stripped
+        // Only the Notes field, trimmed; the condition dropdowns stay behind.
+        assert_eq!(rec.notes.as_deref(), Some("Bought at Hardwax"));
         assert_eq!(rec.year, Some(1993));
         assert_eq!(rec.label.as_deref(), Some("Plus 8"));
         assert_eq!(rec.catalog_number.as_deref(), Some("PLUS8 024"));
@@ -5603,6 +5647,7 @@ mod tests {
             id: 42,
             date_added: "2024-01-02T00:00:00-08:00".into(),
             basic_information: vinyl_item().basic_information,
+            notes: "B2 - awesome\n".into(),
         };
         let rec = item.into_record().expect("want item -> record");
         // A want has no per-copy instance; the release id keys it.
@@ -5610,6 +5655,7 @@ mod tests {
         assert_eq!(rec.instance_id, 42);
         assert_eq!(rec.artist, "Plastikman");
         assert_eq!(rec.added.as_deref(), Some("2024-01-02T00:00:00-08:00"));
+        assert_eq!(rec.notes.as_deref(), Some("B2 - awesome"));
     }
 
     #[test]
@@ -5623,6 +5669,7 @@ mod tests {
             id: 42,
             date_added: String::new(),
             basic_information: bi,
+            notes: String::new(),
         };
         assert!(item.into_record().is_none());
     }

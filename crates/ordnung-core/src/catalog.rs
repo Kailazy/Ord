@@ -405,7 +405,10 @@ const RECENTLY_ADDED_WINDOW_SECS: i64 = 24 * 60 * 60;
 ///
 /// Schema 25 adds the covering indexes the GUI's launch reads run on, so
 /// they stop walking the waveform and cover blobs (see `init_schema`).
-const SCHEMA_VERSION: i64 = 26;
+///
+/// Schema 27 adds `notes` to the vinyl tables: the user's own Discogs note
+/// on a want or a collection copy.
+const SCHEMA_VERSION: i64 = 27;
 
 /// The columns of the two vinyl list tables (`vinyl_collection`,
 /// `vinyl_wantlist`), shared so both are created alike and so an older
@@ -429,6 +432,7 @@ const VINYL_LIST_DDL: &str = "instance_id    INTEGER PRIMARY KEY,
                 added          TEXT,
                 folder_id      INTEGER,
                 genres         TEXT,
+                notes          TEXT,
                 fetched_at     INTEGER NOT NULL DEFAULT (unixepoch()),
                 price          REAL,
                 price_currency TEXT,
@@ -1104,7 +1108,13 @@ impl Catalog {
         for table in ["vinyl_collection", "vinyl_wantlist"] {
             self.add_column_if_missing(table, "genres", "TEXT")?;
         }
-        // Schema 20: the cover blob moves to the end of both vinyl tables (see
+        // The user's own Discogs note on each item (schema 27). NULL until
+        // the next vinyl refresh carries it.
+        for table in ["vinyl_collection", "vinyl_wantlist"] {
+            self.add_column_if_missing(table, "notes", "TEXT")?;
+        }
+        // Schema 20, and again whenever a column lands after the blob: the
+        // cover blob moves to the end of both vinyl tables (see
         // `VINYL_LIST_DDL` for why). SQLite can't reorder columns, so an older
         // table is rebuilt in place; a no-op once the blob is already last.
         for table in ["vinyl_collection", "vinyl_wantlist"] {
@@ -3317,8 +3327,9 @@ impl Catalog {
                 "INSERT INTO {table}
                  (instance_id, release_id, title, artist, year, label,
                   catalog_number, format, thumb_url, cover_url, added, folder_id,
-                  genres, fetched_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, unixepoch())
+                  genres, notes, fetched_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14,
+                     unixepoch())
              ON CONFLICT(instance_id) DO UPDATE SET
                  release_id     = excluded.release_id,
                  title          = excluded.title,
@@ -3334,6 +3345,7 @@ impl Catalog {
                  added          = excluded.added,
                  folder_id      = excluded.folder_id,
                  genres         = COALESCE(excluded.genres, genres),
+                 notes          = excluded.notes,
                  fetched_at     = excluded.fetched_at"
             ),
             params![
@@ -3350,6 +3362,7 @@ impl Catalog {
                 rec.added,
                 rec.folder_id.map(|f| f as i64),
                 join_genres(&rec.genres),
+                rec.notes,
             ],
         )?;
         Ok(())
@@ -3366,7 +3379,7 @@ impl Catalog {
         let mut stmt = self.conn.prepare(&format!(
             "SELECT instance_id, release_id, title, artist, year, label,
                     catalog_number, format, thumb_url, cover_url, added, folder_id,
-                    typeof(cover_png) = 'blob', price, price_currency, genres
+                    typeof(cover_png) = 'blob', price, price_currency, genres, notes
              FROM {table}
              ORDER BY artist COLLATE NOCASE, title COLLATE NOCASE, instance_id"
         ))?;
@@ -3389,6 +3402,7 @@ impl Catalog {
                     price: r.get(13)?,
                     price_currency: r.get(14)?,
                     genres: split_genres(r.get::<_, Option<String>>(15)?),
+                    notes: r.get(16)?,
                 })
             })?
             .collect::<rusqlite::Result<Vec<_>>>()?;
@@ -6487,6 +6501,7 @@ mod tests {
             price: None,
             price_currency: None,
             genres: vec!["Electronic".into(), "Techno".into()],
+            notes: Some("B2 is the one".into()),
         }
     }
 
@@ -6573,6 +6588,23 @@ mod tests {
         cat.upsert_vinyl(own, &bare).unwrap();
         let rec = &cat.list_vinyl(own).unwrap()[0];
         assert_eq!(rec.genres, vec!["Electronic", "Techno"]);
+    }
+
+    #[test]
+    fn vinyl_notes_round_trip_and_follow_the_sync() {
+        let cat = Catalog::open(":memory:").unwrap();
+        let own = VinylList::Collection;
+        cat.upsert_vinyl(own, &vinyl(1, "Plastikman", "Sheet One"))
+            .unwrap();
+        let rec = &cat.list_vinyl(own).unwrap()[0];
+        assert_eq!(rec.notes.as_deref(), Some("B2 is the one"));
+
+        // A note deleted on Discogs is gone after the next sync.
+        let mut bare = vinyl(1, "Plastikman", "Sheet One");
+        bare.notes = None;
+        cat.upsert_vinyl(own, &bare).unwrap();
+        let rec = &cat.list_vinyl(own).unwrap()[0];
+        assert_eq!(rec.notes, None);
     }
 
     #[test]

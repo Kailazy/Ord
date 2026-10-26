@@ -59,11 +59,13 @@ pub mod app {
     pub const LOCK_KEY: &str = "lock-key";
     pub const WAVE_SINE: &str = "wave-sine";
     pub const INFO: &str = "info";
+    pub const CHAT_TEARDROP_TEXT: &str = "chat-teardrop-text";
 
     #[cfg(test)]
     pub const ALL: &[&str] = &[
         MUSIC_NOTE, VINYL, HEART, SPARKLE, WARNING, EJECT, LIGHTNING, PLUS, PACKAGE, TAG, FOLDER,
         FILE_AUDIO, CARET_UP, CARET_DOWN, CLIPBOARD_TEXT, LOCK_KEY, WAVE_SINE, INFO,
+        CHAT_TEARDROP_TEXT,
     ];
 }
 

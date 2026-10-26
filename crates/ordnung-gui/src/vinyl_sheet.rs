@@ -1461,6 +1461,11 @@ impl App {
         // behind it, and both update together on the reload an edit triggers.
         let in_collection = self.vinyl_owned.contains(&release_id);
         let in_wantlist = self.vinyl_wanted.contains(&release_id);
+        // Your own Discogs note on the record, from whichever list carries one.
+        let sheet_note = [VinylList::Collection, VinylList::Wantlist]
+            .into_iter()
+            .filter_map(|list| self.vinyl_record_in(list, release_id)?.notes)
+            .reduce(|a, b| a + "\n\n" + &b);
         // The imprint, once the detail names it — what the label link on
         // the header opens the label page with.
         let sheet_label = self
@@ -2043,6 +2048,13 @@ impl App {
                             .clicked()
                             {
                                 act = Some(Act::ToggleList(VinylList::Wantlist));
+                            }
+                            if let Some(note) = &sheet_note {
+                                crate::ui::icon_note(
+                                    ui,
+                                    crate::ui::phosphor_icons::app::CHAT_TEARDROP_TEXT,
+                                    note,
+                                );
                             }
                             // Dig from here: search Discogs outward from this
                             // record for pressings you don't already have.
