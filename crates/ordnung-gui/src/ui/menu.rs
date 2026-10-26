@@ -64,6 +64,22 @@ const SHADOW: egui::epaint::Shadow = egui::epaint::Shadow {
 /// filled it would drag the panel out to the window edge. A menu also shouldn't
 /// resize as rows come and go (a filter count appearing, a section toggling).
 pub fn dropdown(anchor: &egui::Response, width: f32, add: impl FnOnce(&mut MenuUi)) {
+    dropdown_from(anchor, width, false, add);
+}
+
+/// A [`dropdown`] hung from the anchor's right edge instead of its left: for
+/// an anchor at the right edge of its window, where a panel hanging from the
+/// left edge would run past the window.
+pub fn dropdown_right(anchor: &egui::Response, width: f32, add: impl FnOnce(&mut MenuUi)) {
+    dropdown_from(anchor, width, true, add);
+}
+
+fn dropdown_from(
+    anchor: &egui::Response,
+    width: f32,
+    right: bool,
+    add: impl FnOnce(&mut MenuUi),
+) {
     let ctx = anchor.ctx.clone();
     let id = anchor.id.with("ord_dropdown");
     let mut open: bool = ctx.data(|d| d.get_temp(id).unwrap_or(false));
@@ -82,7 +98,7 @@ pub fn dropdown(anchor: &egui::Response, width: f32, add: impl FnOnce(&mut MenuU
     // Area — must not read as click-away.
     let field_focused = ctx.memory(|m| m.focused().is_some());
     let nested_popup_open = ctx.memory(|m| m.any_popup_open());
-    let Some(panel) = draw_panel(&ctx, anchor, id, open, width, add) else {
+    let Some(panel) = draw_panel(&ctx, anchor, id, open, width, right, add) else {
         ctx.data_mut(|d| d.insert_temp(id, open));
         return;
     };
@@ -126,7 +142,7 @@ pub fn held(
         ctx.data_mut(|d| d.insert_temp(id.with("at"), now));
     }
     ctx.data_mut(|d| d.insert_temp(id, open));
-    let panel = draw_panel(&ctx, anchor, id, open, width, add)?;
+    let panel = draw_panel(&ctx, anchor, id, open, width, false, add)?;
     if open && panel.rows_entering() {
         ctx.request_repaint();
     }
@@ -158,6 +174,7 @@ fn draw_panel(
     id: egui::Id,
     open: bool,
     width: f32,
+    right: bool,
     add: impl FnOnce(&mut MenuUi),
 ) -> Option<Panel> {
     let now = ctx.input(|i| i.time);
@@ -185,13 +202,20 @@ fn draw_panel(
     // The anchor's right edge tells the two cases apart: it holds while a
     // right-aligned label grows, and moves when the window itself relaid
     // the anchor, which is when the pin is dropped and the panel follows.
-    let pin_id = id.with("pin");
-    let pin: Option<(f32, f32)> = ctx.data(|d| d.get_temp(pin_id));
-    let left = match pin {
-        Some((left, right)) if right == anchor.rect.right() => left,
-        _ => anchor.rect.left(),
+    // Hung from the right edge, the panel ends where the anchor ends, and
+    // that edge is the one that holds, so there is nothing to pin.
+    let left = if right {
+        anchor.rect.right() - (width + 2.0 * space::S2)
+    } else {
+        let pin_id = id.with("pin");
+        let pin: Option<(f32, f32)> = ctx.data(|d| d.get_temp(pin_id));
+        let left = match pin {
+            Some((left, right)) if right == anchor.rect.right() => left,
+            _ => anchor.rect.left(),
+        };
+        ctx.data_mut(|d| d.insert_temp(pin_id, (left, anchor.rect.right())));
+        left
     };
-    ctx.data_mut(|d| d.insert_temp(pin_id, (left, anchor.rect.right())));
 
     let mut rows = 0usize;
     let mut want_close = false;

@@ -253,11 +253,14 @@ impl App {
     /// Settings window: enter and persist the Discogs token. Saved to
     /// `~/.ordnung/config.toml` so it survives restarts and Finder launches
     /// (which inherit no shell environment).
-    /// The Discogs settings tab: connection state up top, then the token field,
-    /// then the attribution Discogs' API terms require us to display.
+    /// The Discogs settings tab: the account card, whose right side takes
+    /// the token (a popup to paste one; Replace and Remove once one is
+    /// saved), then the release formats and the attribution Discogs' API
+    /// terms require us to display.
     ///
     /// Returns `true` when the token should be saved (the caller owns the save
-    /// so it stays on the same path as the window's other persistence).
+    /// so it stays on the same path as the window's other persistence); an
+    /// empty `token_input` saved is the removal.
     ///
     /// Onboarding shape: the friction in a personal access token isn't pasting
     /// it, it's *finding* it — so "Get my token" deep-links straight to the
@@ -267,15 +270,18 @@ impl App {
         let mut save = false;
         let accent = crate::ui::tokens::color::nav_accent();
 
-        ui.label(egui::RichText::new("Discogs account").strong());
-        ui.label(
-            egui::RichText::new(
-                "Ord uses Discogs to fetch cover art and release details, and \
-                 to read your collection and wantlist.",
-            )
-            .small()
-            .weak(),
-        );
+        ui.horizontal(|ui| {
+            ui.label(egui::RichText::new("Discogs account").strong());
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if ui
+                    .add(egui::Button::new("Get my token on Discogs ↗").fill(accent))
+                    .on_hover_note("Opens discogs.com/settings/developers")
+                    .clicked()
+                {
+                    crate::util::open_url("https://www.discogs.com/settings/developers");
+                }
+            });
+        });
         ui.add_space(10.0);
 
         // ---- Identity card ------------------------------------------------
@@ -301,7 +307,7 @@ impl App {
                     "✕",
                     "Token rejected".into(),
                     "Discogs didn't accept this token. It may have been revoked or \
-                     pasted incompletely. Generate a new one and paste it below."
+                     pasted incompletely. Generate a new one and replace it."
                         .into(),
                 ),
                 DiscogsAuth::Unreachable { detail } => (
@@ -345,13 +351,78 @@ impl App {
                         egui::Color32::WHITE,
                     );
                     ui.add_space(4.0);
-                    ui.vertical(|ui| {
-                        ui.label(egui::RichText::new(&heading).font(
-                            crate::ui::tokens::font::strong(
-                                crate::ui::tokens::font::headline().size,
-                            ),
-                        ));
-                        ui.label(egui::RichText::new(&body).small().weak());
+                    // The token lives on the card's right: a popup to paste
+                    // one, then Replace and Remove. Submitting saves and
+                    // verifies in one go. The buttons go down first so the
+                    // words wrap short of them.
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        let busy = self.discogs_auth == DiscogsAuth::Checking;
+                        let has_token = !self.discogs_token().trim().is_empty();
+                        let label = if has_token { "Replace…" } else { "Add token…" };
+                        let btn = ui.add_enabled(!busy, egui::Button::new(label));
+                        let opened = btn.clicked();
+                        if opened {
+                            // The popup takes a new token; the saved one
+                            // stays until this one is submitted.
+                            self.token_input.clear();
+                        }
+                        crate::ui::menu::dropdown_right(&btn, 300.0, |m| {
+                            let mut done = false;
+                            m.ui().horizontal(|ui| {
+                                crate::ui::control_row(ui, |ui| {
+                                    ui.with_layout(
+                                        egui::Layout::right_to_left(egui::Align::Center),
+                                        |ui| {
+                                            let filled = !self.token_input.trim().is_empty();
+                                            let connect = ui
+                                                .add_enabled(filled, egui::Button::new("Connect"));
+                                            let field = ui.add(
+                                                crate::ui::field::Field::singleline(
+                                                    &mut self.token_input,
+                                                )
+                                                .password(true)
+                                                .hint("paste your Discogs token")
+                                                .width(f32::INFINITY),
+                                            );
+                                            if opened {
+                                                field.request_focus();
+                                            }
+                                            // Enter in the field connects, like the button.
+                                            let submitted = field.lost_focus()
+                                                && ui.input(|i| i.key_pressed(egui::Key::Enter))
+                                                && !self.token_input.trim().is_empty();
+                                            if connect.clicked() || submitted {
+                                                done = true;
+                                            }
+                                        },
+                                    );
+                                });
+                            });
+                            if done {
+                                save = true;
+                                m.close();
+                            }
+                        });
+                        if has_token
+                            && ui.add_enabled(!busy, egui::Button::new("Remove")).clicked()
+                        {
+                            self.token_input.clear();
+                            save = true;
+                        }
+                        if let DiscogsAuth::Unreachable { .. } = self.discogs_auth {
+                            if ui.button("Retry").clicked() {
+                                let ctx = ui.ctx().clone();
+                                self.spawn_discogs_identity_check(ctx);
+                            }
+                        }
+                        ui.with_layout(egui::Layout::top_down(egui::Align::Min), |ui| {
+                            ui.label(egui::RichText::new(&heading).font(
+                                crate::ui::tokens::font::strong(
+                                    crate::ui::tokens::font::headline().size,
+                                ),
+                            ));
+                            ui.label(egui::RichText::new(&body).small().weak());
+                        });
                     });
                 });
             });
@@ -360,100 +431,6 @@ impl App {
         if self.discogs_auth == DiscogsAuth::Checking {
             ui.ctx().request_repaint();
         }
-
-        ui.add_space(10.0);
-        ui.horizontal(|ui| {
-            let busy = self.discogs_auth == DiscogsAuth::Checking;
-            let has_token = !self.discogs_token().trim().is_empty();
-            if ui
-                .add_enabled(!busy && has_token, egui::Button::new("Verify connection"))
-                .on_hover_note("Ask Discogs to confirm this token")
-                .clicked()
-            {
-                let ctx = ui.ctx().clone();
-                self.spawn_discogs_identity_check(ctx);
-            }
-            if let DiscogsAuth::Connected { .. } = self.discogs_auth {
-                if ui
-                    .button("Sign out")
-                    .on_hover_note("Forget the saved token")
-                    .clicked()
-                {
-                    self.token_input.clear();
-                    self.config.discogs_token.clear();
-                    self.config.discogs_username.clear();
-                    self.discogs_auth = DiscogsAuth::SignedOut;
-                    if self.save_config() {
-                        self.status = "Signed out of Discogs.".into();
-                    }
-                }
-            }
-        });
-
-        ui.add_space(14.0);
-        ui.separator();
-        ui.add_space(10.0);
-
-        // ---- Token entry ---------------------------------------------------
-        ui.label(egui::RichText::new("Personal access token").strong());
-        ui.label(
-            egui::RichText::new(
-                "Discogs generates this on your account's Developers page. It's \
-                 stored locally and only ever sent to Discogs.",
-            )
-            .small()
-            .weak(),
-        );
-        ui.add_space(6.0);
-        if ui
-            .add(egui::Button::new("Get my token on Discogs ↗").fill(crate::ui::tokens::color::nav_accent()))
-            .on_hover_note("Opens discogs.com/settings/developers")
-            .clicked()
-        {
-            crate::util::open_url("https://www.discogs.com/settings/developers");
-        }
-        ui.add_space(8.0);
-        let token_field = ui.add(
-            crate::ui::field::Field::singleline(&mut self.token_input)
-                .password(true)
-                .hint("paste your Discogs token")
-                .width(f32::INFINITY),
-        );
-        // Enter in the field saves, matching the Save button.
-        let submitted = token_field.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
-        ui.add_space(10.0);
-        ui.horizontal(|ui| {
-            if ui.button("Save and verify").clicked() || submitted {
-                save = true;
-            }
-            if ui.button("Cancel").clicked() {
-                self.token_input = self.config.discogs_token.clone();
-                self.settings_open = false;
-            }
-        });
-
-        // Where the token lands on disk. Useful when someone wants to check or
-        // remove it by hand, but it's developer detail — folded away by default
-        // rather than sitting in the save row as a wall of path.
-        if let Some(p) = config::config_path() {
-            ui.add_space(6.0);
-            egui::CollapsingHeader::new(
-                egui::RichText::new("Where is this stored?").small().weak(),
-            )
-            .id_salt("discogs_token_path")
-            .show(ui, |ui| {
-                ui.label(egui::RichText::new(p.display().to_string()).small().weak());
-                ui.add_space(4.0);
-                if ui
-                    .small_button("Reveal in Finder")
-                    .on_hover_note("Show config.toml in Finder")
-                    .clicked()
-                {
-                    crate::util::reveal_in_finder(&p);
-                }
-            });
-        }
-
         ui.add_space(14.0);
         ui.separator();
         ui.add_space(10.0);
