@@ -936,7 +936,7 @@ impl App {
         let track_releases = &self.track_releases;
         let vinyl_owned_tracks = &self.vinyl_owned_tracks;
         let vinyl_wanted_tracks = &self.vinyl_wanted_tracks;
-        // Cmd/Ctrl+C copies the selected rows the same way the "Copy for Soulseek"
+        // Cmd/Ctrl+C copies the selected rows the same way the "Copy"
         // context-menu item does (Artist – Title, one per line). On native eframe
         // the OS copy shortcut arrives as an `Event::Copy`, not a Key::C press, so
         // we look for that. Skip when a text field has focus so editing a tag still
@@ -1892,9 +1892,9 @@ impl App {
                                                 ui.close_menu();
                                             }
                                             let slsk_label = if drag_ids.len() > 1 {
-                                                format!("Copy for Soulseek ({})", drag_ids.len())
+                                                format!("Copy ({})", drag_ids.len())
                                             } else {
-                                                "Copy for Soulseek".to_string()
+                                                "Copy".to_string()
                                             };
                                             if ui
                                                 .button(slsk_label)
@@ -2035,9 +2035,9 @@ impl App {
                                         // search box. Acts on the whole selection when
                                         // this row is part of it.
                                         let slsk_label = if drag_ids.len() > 1 {
-                                            format!("Copy for Soulseek ({})", drag_ids.len())
+                                            format!("Copy ({})", drag_ids.len())
                                         } else {
-                                            "Copy for Soulseek".to_string()
+                                            "Copy".to_string()
                                         };
                                         if ui
                                             .button(slsk_label)
@@ -2617,9 +2617,9 @@ impl App {
                 } else {
                     ctx_clone.copy_text(text);
                     self.status = if n == 1 {
-                        "Copied for Soulseek — paste into the search box.".into()
+                        "Copied — paste the name in a search box.".into()
                     } else {
-                        format!("Copied {n} tracks for Soulseek (one per line).")
+                        format!("Copied {n} tracks (one per line).")
                     };
                 }
             }
