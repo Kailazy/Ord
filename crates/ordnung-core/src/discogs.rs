@@ -214,7 +214,7 @@ pub struct RecordHit {
 
 /// One artist returned by a free-text artist lookup ([`Client::search_artists`]).
 ///
-/// The search box's Discogs mode answers "what exists?" with records; this is
+/// The search box's Discogs lane answers "what exists?" with records; this is
 /// the other thing a typed name can mean. An artist hit is a door rather than a
 /// destination — it opens the artist's whole discography (browsed by id, see
 /// [`Client::browse_by_id`]) instead of one record — so it carries only what a

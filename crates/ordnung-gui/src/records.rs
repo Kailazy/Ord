@@ -5,13 +5,12 @@
 //! other question a digger asks — "what exists?" — by pointing the same box at
 //! Discogs's release database.
 //!
-//! The two are deliberately *modes*, not one blended list, chosen by a toggle
-//! on the right of the field. Blending them would make every keystroke a
-//! network request and leave the user unsure whether an absent record means
-//! "you don't own it" or "it isn't there". A mode makes the scope explicit,
-//! keeps ordinary library filtering entirely offline, and gives the remote
-//! results the whole popup to show the fields that actually disambiguate a
-//! pressing.
+//! The two are deliberately separate *lanes* of one popup, not one blended
+//! list: the library's hits on top, these under a labelled rule. Blending
+//! them would leave the user unsure whether an absent record means "you don't
+//! own it" or "it isn't there"; stacked, both answers are on screen at once,
+//! and the library lane stays entirely offline and instant while this one
+//! rides its own longer debounce.
 //!
 //! Responsiveness is the design constraint, because Discogs is a blocking API
 //! paced at ~1 request/1.1s (`MIN_API_INTERVAL`). Three things keep the UI from
@@ -48,11 +47,16 @@ pub(crate) const RECORD_DEBOUNCE: Duration = Duration::from_millis(450);
 /// the case where the first few are dropped as unusable.
 const RECORD_PER_PAGE: u32 = 25;
 
-/// How many results the popup shows. Five, with the total count in the footer
+/// How many results the lane shows. Three, with the total count in the footer
 /// standing in for the rest — a lookup popup is a quick answer, not a browser,
-/// and five large rows read at a glance where a scrolling list of twenty-five
-/// has to be worked through.
-const RECORD_HITS_SHOWN: usize = 5;
+/// and the lane sits under up to five library hits, so three tall rows keep
+/// the whole popup on a laptop's screen where five would run off it.
+const RECORD_HITS_SHOWN: usize = 3;
+
+/// The lane's header colour: a green of the accent's weight, so "out on
+/// Discogs" reads as the peer of the accent-blue "yours" above it. Not
+/// `color::GREEN`, a status hue tuned for small marks that glares as text.
+const LANE_DISCOGS: egui::Color32 = egui::Color32::from_rgb(58, 158, 92);
 
 /// How many artists one lookup asks for. A few more than are shown, so a row
 /// Discogs returns blank doesn't leave a gap.
@@ -87,18 +91,6 @@ const LIST_BTN_R: f32 = 9.0;
 /// Motion for a row's hover wash and the cover fading in.
 const ROW_HIGHLIGHT_ANIM: f32 = 0.11;
 const COVER_FADE_ANIM: f32 = 0.22;
-
-/// What the search box is currently searching. Toggled by the control on the
-/// right of the field.
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
-pub(crate) enum SearchScope {
-    /// The digital catalog plus the cached Discogs collection/wantlist. Local,
-    /// instant, offline.
-    #[default]
-    Library,
-    /// All of Discogs. Networked, debounced, rate-limited.
-    Discogs,
-}
 
 /// Where a lookup stands, as far as the popup needs to know.
 ///
@@ -183,48 +175,25 @@ pub(crate) enum Pick {
 }
 
 impl App {
-    /// Is the search box pointed at Discogs right now?
-    pub(crate) fn searching_discogs(&self) -> bool {
-        self.search_scope == SearchScope::Discogs
-    }
-
-    /// Flip the search box between the library and Discogs.
-    ///
-    /// Switching *to* Discogs with a query already typed runs it immediately
-    /// rather than waiting for another keystroke — the user just asked for
-    /// these results by flipping the switch, so making them type a character to
-    /// get them would be a dead control.
-    pub(crate) fn set_search_scope(&mut self, scope: SearchScope) {
-        if self.search_scope == scope {
-            return;
-        }
-        self.search_scope = scope;
-        self.search_cursor = None;
-        match scope {
-            SearchScope::Discogs => {
-                self.search_popup_open = true;
-                self.start_record_search();
-            }
-            SearchScope::Library => {
-                // Drop any in-flight lookup's claim on the UI. The generation
-                // bump means a reply still on its way is ignored on arrival.
-                self.record_generation += 1;
-                self.record_search = RecordSearch::Idle;
-                self.refresh_search_hits();
-            }
-        }
+    /// Drop the lookup and any in-flight request's claim on the UI. The
+    /// generation bump means a reply still on its way is ignored on arrival.
+    pub(crate) fn reset_record_search(&mut self) {
+        self.record_generation += 1;
+        self.record_search = RecordSearch::Idle;
     }
 
     /// Kick off a Discogs lookup for the current query, unless the answer is
     /// already known.
     ///
-    /// Called from the debounce tick and from the scope toggle. Safe to call
-    /// repeatedly: an unchanged query that's already loading or already answered
-    /// from cache costs nothing.
+    /// Called from the debounce tick and from the row actions that fill the
+    /// box. Safe to call repeatedly: an unchanged query that's already loading
+    /// or already answered from cache costs nothing.
     pub(crate) fn start_record_search(&mut self) {
         let q = self.search_query.trim().to_string();
-        if q.is_empty() {
-            self.record_search = RecordSearch::Idle;
+        // One character names nothing on Discogs and costs a request; the lane
+        // waits for a second one.
+        if q.chars().count() < 2 {
+            self.reset_record_search();
             return;
         }
         // Already answered this exact query in this session: show it now and
@@ -255,10 +224,10 @@ impl App {
         if matches!(&self.record_search, RecordSearch::Loading(inflight) if inflight == &q) {
             return;
         }
-        let token = self.discogs_token();
-        if token.trim().is_empty() {
-            self.record_search =
-                RecordSearch::Failed("Add a Discogs token in Settings to look up records.".into());
+        // No token: the lane stays out, rather than pointing at Settings under
+        // every library search.
+        if self.discogs_token().trim().is_empty() {
+            self.reset_record_search();
             return;
         }
         self.record_search = RecordSearch::Loading(q.clone());
@@ -354,20 +323,30 @@ impl App {
         }
     }
 
-    /// Draw the Discogs results list inside the already-open popup frame.
+    /// Draw the Discogs lane inside the already-open popup frame.
     ///
-    /// Returns what the user clicked, if anything — applied by the caller so
-    /// the list doesn't mutate `self` mid-render.
-    pub(crate) fn draw_record_results(&mut self, ui: &mut egui::Ui) -> Option<Pick> {
+    /// `cursor` is the keyboard highlight within this lane (the popup has
+    /// already subtracted the library rows above it). Returns what the user
+    /// clicked, if anything — applied by the caller so the list doesn't
+    /// mutate `self` mid-render.
+    pub(crate) fn draw_record_results(
+        &mut self,
+        ui: &mut egui::Ui,
+        cursor: Option<usize>,
+    ) -> Option<Pick> {
         // Snapshot what we're drawing so the row loop can borrow `self` for
         // cover lookups without fighting the borrow on `record_search`.
         let state = self.record_search.clone();
         let query = self.search_query.trim().to_string();
+        // Nothing asked yet: the popup is the library alone, no header.
+        if matches!(state, RecordSearch::Idle) {
+            return None;
+        }
+        ui.separator();
+        crate::search_box::lane_header(ui, "On Discogs", LANE_DISCOGS);
         match state {
-            RecordSearch::Idle => {
-                note(ui, "Type to search Discogs");
-                None
-            }
+            // Returned above; the match still has to be total.
+            RecordSearch::Idle => None,
             RecordSearch::Loading(q) => {
                 ui.add_space(space::S2);
                 ui.horizontal(|ui| {
@@ -409,7 +388,7 @@ impl App {
                 // the rest, rather than becoming a list to scroll through.
                 let shown = hits.len().min(RECORD_HITS_SHOWN);
                 for (i, hit) in hits.iter().take(shown).enumerate() {
-                    let selected = self.search_cursor == Some(i);
+                    let selected = cursor == Some(i);
                     let tex = match self.dig_covers.get(&hit.thumb_url) {
                         Some(ThumbState::Ready(t)) => t.clone(),
                         Some(_) => None,
@@ -467,12 +446,12 @@ impl App {
                             }
                         })
                         .collect();
-                    let selected = self.search_cursor.and_then(|c| c.checked_sub(shown));
+                    let selected = cursor.and_then(|c| c.checked_sub(shown));
                     if let Some(i) = artist_band(ui, &artists, &portraits, selected) {
                         chosen = Some(Pick::Artist(artists[i].clone()));
                     }
                 }
-                // Account for everything the five rows didn't show, so the list
+                // Account for everything the rows didn't show, so the list
                 // never implies it's the whole answer.
                 if items as usize > shown {
                     if footer(ui, items).clicked() {
@@ -674,105 +653,11 @@ fn artist_band(
     clicked
 }
 
-/// Total width the scope toggle occupies, reserved by the toolbar so the search
-/// field shrinks around it instead of pushing it off the edge.
-pub(crate) const SCOPE_TOGGLE_W: f32 = 132.0;
-
-/// Motion for the selected segment sliding between the two halves.
-const SCOPE_SLIDE_ANIM: f32 = 0.16;
-
-/// Fill for the selected half, by scope. Deliberately not the saturated
-/// `color::BLUE`/`color::GREEN` status hues — those are tuned for small marks
-/// and glare as a filled pill under white text. This is the app's accent blue
-/// and a green matched to its weight, so the two positions read as equals.
-const SCOPE_DISCOGS: egui::Color32 = egui::Color32::from_rgb(58, 158, 92);
-
-impl App {
-    /// The two-position switch on the right of the search field: **Library** or
-    /// **Discogs**.
-    ///
-    /// A segmented control rather than a checkbox or a menu because the choice
-    /// is a scope with exactly two values, both worth naming — the user needs to
-    /// read "what am I about to search" without opening anything. The selected
-    /// half slides rather than blinking across, which is what makes it read as
-    /// one switch with a position instead of two buttons that light up.
-    pub(crate) fn draw_scope_toggle(&mut self, ui: &mut egui::Ui) {
-        // The row's height: it sits beside the search field.
-        let h = crate::ui::control_h(ui);
-        let (rect, _) = ui.allocate_exact_size(egui::vec2(SCOPE_TOGGLE_W, h), egui::Sense::hover());
-        let painter = ui.painter();
-        painter.rect_filled(rect, egui::Rounding::same(radius::SM), color::field());
-
-        let half = rect.width() / 2.0;
-        let on_discogs = self.searching_discogs();
-        // Animate the *position*, so switching slides the pill across rather
-        // than teleporting it.
-        let t = ui.ctx().animate_bool_with_time_and_easing(
-            egui::Id::new("search_scope_pos"),
-            on_discogs,
-            SCOPE_SLIDE_ANIM,
-            egui::emath::easing::cubic_out,
-        );
-        let pill = egui::Rect::from_min_size(
-            egui::pos2(rect.left() + half * t, rect.top()),
-            egui::vec2(half, h),
-        )
-        .shrink(2.0);
-        // The pill carries the scope's colour: blue for the local library, green
-        // for Discogs. It's the same cue the rest of the app uses for "yours" vs
-        // "out on Discogs", so the switch says which world you're searching
-        // without reading the label. Crossfading along the slide keeps it one
-        // moving object — a hard colour swap mid-travel would read as two.
-        let pill_fill = color::accent().lerp_to_gamma(SCOPE_DISCOGS, t);
-        painter.rect_filled(pill, egui::Rounding::same(radius::XS), pill_fill);
-
-        let mut clicked: Option<SearchScope> = None;
-        for (i, (scope, label)) in [
-            (SearchScope::Library, "Library"),
-            (SearchScope::Discogs, "Discogs"),
-        ]
-        .into_iter()
-        .enumerate()
-        {
-            let seg = egui::Rect::from_min_size(
-                egui::pos2(rect.left() + half * i as f32, rect.top()),
-                egui::vec2(half, h),
-            );
-            let resp = ui.interact(seg, ui.id().with(("search_scope", i)), egui::Sense::click());
-            if resp.clicked() {
-                clicked = Some(scope);
-            }
-            let selected = self.search_scope == scope;
-            // White on the coloured pill — `LABEL` is a near-white tuned for dark
-            // surfaces and goes muddy over a saturated fill.
-            // The unselected half brightens on hover so the control advertises
-            // that both sides are live, not just the lit one.
-            let ink = if selected {
-                egui::Color32::WHITE
-            } else if resp.hovered() {
-                color::LABEL_2
-            } else {
-                color::LABEL_3
-            };
-            ui.painter().text(
-                seg.center(),
-                egui::Align2::CENTER_CENTER,
-                label,
-                egui::TextStyle::Small.resolve(ui.style()),
-                ink,
-            );
-        }
-        if let Some(scope) = clicked {
-            self.set_search_scope(scope);
-        }
-    }
-}
-
-/// The strip under the five rows: how many matches there are in total, and a
+/// The strip under the rows: how many matches there are in total, and a
 /// way out to the full result set on discogs.com.
 ///
 /// The count is the honest part — a lookup that found 1,204 matches and drew
-/// five of them should say so, or the list quietly misrepresents itself as the
+/// three of them should say so, or the list quietly misrepresents itself as the
 /// whole answer. The click-through goes to the browser rather than paginating
 /// in-app: past the first handful the user is browsing, and the browser is
 /// better at that than a popup under a search field.
@@ -868,7 +753,7 @@ pub(crate) enum RowAct {
 /// The label and catalog number are deliberately *not* here. They're what
 /// separates two pressings of the same record, which matters once you've picked
 /// a record and are choosing between its versions — the release sheet's job.
-/// In a five-row lookup they'd crowd out the identity the list exists to show.
+/// In a three-row lookup they'd crowd out the identity the list exists to show.
 fn record_row(
     ui: &mut egui::Ui,
     hit: &RecordHit,
@@ -1048,7 +933,7 @@ fn edit_label(hit: &RecordHit) -> String {
 /// solid one is a fact.
 ///
 /// The buttons stay dim until the row is hovered, then rise to full strength —
-/// five rows each showing two lit controls would fight the titles for
+/// three rows each showing two lit controls would fight the titles for
 /// attention, and you only need them on the row you're pointing at.
 fn draw_list_button(
     ui: &egui::Ui,

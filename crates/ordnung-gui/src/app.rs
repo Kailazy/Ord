@@ -128,7 +128,6 @@ impl App {
             search_vinyl_covers: HashMap::new(),
             search_cover_req_tx,
             search_cover_rx,
-            search_scope: SearchScope::default(),
             record_search: RecordSearch::Idle,
             record_generation: 0,
             record_cache: HashMap::new(),
@@ -2861,19 +2860,15 @@ impl App {
                             }
                             None => {
                                 // Whatever the search group can't give up: the
-                                // field at its floor, the scope toggle, and the
-                                // separators on either side of this label.
-                                // Everything else is the label's to use, so it
-                                // shortens (then truncates) instead of the
-                                // toggle drawing over it in a narrow window.
+                                // field at its floor and the separators on
+                                // either side of this label. Everything else is
+                                // the label's to use, so it shortens (then
+                                // truncates) instead of the field drawing over
+                                // it in a narrow window.
                                 let gap = ui.spacing().item_spacing.x;
                                 let sep_w = 6.0 + gap;
                                 let field_frame = crate::ui::field::MARGIN.sum().x;
-                                let reserved = SEARCH_FIELD_MIN_W
-                                    + field_frame
-                                    + gap
-                                    + SCOPE_TOGGLE_W
-                                    + sep_w * 2.0;
+                                let reserved = SEARCH_FIELD_MIN_W + field_frame + sep_w * 2.0;
                                 let room = ui.available_width() - reserved;
                                 let width_of = |ui: &egui::Ui, text: &str| {
                                     ui.painter()
@@ -2931,42 +2926,30 @@ impl App {
                         // group left over. Rendered left-to-right inside the reserved
                         // remainder so it can never collide with the counts.
                         ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
-                            // Room for the scope toggle, so the field shrinks
-                            // rather than pushing it past the edge of this
-                            // remainder.
-                            let gap = ui.spacing().item_spacing.x;
                             // The field's width is its text area: its frame
                             // adds the margin on either side (see
                             // `ui::field::MARGIN`), and that is what the
                             // row has to find room for.
                             let field_frame = crate::ui::field::MARGIN.sum().x;
-                            let reserved = SCOPE_TOGGLE_W + gap + field_frame;
-                            let w = (ui.available_width() - reserved)
+                            let w = (ui.available_width() - field_frame)
                                 .clamp(SEARCH_FIELD_MIN_W, 320.0);
-                            // Anchor the field + scope toggle to the window's
-                            // horizontal center rather than the left edge of
-                            // whatever space the other groups left over, so the
-                            // box holds one spot across views no matter which
+                            // Anchor the field to the window's horizontal
+                            // center rather than the left edge of whatever
+                            // space the other groups left over, so the box
+                            // holds one spot across views no matter which
                             // buttons or counts surround it. Only a window too
-                            // narrow to fit pushes the group off center.
+                            // narrow to fit pushes it off center.
                             let avail = ui.available_rect_before_wrap();
-                            let group_w = w + field_frame + gap + SCOPE_TOGGLE_W;
+                            let group_w = w + field_frame;
                             let left = (toolbar_center_x - group_w / 2.0).clamp(
                                 avail.left(),
                                 (avail.right() - group_w).max(avail.left()),
                             );
                             ui.add_space((left - avail.left()).max(0.0));
-                            // Read before the field borrows `search_query`
-                            // mutably, so the hint can depend on the scope.
-                            let hint = if self.searching_discogs() {
-                                "Search all of Discogs"
-                            } else {
-                                "Search songs and records"
-                            };
                             let resp = ui.add(
                                 crate::ui::field::Field::singleline(&mut self.search_query)
                                     .width(w)
-                                    .hint(hint),
+                                    .hint("Search songs, records and Discogs"),
                             );
                             // ⌘F (or Edit ▸ Find) asked for this field. Focus
                             // it and select whatever's already typed, so the
@@ -2986,10 +2969,9 @@ impl App {
                                     ));
                                     state.store(ui.ctx(), resp.id);
                                 }
-                                // Bring back the suggestions the box last
-                                // showed, rather than an empty popup over a
-                                // query that's still there.
-                                if !self.search_hits.is_empty() {
+                                // Bring back the popup the box last showed
+                                // over a query that's still there.
+                                if !self.search_query.trim().is_empty() {
                                     self.search_popup_open = true;
                                 }
                             }
@@ -3000,25 +2982,19 @@ impl App {
                                 // the catalog on every keystroke.
                                 self.search_apply_at =
                                     Some(std::time::Instant::now() + SEARCH_DEBOUNCE);
-                                if self.searching_discogs() {
-                                    // The remote lookup rides its own, longer
-                                    // debounce; until it fires the popup keeps
-                                    // showing the last answer rather than
-                                    // blanking on every keystroke.
-                                    self.record_apply_at =
-                                        Some(std::time::Instant::now() + RECORD_DEBOUNCE);
-                                }
+                                // The Discogs lane rides its own, longer
+                                // debounce; until it fires the lane keeps
+                                // showing the last answer rather than blanking
+                                // on every keystroke.
+                                self.record_apply_at =
+                                    Some(std::time::Instant::now() + RECORD_DEBOUNCE);
                             }
                             // Re-opening on focus lets a user who dismissed the
                             // popup get it back by clicking into the box, without
                             // retyping.
-                            if resp.gained_focus() && !self.search_hits.is_empty() {
+                            if resp.gained_focus() && !self.search_query.trim().is_empty() {
                                 self.search_popup_open = true;
                             }
-                            // The scope switch sits immediately right of the
-                            // field, reading as part of the same control: it
-                            // says what the box you just typed in will search.
-                            self.draw_scope_toggle(ui);
                             self.draw_search_popup(&resp);
                         });
                     });

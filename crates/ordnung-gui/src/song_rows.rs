@@ -238,7 +238,7 @@ impl App {
                             act = Some(SongAct::PlayLocal(i));
                             ui.close_menu();
                         }
-                        if ui.button("Search Discogs for this song").on_hover_note("Put the song in the search box, Discogs mode").clicked() {
+                        if ui.button("Search Discogs for this song").on_hover_note("Put the song in the search box").clicked() {
                             act = Some(SongAct::Search(i));
                             ui.close_menu();
                         }
@@ -307,12 +307,7 @@ impl App {
                     }
                 }
             }
-            SongAct::Search(_) => {
-                self.search_query = s.song_label();
-                self.set_search_scope(crate::records::SearchScope::Discogs);
-                self.search_popup_open = true;
-                self.start_record_search();
-            }
+            SongAct::Search(_) => self.search_for(s.song_label()),
             SongAct::ToggleLike(_) => self.toggle_like(s),
             SongAct::AddToCrate(_, cid) => self.add_songs_to_crate(cid, vec![s]),
             SongAct::RemoveFromCrate(_) => {

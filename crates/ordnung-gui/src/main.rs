@@ -71,7 +71,7 @@ use ordnung_core::{
 use playback::Sound;
 use player::*;
 use rayon::prelude::*;
-use records::{RecordFetched, RecordSearch, SearchScope, RECORD_DEBOUNCE, SCOPE_TOGGLE_W};
+use records::{RecordFetched, RecordSearch, RECORD_DEBOUNCE};
 use sidebar::*;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
@@ -1291,10 +1291,6 @@ struct App {
     search_vinyl_covers: HashMap<VinylCoverKey, ThumbState>,
     search_cover_req_tx: Sender<VinylCoverKey>,
     search_cover_rx: Receiver<VinylCoverLoaded>,
-    /// Which database the search box is pointed at — the local library or all
-    /// of Discogs. Toggled by the control on the right of the field; see
-    /// `records.rs` for why these are modes rather than one blended list.
-    search_scope: SearchScope,
     /// State of the current Discogs lookup: idle, in flight, answered, or failed.
     record_search: RecordSearch,
     /// Monotonic id for lookup requests. A reply carrying anything other than

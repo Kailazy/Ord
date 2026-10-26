@@ -9,6 +9,11 @@
 //! record switches to the Vinyl view and opens its release sheet. Ranking and
 //! matching live in `ordnung_core::search`; this module is presentation and
 //! navigation only, per `ordnung-architecture`.
+//!
+//! Under those hits the same popup carries a second lane, the Discogs lookup
+//! from `records.rs`, so "what do I have?" and "what exists?" are answered by
+//! one query without a mode switch. The lanes stay separate: the library's
+//! rows on top, Discogs under a labelled rule, one keyboard cursor over both.
 
 use super::*;
 use crate::ui::tokens::{color, radius, space};
@@ -49,6 +54,7 @@ impl App {
             self.search_hits.clear();
             self.search_popup_open = false;
             self.search_cursor = None;
+            self.reset_record_search();
             return;
         }
         let hits = Catalog::open(&self.db_path)
@@ -87,9 +93,20 @@ impl App {
         self.search_query.clear();
         self.search_apply_at = None;
         self.search_hits.clear();
+        self.reset_record_search();
         self.search_popup_open = false;
         self.search_cursor = None;
         self.reload();
+    }
+
+    /// Put `query` in the box and run both lanes at once, as a row action does
+    /// when it hands a song to the search. Neither lane waits for its
+    /// debounce: the click already said what to look for. `refresh_search_hits`
+    /// opens the popup.
+    pub(crate) fn search_for(&mut self, query: String) {
+        self.search_query = query;
+        self.refresh_search_hits();
+        self.start_record_search();
     }
 
     /// Hand the typed query to the table's own filter: switch to the Library
@@ -204,12 +221,10 @@ impl App {
             return;
         }
         let focused = field.has_focus();
-        // Arrow/Enter navigate whichever list is on screen.
-        let n = if self.searching_discogs() {
-            self.pick_count()
-        } else {
-            self.search_hits.len()
-        };
+        // Arrow/Enter walk one index over both lanes: the library hits, then
+        // the Discogs records and artist chips under them.
+        let lib_n = self.search_hits.len();
+        let n = lib_n + self.pick_count();
 
         // Esc always dismisses, list or no list. Only the flag is flipped here:
         // this frame still paints the popup at its current `open_t`, and the
@@ -225,7 +240,7 @@ impl App {
         // hit — the keyboard route to the "Show every match" row below the list.
         // Read before the `n > 0` guard below on purpose: a query with no ranked
         // hits at all is exactly when widening to the table is worth offering.
-        if want_open && !dismissing && focused && !self.searching_discogs() {
+        if want_open && !dismissing && focused {
             if ctx.input_mut(|i| i.consume_key(egui::Modifiers::COMMAND, egui::Key::Enter)) {
                 self.filter_table_by_search();
                 return;
@@ -260,15 +275,22 @@ impl App {
             // there's no other meaning left for the key.
             if enter {
                 let i = self.search_cursor.unwrap_or(0);
-                if self.searching_discogs() {
-                    if let Some(pick) = self.pick_at(i) {
-                        self.open_pick(pick, &ctx);
-                        return;
-                    }
-                } else if let Some(h) = self.search_hits.get(i) {
+                if let Some(h) = self.search_hits.get(i) {
                     let hit = h.hit.clone();
                     self.open_search_hit(hit, &ctx);
                     return;
+                }
+                // The Discogs lane holds its previous answer until the debounce
+                // fires, so the implicit top row is only taken from an answer
+                // to the query actually in the box. A row the user highlighted
+                // is whatever they see, stale or not.
+                let answer_is_current = matches!(&self.record_search,
+                    crate::records::RecordSearch::Done { query, .. } if query == self.search_query.trim());
+                if self.search_cursor.is_some() || answer_is_current {
+                    if let Some(pick) = self.pick_at(i - lib_n) {
+                        self.open_pick(pick, &ctx);
+                        return;
+                    }
                 }
             }
         }
@@ -295,7 +317,6 @@ impl App {
             })
             .unwrap_or_default();
         let mut record_chosen: Option<crate::records::Pick> = None;
-        let discogs_mode = self.searching_discogs();
         let mut dismiss = false;
         // Cover loads discovered while drawing; issued after the Area closure so
         // no borrow of the caches is live when the loaders mutate them.
@@ -342,18 +363,11 @@ impl App {
                     .inner_margin(egui::Margin::symmetric(space::S1, space::S2))
                     .rounding(egui::Rounding::same(radius::MD))
                     .show(ui, |ui| {
-                        // The Discogs list is wider: it carries a third line of
-                        // pressing detail and a membership pill that a library hit
-                        // doesn't have.
-                        let min_w = if discogs_mode { 460.0 } else { 320.0 };
-                        ui.set_width(field.rect.width().max(min_w));
-                        if discogs_mode {
-                            // The remote list owns the whole popup in this mode —
-                            // its own states (loading, empty, failed) are rendered
-                            // by `draw_record_results`.
-                            record_chosen = self.draw_record_results(ui);
-                            return;
-                        }
+                        // Wide enough for a Discogs row's pressing line and
+                        // membership pill, even while that lane is absent, so
+                        // the popup doesn't widen when it joins.
+                        ui.set_width(field.rect.width().max(460.0));
+                        lane_header(ui, "Yours", color::accent());
                         if hits.is_empty() {
                             ui.add_space(space::S2);
                             ui.horizontal(|ui| {
@@ -364,12 +378,6 @@ impl App {
                                 );
                             });
                             ui.add_space(space::S2);
-                            // Still offer the table: ranking looks for things a
-                            // query *names*, and a word that names nothing may
-                            // still appear in forty filenames.
-                            ui.separator();
-                            filter_clicked = show_all_row(ui, &query);
-                            return;
                         }
                         for (i, scored) in hits.iter().enumerate() {
                             let selected = cursor == Some(i);
@@ -419,11 +427,21 @@ impl App {
                                 }
                             }
                         }
-                        // The other half of the search, under the five things it
-                        // found: the same query as a table filter, for when the
-                        // answer is "all of them" rather than one record.
+                        // The other half of the library search, under the things
+                        // it found: the same query as a table filter, for when the
+                        // answer is "all of them" rather than one record. Offered
+                        // with no hits too: ranking looks for things a query
+                        // *names*, and a word that names nothing may still appear
+                        // in forty filenames.
                         ui.separator();
                         filter_clicked = show_all_row(ui, &query);
+                        // The second lane: what exists, under what you have. It
+                        // draws its own header and states (loading, empty,
+                        // failed), and nothing at all until a lookup was asked.
+                        record_chosen = self.draw_record_results(
+                            ui,
+                            cursor.and_then(|c| c.checked_sub(hits.len())),
+                        );
                     });
             });
         if let Some(slot) = slot {
@@ -450,7 +468,7 @@ impl App {
         // fade, and the row cascade that outlasts it. egui only repaints on
         // demand, so without this the animation would advance a frame at a time
         // as incidental events happened to land.
-        if since_shown < ROW_ANIM + ROW_STAGGER * n as f32 {
+        if since_shown < ROW_ANIM + ROW_STAGGER * lib_n as f32 {
             ctx.request_repaint();
         }
 
@@ -499,6 +517,17 @@ impl App {
             self.search_cursor = None;
         }
     }
+}
+
+/// The small heading over each lane, in the lane's colour, so the border
+/// between "yours" and "out there" is found without reading a row.
+pub(crate) fn lane_header(ui: &mut egui::Ui, label: &str, colour: egui::Color32) {
+    ui.add_space(space::S1);
+    ui.horizontal(|ui| {
+        ui.add_space(space::S3);
+        ui.label(egui::RichText::new(label).small().strong().color(colour));
+    });
+    ui.add_space(space::S1);
 }
 
 /// The popup's last row: hand this query to the table filter instead of opening

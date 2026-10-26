@@ -22,7 +22,6 @@
 
 use super::*;
 use crate::jobs::MatchScope;
-use crate::records::SearchScope;
 use crate::song_rows::{badge, center_two, two_line};
 use crate::ui::text::truncated;
 use crate::ui::tokens::{color, font, space};
@@ -865,7 +864,7 @@ impl App {
                                 line_act = Some(LineAct::Retry(i));
                                 ui.close_menu();
                             }
-                            if ui.button("Search Discogs for this line").on_hover_note("Put the line in the search box, Discogs mode").clicked() {
+                            if ui.button("Search Discogs for this line").on_hover_note("Put the line in the search box").clicked() {
                                 line_act = Some(LineAct::SearchDiscogs(i));
                                 ui.close_menu();
                             }
@@ -945,12 +944,7 @@ impl App {
                 }
             }
             LineAct::Pick(_) => self.tracklist_pick = Some((e.tracklist_id, e.position)),
-            LineAct::SearchDiscogs(_) => {
-                self.search_query = e.song_label();
-                self.set_search_scope(SearchScope::Discogs);
-                self.search_popup_open = true;
-                self.start_record_search();
-            }
+            LineAct::SearchDiscogs(_) => self.search_for(e.song_label()),
             LineAct::NotThis(_) => {
                 self.settle_tracklist_line(e.tracklist_id, e.position, None, &e.candidates);
             }
@@ -1114,10 +1108,7 @@ impl App {
                             choice = Some(None);
                         }
                         if ui.button("Search Discogs instead").clicked() {
-                            self.search_query = e.song_label();
-                            self.set_search_scope(SearchScope::Discogs);
-                            self.search_popup_open = true;
-                            self.start_record_search();
+                            self.search_for(e.song_label());
                             choice = Some(Some(discogs::ReleaseCandidate { release_id: String::new(), ..e.candidates[0].clone() }));
                         }
                     });
