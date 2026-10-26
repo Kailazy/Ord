@@ -30,7 +30,7 @@ impl App {
             .rows
             .iter()
             .find(|r| r.id == id)
-            .map(|r| (r.artist.clone(), r.title.clone(), r.album.clone()))
+            .map(|r| (r.artist.clone(), r.title.clone()))
             .or_else(|| {
                 // Not on screen (playing a record from the Records tab, or the
                 // table is filtered past it). The catalog holds the same tags the
@@ -43,10 +43,9 @@ impl App {
                 Some((
                     t.tags.artist.unwrap_or_default(),
                     t.tags.title.unwrap_or_default(),
-                    t.tags.album.unwrap_or_default(),
                 ))
             })
-            .filter(|(artist, title, _)| !(artist.is_empty() && title.is_empty()));
+            .filter(|(artist, title)| !(artist.is_empty() && title.is_empty()));
         // One sound at a time: whatever video is rolling goes off before the
         // player starts, wherever this click came from.
         self.claim_sound(Sound::Player);
@@ -57,12 +56,12 @@ impl App {
         // click is just a pause/resume and keeps the existing display + scrub.
         if !toggling {
             // Nothing named it — an untagged file. Its name is all there is.
-            let (artist, title, album) = display.unwrap_or_else(|| {
+            let (artist, title) = display.unwrap_or_else(|| {
                 let stem = path
                     .file_stem()
                     .map(|s| s.to_string_lossy().into_owned())
                     .unwrap_or_default();
-                (String::new(), stem, String::new())
+                (String::new(), stem)
             });
             let source_path = path.to_string_lossy().into_owned();
             // Advertise the track to the OS Now Playing panel right away; its cover
@@ -138,7 +137,6 @@ impl App {
                 id,
                 artist,
                 title,
-                album,
                 source_path,
                 waveform,
                 waveform_bands,
@@ -281,7 +279,6 @@ impl App {
             np.title.clone()
         };
         let artist = np.artist.clone();
-        let album = np.album.clone();
         // Clone the waveform out so the panel closure (which mutably borrows
         // `self.scrub`) doesn't also need to borrow `self.now_playing`.
         let waveform = np.waveform.clone();
@@ -306,7 +303,7 @@ impl App {
         let mut toggle_vinyl_mode = false;
         // Set by clicking the title/artist labels; applied after the panel closure
         // (jumping rebuilds rows and selection, which needs `&mut self`).
-        let mut filter_album = false;
+        let mut reveal_track = false;
         let mut filter_artist = false;
         // Fraction the bar reflects: the live position, or the in-progress scrub
         // before release. Shared by the zoom lane and the overview strip so both
@@ -481,11 +478,12 @@ impl App {
                         ui.ctx().request_repaint();
                     }
 
-                    // Title → album filter, artist → artist filter, and both are
-                    // drag handles for the playing track like the cover beside
-                    // them. Only the text itself is the hit target; hover shows a
-                    // pointer + underline (link affordance). Skipped when the tag
-                    // is empty (nothing to filter by).
+                    // Title → the track selected in the whole library, artist →
+                    // artist filter, and both are drag handles for the playing
+                    // track like the cover beside them. Only the text itself is
+                    // the hit target; hover shows a pointer + underline (link
+                    // affordance). The artist link is skipped when the tag is
+                    // empty (nothing to filter by).
                     //
                     // `click_and_drag` keeps the click meaning what it did — egui
                     // only reports `clicked()` when the press ended without a
@@ -518,17 +516,15 @@ impl App {
                             *hit = true;
                         }
                     };
-                    if !album.trim().is_empty() {
-                        link(
-                            ui,
-                            egui::pos2(block.left(), block.top() + 8.0),
-                            title_size,
-                            "np_title_link",
-                            egui::Color32::from_gray(240),
-                            "Show this album",
-                            &mut filter_album,
-                        );
-                    }
+                    link(
+                        ui,
+                        egui::pos2(block.left(), block.top() + 8.0),
+                        title_size,
+                        "np_title_link",
+                        egui::Color32::from_gray(240),
+                        "Show in library",
+                        &mut reveal_track,
+                    );
                     if !artist.trim().is_empty() {
                         link(
                             ui,
@@ -784,24 +780,22 @@ impl App {
             self.close_player();
         }
 
-        // Title/artist label click: show the full library narrowed to the playing
-        // track's album or artist (a per-column filter, so an artist named like a
-        // song title doesn't over-match), then select and reveal the track. Same
-        // shape as `jump_to_catalog_tracks`. The album needle is quoted — exact
-        // whole-cell match (see `apply_col_filters`) — so a short album name
-        // doesn't also pull in every longer album containing it. Artist stays
-        // substring so "A feat. B" tracks still show under artist A.
-        if filter_album || filter_artist {
+        // Title click: the playing track selected and scrolled into view in the
+        // whole, unfiltered library (see `reveal_track`), so its neighbours stay
+        // in sight. Artist click: the full library narrowed to the playing
+        // track's artist (a per-column filter, so an artist named like a song
+        // title doesn't over-match), then the track selected and revealed. Same
+        // shape as `jump_to_catalog_tracks`. Artist stays substring so "A feat.
+        // B" tracks still show under artist A.
+        if reveal_track {
+            self.reveal_track(np_id);
+        }
+        if filter_artist {
             let np = self.now_playing.as_ref().unwrap();
-            let (col, needle) = if filter_album {
-                (TableColumn::Album, format!("\"{}\"", np.album))
-            } else {
-                (TableColumn::Artist, np.artist.clone())
-            };
             self.view = LibraryView::Library;
             self.filter.clear();
             self.col_filters.clear();
-            self.col_filters.insert(col, needle);
+            self.col_filters.insert(TableColumn::Artist, np.artist.clone());
             // `reload` prunes the selection to live rows, so seed it after.
             self.reload();
             self.selection = std::iter::once(np_id).collect();

@@ -745,8 +745,9 @@ impl App {
     /// Live as you type, applied on the keystroke: narrowing is an in-memory
     /// pass over the rows the view holds (see `load_rows`), and the bar draws
     /// before the rows, so they change in the same frame. Per-column filters
-    /// (double-click a header) stack on top of it, and the toolbar's "Clear
-    /// filters" clears both at once.
+    /// (double-click a header) stack on top of it, and the bar's own "Clear
+    /// filters" button clears both at once: it sits beside the filters it
+    /// undoes, not up in the toolbar with the search box.
     pub(crate) fn draw_table_filter_bar(&mut self, ui: &mut egui::Ui) {
         use crate::ui::tokens::{font, space};
         ui.horizontal(|ui| {
@@ -819,6 +820,24 @@ impl App {
                         .small()
                         .color(crate::ui::tokens::color::LABEL_3),
                 );
+            }
+            // Column filters have no field of their own to clear from (they
+            // live behind a header double-click), so a button beside the
+            // caption that names them undoes them all, text filter included.
+            // This rescues a forgotten column filter that leaves the table
+            // looking empty.
+            if active_cols > 0
+                && crate::ui::button::compact(
+                    ui,
+                    &format!("⊘ Clear filters ({active_cols})"),
+                    false,
+                )
+                .on_hover_note("Clear the filter and every column filter")
+                .clicked()
+            {
+                self.filter.clear();
+                self.col_filters.clear();
+                self.reload();
             }
         });
         // A little more air between the box and the header row it sits on.

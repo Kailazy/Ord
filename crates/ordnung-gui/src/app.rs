@@ -2756,11 +2756,6 @@ impl App {
                         });
                         ui.separator();
                     }
-                    // Number of active column filters drives both the "Clear filters"
-                    // label and whether that button (and the inline ×) show at all.
-                    let active_col_filters =
-                        self.col_filters.values().filter(|v| !v.is_empty()).count();
-                    let has_filters = active_col_filters > 0 || !self.filter.is_empty();
                     // Live counts: total visible tracks, plus selection and missing
                     // when they apply, so the toolbar always reflects current state.
                     // The vinyl view has no table rows, so it counts records instead
@@ -2866,21 +2861,18 @@ impl App {
                             }
                             None => {
                                 // Whatever the search group can't give up: the
-                                // field at its floor, the scope toggle, the
-                                // Clear-filters button when it shows, and the
+                                // field at its floor, the scope toggle, and the
                                 // separators on either side of this label.
                                 // Everything else is the label's to use, so it
                                 // shortens (then truncates) instead of the
                                 // toggle drawing over it in a narrow window.
                                 let gap = ui.spacing().item_spacing.x;
                                 let sep_w = 6.0 + gap;
-                                let clear_w = if has_filters { 140.0 + gap } else { 0.0 };
                                 let field_frame = crate::ui::field::MARGIN.sum().x;
                                 let reserved = SEARCH_FIELD_MIN_W
                                     + field_frame
                                     + gap
                                     + SCOPE_TOGGLE_W
-                                    + clear_w
                                     + sep_w * 2.0;
                                 let room = ui.available_width() - reserved;
                                 let width_of = |ui: &egui::Ui, text: &str| {
@@ -2939,33 +2931,29 @@ impl App {
                         // group left over. Rendered left-to-right inside the reserved
                         // remainder so it can never collide with the counts.
                         ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
-                            // Room for the Clear-filters button *and* the
-                            // scope toggle, so the field shrinks rather than
-                            // pushing either past the edge of this remainder.
+                            // Room for the scope toggle, so the field shrinks
+                            // rather than pushing it past the edge of this
+                            // remainder.
                             let gap = ui.spacing().item_spacing.x;
-                            let clear_w = if has_filters { 140.0 + gap } else { 0.0 };
                             // The field's width is its text area: its frame
                             // adds the margin on either side (see
                             // `ui::field::MARGIN`), and that is what the
                             // row has to find room for.
                             let field_frame = crate::ui::field::MARGIN.sum().x;
-                            let reserved = clear_w + SCOPE_TOGGLE_W + gap + field_frame;
+                            let reserved = SCOPE_TOGGLE_W + gap + field_frame;
                             let w = (ui.available_width() - reserved)
                                 .clamp(SEARCH_FIELD_MIN_W, 320.0);
                             // Anchor the field + scope toggle to the window's
                             // horizontal center rather than the left edge of
                             // whatever space the other groups left over, so the
                             // box holds one spot across views no matter which
-                            // buttons or counts surround it. The centering
-                            // ignores the Clear-filters button on purpose: it
-                            // comes and goes, and the field must not move when
-                            // it does. Only a window too narrow to fit pushes
-                            // the group off center.
+                            // buttons or counts surround it. Only a window too
+                            // narrow to fit pushes the group off center.
                             let avail = ui.available_rect_before_wrap();
                             let group_w = w + field_frame + gap + SCOPE_TOGGLE_W;
                             let left = (toolbar_center_x - group_w / 2.0).clamp(
                                 avail.left(),
-                                (avail.right() - group_w - clear_w).max(avail.left()),
+                                (avail.right() - group_w).max(avail.left()),
                             );
                             ui.add_space((left - avail.left()).max(0.0));
                             // Read before the field borrows `search_query`
@@ -3032,23 +3020,6 @@ impl App {
                             // says what the box you just typed in will search.
                             self.draw_scope_toggle(ui);
                             self.draw_search_popup(&resp);
-                            // A prominent "clear all filters" button, shown only while a
-                            // filter is actually hiding rows. This rescues the case where
-                            // a forgotten column filter leaves the table looking empty.
-                            if has_filters {
-                                let label = if active_col_filters > 0 {
-                                    format!("⊘ Clear filters ({active_col_filters})")
-                                } else {
-                                    "⊘ Clear filters".to_string()
-                                };
-                                if ui
-                                    .button(label)
-                                    .on_hover_note("Clear search and filters")
-                                    .clicked()
-                                {
-                                    self.clear_all_filters();
-                                }
-                            }
                         });
                     });
                 }));

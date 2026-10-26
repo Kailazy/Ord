@@ -137,8 +137,9 @@ impl App {
     /// is still there to see. A filtered table shows the same row against an
     /// empty background and hides everything it was next to, and then needs a
     /// "Clear filters" trip to undo. Mirrors `reveal_vinyl`, which has always
-    /// left the grid behind its sheet unfiltered for the same reason.
-    fn reveal_track(&mut self, id: Id) {
+    /// left the grid behind its sheet unfiltered for the same reason. The
+    /// player's title link reveals the playing track the same way.
+    pub(crate) fn reveal_track(&mut self, id: Id) {
         self.view = LibraryView::Library;
         // Whatever narrowed the table before is cleared, so the row can't land
         // outside the visible set and silently fail to scroll to.
