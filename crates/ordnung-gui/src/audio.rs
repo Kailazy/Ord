@@ -1228,7 +1228,7 @@ impl AudioEngine {
     }
 
     /// Playback speed as a multiple of normal, from the fader's percent.
-    fn rate(&self) -> f32 {
+    pub fn rate(&self) -> f32 {
         1.0 + self.pitch_pct / 100.0
     }
 

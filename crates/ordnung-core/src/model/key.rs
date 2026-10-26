@@ -57,6 +57,21 @@ pub struct VinylShift {
     pub semitones: i32,
 }
 
+/// The pitch, in percent, a turntable needs to beatmatch a record tagged
+/// `bpm` to a deck running at `playing_bpm`, trying straight, double and
+/// half time. `None` when no fold lands within the fader's reach.
+pub fn vinyl_pitch(bpm: f32, playing_bpm: f32) -> Option<f32> {
+    // Also rejects NaN; an infinite BPM fails the range check below.
+    if !(bpm > 0.0 && playing_bpm > 0.0) {
+        return None;
+    }
+    [1.0, 2.0, 0.5]
+        .into_iter()
+        .map(|k| playing_bpm / (k * bpm))
+        .find(|r| (r - 1.0).abs() <= VINYL_PITCH_RANGE)
+        .map(|rho| (rho - 1.0) * 100.0)
+}
+
 impl Camelot {
     /// "8B", "5A", etc.
     pub fn label(self) -> String {
@@ -91,15 +106,8 @@ impl Camelot {
         playing: Camelot,
         playing_bpm: f32,
     ) -> Option<VinylShift> {
-        // Also rejects NaN; an infinite BPM fails the range check below.
-        if !(bpm > 0.0 && playing_bpm > 0.0) {
-            return None;
-        }
-        let rho = [1.0, 2.0, 0.5]
-            .into_iter()
-            .map(|k| playing_bpm / (k * bpm))
-            .find(|r| (r - 1.0).abs() <= VINYL_PITCH_RANGE)?;
-        let d = 12.0 * rho.log2();
+        let pitch_pct = vinyl_pitch(bpm, playing_bpm)?;
+        let d = 12.0 * (1.0 + pitch_pct / 100.0).log2();
         let n = d.round();
         if (100.0 * (d - n)).abs() > VINYL_DETUNE_CENTS {
             return None;
@@ -107,7 +115,7 @@ impl Camelot {
         let n = n as i32;
         self.transpose(n)
             .compatible_with(playing)
-            .then_some(VinylShift { pitch_pct: (rho - 1.0) * 100.0, semitones: n })
+            .then_some(VinylShift { pitch_pct, semitones: n })
     }
 }
 
@@ -355,6 +363,11 @@ mod tests {
             assert_eq!(shift(a(8), 124.0, a(8), bad), None, "{bad}");
         }
         assert_eq!(shift(a(8), -117.0, a(8), -124.0), None);
+        // The fader alone, for the player: straight, folded, out of reach, bad.
+        assert!((vinyl_pitch(117.0, 124.0).unwrap() - 5.98).abs() < 0.01);
+        assert_eq!(vinyl_pitch(85.0, 170.0), Some(0.0));
+        assert_eq!(vinyl_pitch(110.0, 124.0), None);
+        assert_eq!(vinyl_pitch(f32::NAN, 124.0), None);
     }
 
     #[test]

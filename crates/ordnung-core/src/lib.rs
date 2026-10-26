@@ -30,7 +30,7 @@ pub use catalog::{
     MissingTrack, PlaylistStats, ScannedTrack,
 };
 pub use error::{Error, Result};
-pub use model::key::{Camelot, Key, Mode, PitchClass, VinylShift};
+pub use model::key::{vinyl_pitch, Camelot, Key, Mode, PitchClass, VinylShift};
 pub use model::{AudioProperties, Format, Playlist, Tags, Track, VinylList, VinylRecord};
 
 /// The `User-Agent` every outbound request carries; Discogs rejects ureq's default.

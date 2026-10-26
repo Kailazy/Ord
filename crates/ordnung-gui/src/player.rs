@@ -114,6 +114,24 @@ impl App {
                 .as_ref()
                 .and_then(player_grid)
                 .or_else(|| self.usb_anlz_grid(id));
+            // Vinyl mode: start at the tempo that was playing, so the green
+            // key is the key heard. No previous tempo, no tempo of its own,
+            // or out of the fader's reach: tagged tempo.
+            if self.config.vinyl_mode {
+                if let Some(a) = self.audio.as_mut() {
+                    let was = self
+                        .now_playing
+                        .as_ref()
+                        .and_then(|n| n.grid.as_ref())
+                        .map(|g| g.bpm * a.rate());
+                    let bpm = grid.as_ref().map(|g| g.bpm);
+                    a.set_pitch(
+                        bpm.zip(was)
+                            .and_then(|(b, w)| ordnung_core::vinyl_pitch(b, w))
+                            .unwrap_or(0.0),
+                    );
+                }
+            }
             let cues = self.load_cues(id);
             self.cue_rename = None;
             self.now_playing = Some(NowPlaying {
@@ -632,7 +650,7 @@ impl App {
                         };
                         if vinyl
                             .on_hover_note(if self.config.vinyl_mode {
-                                "Vinyl mode on: green keys stay in key once pitched to this tempo"
+                                "Vinyl mode on: new songs start at the last tempo, green keys mix at that pitch"
                             } else {
                                 "Vinyl mode off: keys compared as tagged"
                             })
@@ -741,6 +759,14 @@ impl App {
         }
         if toggle_vinyl_mode {
             self.config.vinyl_mode = !self.config.vinyl_mode;
+            // A turntable has no key lock: going vinyl takes it off, so the
+            // matched pitch is heard. It can go back on by hand.
+            if self.config.vinyl_mode && self.config.key_lock {
+                self.config.key_lock = false;
+                if let Some(a) = self.audio.as_mut() {
+                    a.set_key_lock(false);
+                }
+            }
             let _ = self.config.save();
         }
         if toggle {
