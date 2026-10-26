@@ -4000,6 +4000,11 @@ impl App {
             None => {}
         }
         if self.view != prev_view {
+            // The open icon-and-colour picker follows the playlist the
+            // sidebar selects, instead of staying on the one it was opened for.
+            if let (LibraryView::Playlist(id), Some(ed)) = (&self.view, self.look_editor.as_mut()) {
+                ed.id = *id;
+            }
             // A record sheet belongs to the Vinyl section. Leaving that section
             // closes it rather than leaving it stranded over the Library. A
             // sheet whose video is rolling hides instead, and the record
