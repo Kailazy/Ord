@@ -11,8 +11,8 @@ use super::tokens::color;
 const D: f32 = 22.0;
 
 /// One swatch: `fill` as the dot, `None` as an empty ring with a slash
-/// ("no colour"). `name` is the hover note. Returns whether it was clicked.
-pub fn swatch(ui: &mut egui::Ui, fill: Option<egui::Color32>, name: &str, chosen: bool) -> bool {
+/// ("no colour"). `name` is the hover note.
+pub fn swatch(ui: &mut egui::Ui, fill: Option<egui::Color32>, name: &str, chosen: bool) -> egui::Response {
     let d = D;
     let (rect, resp) = ui.allocate_exact_size(egui::vec2(d, d), egui::Sense::click());
     let c = rect.center();
@@ -30,17 +30,37 @@ pub fn swatch(ui: &mut egui::Ui, fill: Option<egui::Color32>, name: &str, chosen
             );
         }
     }
-    if chosen || resp.hovered() {
+    ring(ui, c, chosen, resp.hovered());
+    resp.on_hover_cursor(egui::CursorIcon::PointingHand)
+        .on_hover_note(name)
+}
+
+/// The swatch that keeps a colour: an empty ring with a plus, at the end
+/// of a row of presets. `name` is the hover note.
+pub fn swatch_add(ui: &mut egui::Ui, name: &str) -> egui::Response {
+    let d = D;
+    let (rect, resp) = ui.allocate_exact_size(egui::vec2(d, d), egui::Sense::click());
+    let c = rect.center();
+    ui.painter().circle_stroke(c, d * 0.36, egui::Stroke::new(1.5, color::LABEL_3));
+    let k = d * 0.18;
+    let stroke = egui::Stroke::new(1.5, color::LABEL_3);
+    ui.painter().line_segment([c - egui::vec2(k, 0.0), c + egui::vec2(k, 0.0)], stroke);
+    ui.painter().line_segment([c - egui::vec2(0.0, k), c + egui::vec2(0.0, k)], stroke);
+    ring(ui, c, false, resp.hovered());
+    resp.on_hover_cursor(egui::CursorIcon::PointingHand)
+        .on_hover_note(name)
+}
+
+/// The ring round the current pick, or a fainter one under the pointer.
+fn ring(ui: &egui::Ui, c: egui::Pos2, chosen: bool, hovered: bool) {
+    if chosen || hovered {
         ui.painter().circle_stroke(
             c,
-            d * 0.5,
+            D * 0.5,
             egui::Stroke::new(
                 if chosen { 2.0 } else { 1.0 },
                 if chosen { color::LABEL } else { color::LABEL_3 },
             ),
         );
     }
-    resp.on_hover_cursor(egui::CursorIcon::PointingHand)
-        .on_hover_note(name)
-        .clicked()
 }

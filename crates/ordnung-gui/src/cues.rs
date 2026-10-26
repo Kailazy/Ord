@@ -597,7 +597,7 @@ impl App {
             for x in [pads_rect.right() + SECT_GAP / 2.0, loop_rect.right() + SECT_GAP / 2.0] {
                 painter.line_segment(
                     [egui::pos2(x, row_top + 4.0), egui::pos2(x, bar.bottom() - 4.0)],
-                    egui::Stroke::new(1.0, color::SEPARATOR_OPAQUE),
+                    egui::Stroke::new(1.0, color::separator_opaque()),
                 );
             }
 
@@ -661,7 +661,7 @@ impl App {
                     egui::vec2(pads_w, pad_h),
                 ),
                 egui::Rounding::same(radius::SM),
-                color::FIELD,
+                color::field(),
             );
             for slot in 0..8u8 {
                 let rect = egui::Rect::from_min_size(
@@ -788,7 +788,7 @@ impl App {
                         // centred; the hover note says what a click does.
                         let hot = resp.hovered() && editable;
                         if hot {
-                            painter.rect_filled(rect, egui::Rounding::same(r), color::SURFACE_HOVER);
+                            painter.rect_filled(rect, egui::Rounding::same(r), color::surface_hover());
                             ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
                         }
                         painter.text(
@@ -837,7 +837,7 @@ impl App {
                             egui::Sense::hover(),
                         );
                         // The beat count is a readout between its two keys.
-                        ui.painter().rect_filled(lr, egui::Rounding::same(radius::XS), color::FIELD);
+                        ui.painter().rect_filled(lr, egui::Rounding::same(radius::XS), color::field());
                         ui.painter().text(
                             lr.center(),
                             egui::Align2::CENTER_CENTER,
@@ -1023,7 +1023,7 @@ impl App {
                                 ui.painter().rect_filled(
                                     rect,
                                     egui::Rounding::same(radius::SM),
-                                    if hot { color::SURFACE_HOVER } else { color::SURFACE_HI },
+                                    if hot { color::surface_hover() } else { color::surface_hi() },
                                 );
                                 ui.painter().rect_stroke(
                                     rect,

@@ -443,7 +443,7 @@ impl App {
                         ui.painter().hline(
                             ui.min_rect().x_range(),
                             y,
-                            egui::Stroke::new(1.0, color::SEPARATOR_OPAQUE),
+                            egui::Stroke::new(1.0, color::separator_opaque()),
                         );
                     }
                 }
@@ -636,7 +636,7 @@ fn artist_band(
     ui.painter().hline(
         band.x_range(),
         band.top(),
-        egui::Stroke::new(1.0, color::SEPARATOR_OPAQUE),
+        egui::Stroke::new(1.0, color::separator_opaque()),
     );
     let small = egui::TextStyle::Small.resolve(ui.style());
     let label = ui.painter().text(
@@ -701,7 +701,7 @@ impl App {
         let h = crate::ui::control_h(ui);
         let (rect, _) = ui.allocate_exact_size(egui::vec2(SCOPE_TOGGLE_W, h), egui::Sense::hover());
         let painter = ui.painter();
-        painter.rect_filled(rect, egui::Rounding::same(radius::SM), color::FIELD);
+        painter.rect_filled(rect, egui::Rounding::same(radius::SM), color::field());
 
         let half = rect.width() / 2.0;
         let on_discogs = self.searching_discogs();
@@ -796,7 +796,7 @@ fn footer(ui: &mut egui::Ui, items: u32) -> egui::Response {
     ui.painter().hline(
         rect.x_range(),
         rect.top(),
-        egui::Stroke::new(1.0, color::SEPARATOR_OPAQUE),
+        egui::Stroke::new(1.0, color::separator_opaque()),
     );
     let style = egui::TextStyle::Small.resolve(ui.style());
     ui.painter().text(
@@ -910,7 +910,7 @@ fn record_row(
         ui.ctx()
             .animate_bool_with_time(resp.id.with("art"), tex.is_some(), COVER_FADE_ANIM);
     if art_t < 1.0 {
-        ui.painter().rect_filled(art, rounding, color::SURFACE_HI);
+        ui.painter().rect_filled(art, rounding, color::surface_hi());
     }
     if let Some(handle) = &tex {
         egui::Image::new(handle)
@@ -1069,7 +1069,7 @@ fn draw_list_button(
     };
     let ink = if hovered { color::LABEL } else { base };
     if hovered {
-        p.circle_filled(c, LIST_BTN_R + 3.0, color::SURFACE_HI);
+        p.circle_filled(c, LIST_BTN_R + 3.0, color::surface_hi());
     }
     crate::ui::icon::shelf(p, c, crate::ui::icon::SHELF_R, ink, present, list);
 }

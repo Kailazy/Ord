@@ -4,7 +4,7 @@
 //!
 //! Glass is two layers. Under it, the app blurred (a live [`frost`]
 //! backdrop, re-made every frame); over that, one tint
-//! ([`color::SURFACE_GLASS`], the standard opacity) that keeps the surface
+//! ([`color::surface_glass()`], the standard opacity) that keeps the surface
 //! dark enough to read on. The tint alone would show the app through in
 //! outline, sharp text under sharp text; the blur is what makes it glass.
 //! Both are painted in the surface's own layer, under its content, so a
@@ -203,7 +203,7 @@ pub fn end_from(
         egui::Shape::Rect(egui::epaint::RectShape::new(
             rect,
             rounding,
-            color::SURFACE_GLASS,
+            color::surface_glass(),
             stroke,
         )),
     );

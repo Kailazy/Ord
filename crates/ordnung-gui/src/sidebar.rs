@@ -183,9 +183,9 @@ pub(crate) fn nav_button_text_sized(
         let w = &mut ui.visuals_mut().widgets;
         w.inactive.bg_stroke = egui::Stroke::NONE;
         w.hovered.bg_stroke = egui::Stroke::NONE;
-        w.hovered.weak_bg_fill = color::SURFACE_HOVER;
+        w.hovered.weak_bg_fill = color::surface_hover();
         w.active.bg_stroke = egui::Stroke::NONE;
-        w.active.weak_bg_fill = color::SURFACE_ACTIVE;
+        w.active.weak_bg_fill = color::surface_active();
     }
     let resp = ui.add(btn);
     ui.visuals_mut().widgets = prev_widgets;
@@ -287,8 +287,8 @@ fn nav_tile_pill(
     let resp = ui.interact(rect, ui.id().with(salt), egui::Sense::click());
     let fill = match (selected, resp.hovered()) {
         (true, _) => color::accent_soft(),
-        (false, true) => color::SURFACE_ACTIVE,
-        (false, false) => color::SURFACE_HOVER,
+        (false, true) => color::surface_active(),
+        (false, false) => color::surface_hover(),
     };
     ui.painter()
         .rect_filled(rect, egui::Rounding::same(height / 2.0), fill);
@@ -1189,9 +1189,9 @@ pub(crate) fn source_tabs(
             se: 0.0,
         };
         let fill = if active {
-            Some(color::SURFACE_HI)
+            Some(color::surface_hi())
         } else if resp.hovered() {
-            Some(color::SURFACE)
+            Some(color::surface())
         } else {
             None
         };
@@ -1356,7 +1356,7 @@ pub(crate) fn source_tabs(
             egui::pos2(ui.max_rect().left(), y),
             egui::pos2(ui.max_rect().right(), y),
         ],
-        egui::Stroke::new(1.0, crate::ui::tokens::color::SEPARATOR_OPAQUE),
+        egui::Stroke::new(1.0, crate::ui::tokens::color::separator_opaque()),
     );
     SourceTabsResponse {
         clicked,
@@ -1834,7 +1834,7 @@ pub(crate) fn rail_add_tile(ui: &mut egui::Ui) -> egui::Response {
             painter.rect(
                 outline,
                 rounding,
-                color::SURFACE_HI,
+                color::surface_hi(),
                 egui::Stroke::new(1.0, color::accent()),
             );
         } else {

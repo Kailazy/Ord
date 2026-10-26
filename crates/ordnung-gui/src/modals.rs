@@ -906,85 +906,7 @@ impl App {
                                             open_tour = true;
                                         }
                                     }
-                                    SettingsTab::Appearance => {
-                                        use crate::ui::tokens::{color, space};
-                                        ui.label(egui::RichText::new("Table rows").strong());
-                                        ui.label(
-                    egui::RichText::new(
-                        "Every other row of a song or record table takes a faint \
-                         shade, so a wide row can be followed across its columns.",
-                    )
-                    .small()
-                    .weak(),
-                );
-                                        ui.add_space(4.0);
-                                        let mut dirty = ui
-                                            .checkbox(
-                                                &mut self.config.zebra_rows,
-                                                "Shade alternating rows",
-                                            )
-                                            .changed();
-                                        ui.add_enabled_ui(self.config.zebra_rows, |ui| {
-                                            egui::Grid::new("settings_appearance_grid")
-                                                .num_columns(2)
-                                                .spacing([12.0, 8.0])
-                                                .show(ui, |ui| {
-                                                    ui.label("Shade:");
-                                                    if ui
-                                                        .add(
-                                                            egui::Slider::new(
-                                                                &mut self.config.zebra_shade,
-                                                                2..=40,
-                                                            )
-                                                            .show_value(false),
-                                                        )
-                                                        .on_hover_note(
-                                                            "How much lighter the shaded rows are",
-                                                        )
-                                                        .changed()
-                                                    {
-                                                        dirty = true;
-                                                    }
-                                                    ui.end_row();
-                                                });
-                                        });
-                                        ui.add_space(14.0);
-                                        ui.separator();
-                                        ui.add_space(10.0);
-                                        ui.label(egui::RichText::new("Accent").strong());
-                                        ui.label(
-                    egui::RichText::new(
-                        "The colour of selections, links and the primary button.",
-                    )
-                    .small()
-                    .weak(),
-                );
-                                        ui.add_space(4.0);
-                                        ui.horizontal(|ui| {
-                                            ui.spacing_mut().item_spacing.x = space::S2;
-                                            let chosen = self.config.accent_color();
-                                            let swatch = crate::ui::swatch::swatch;
-                                            if swatch(
-                                                ui,
-                                                Some(color::ACCENT_STOCK),
-                                                "Blue (default)",
-                                                chosen.is_none(),
-                                            ) {
-                                                self.config.accent.clear();
-                                                dirty = true;
-                                            }
-                                            for (name, c) in color::TAG_PALETTE {
-                                                if swatch(ui, Some(*c), name, chosen == Some(*c)) {
-                                                    self.config.accent = name.to_ascii_lowercase();
-                                                    dirty = true;
-                                                }
-                                            }
-                                        });
-                                        if dirty {
-                                            self.config.apply_appearance(ui.ctx());
-                                            self.save_config();
-                                        }
-                                    }
+                                    SettingsTab::Appearance => self.draw_appearance_tab(ui),
                                     SettingsTab::Analysis => {
                                         ui.label(egui::RichText::new("Analysis").strong());
                                         if ui
@@ -3603,7 +3525,7 @@ impl App {
                 // Preview: the mark and the name, as the sidebar row shows them.
                 ui.horizontal(|ui| {
                     let (rect, _) = ui.allocate_exact_size(egui::vec2(28.0, 28.0), egui::Sense::hover());
-                    ui.painter().rect_filled(rect, radius::SM, color::SURFACE_HI);
+                    ui.painter().rect_filled(rect, radius::SM, color::surface_hi());
                     ui.painter().text(
                         rect.center(),
                         egui::Align2::CENTER_CENTER,
@@ -3627,12 +3549,12 @@ impl App {
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing.x = space::S2;
                     let swatch = crate::ui::swatch::swatch;
-                    if swatch(ui, None, "No color", p.color.is_none()) {
+                    if swatch(ui, None, "No color", p.color.is_none()).clicked() {
                         pick = Some((p.icon.clone(), None));
                     }
                     for (name, c) in color::TAG_PALETTE {
                         let packed = color::to_packed(*c);
-                        if swatch(ui, Some(*c), name, p.color == Some(packed)) {
+                        if swatch(ui, Some(*c), name, p.color == Some(packed)).clicked() {
                             pick = Some((p.icon.clone(), Some(packed)));
                         }
                     }

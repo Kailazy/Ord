@@ -186,7 +186,7 @@ pub fn mark_button(
         REST.gamma_multiply(0.45)
     } else {
         if resp.hovered() {
-            ui.painter().rect_filled(rect, radius::SM, color::SURFACE_HOVER);
+            ui.painter().rect_filled(rect, radius::SM, color::surface_hover());
             ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
         }
         col(&resp)
@@ -626,7 +626,7 @@ pub fn collection(p: &egui::Painter, c: egui::Pos2, r: f32, ink: egui::Color32, 
         p.circle_filled(disc_c, disc_r, ink);
         // The spindle hole is punched in the ground, which is what keeps a
         // solid disc reading as a record rather than as a dot.
-        p.circle_filled(disc_c, disc_r * 0.24, color::SURFACE);
+        p.circle_filled(disc_c, disc_r * 0.24, color::surface());
     } else {
         p.rect_stroke(sleeve, rounding, stroke);
         p.circle_stroke(disc_c, disc_r, stroke);
@@ -912,7 +912,7 @@ pub fn eye(p: &egui::Painter, c: egui::Pos2, r: f32, ink: egui::Color32, filled:
         p.add(egui::Shape::convex_polygon(pts, ink, egui::Stroke::NONE));
         // The pupil is punched back out in the row's own background so a solid
         // eye still reads as an eye rather than as a filled leaf.
-        p.circle_filled(c, r * 0.34, color::SURFACE);
+        p.circle_filled(c, r * 0.34, color::surface());
     } else {
         p.add(egui::Shape::closed_line(pts, egui::Stroke::new(1.3, ink)));
         p.circle_filled(c, r * 0.30, ink);

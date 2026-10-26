@@ -90,14 +90,14 @@ pub fn volume(ui: &mut egui::Ui, value: f32) -> Option<f32> {
 
     // Dial body, then the full sweep as an unfilled track, then the filled arc
     // up to the current value.
-    painter.circle_filled(c, SIZE / 2.0 - 3.0, color::SURFACE_HI);
+    painter.circle_filled(c, SIZE / 2.0 - 3.0, color::surface_hi());
     arc(
         painter,
         c,
         ARC_R,
         -SWEEP,
         SWEEP,
-        egui::Stroke::new(ARC_W, color::SURFACE_ACTIVE),
+        egui::Stroke::new(ARC_W, color::surface_active()),
     );
     // Muted reads as a warning rather than an accent: a knob at zero is a
     // reason the app is silent, and should say so at a glance.

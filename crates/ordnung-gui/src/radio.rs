@@ -322,7 +322,7 @@ fn paint_cover(painter: &egui::Painter, rect: egui::Rect, tex: Option<egui::Text
             }));
         }
         None => {
-            painter.rect_filled(rect, radius::XS, color::SURFACE_HI);
+            painter.rect_filled(rect, radius::XS, color::surface_hi());
             crate::ui::icon::record(painter, rect.center(), color::LABEL_4, rect.width() * 0.3);
         }
     }
@@ -1141,8 +1141,8 @@ impl App {
         ui.painter().rect(
             bar,
             radius::LG,
-            color::SURFACE.gamma_multiply(0.96),
-            egui::Stroke::new(1.0, color::SEPARATOR_OPAQUE),
+            color::surface().gamma_multiply(0.96),
+            egui::Stroke::new(1.0, color::separator_opaque()),
         );
         let tex = now
             .as_ref()
@@ -1445,7 +1445,7 @@ impl App {
             let on = i == n.song;
             let p = ui.painter().with_clip_rect(rect.intersect(ui.clip_rect()));
             if resp.hovered() {
-                p.rect_filled(rect, radius::XS, color::SURFACE_HOVER);
+                p.rect_filled(rect, radius::XS, color::surface_hover());
                 ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
             }
             let cy = rect.center().y;
@@ -1641,7 +1641,7 @@ impl App {
         let p = ui.painter();
         p.line_segment(
             [egui::pos2(x0, y), egui::pos2(x1, y)],
-            egui::Stroke::new(track, color::SEPARATOR_OPAQUE),
+            egui::Stroke::new(track, color::separator_opaque()),
         );
         if seekable {
             let kx = x0 + shown * (x1 - x0);
@@ -1738,8 +1738,8 @@ impl App {
         ui.painter().rect(
             row,
             radius::LG,
-            color::SURFACE.gamma_multiply(0.96),
-            egui::Stroke::new(1.0, color::SEPARATOR_OPAQUE),
+            color::surface().gamma_multiply(0.96),
+            egui::Stroke::new(1.0, color::separator_opaque()),
         );
         let mut x = row.left() + PAD;
         let cy = row.top() + PAD + THUMB * 0.5;
@@ -1798,7 +1798,7 @@ impl App {
             } else if resp.hovered() {
                 (1.5, color::LABEL_2)
             } else {
-                (1.0, color::SEPARATOR_OPAQUE)
+                (1.0, color::separator_opaque())
             };
             p.rect_stroke(thumb, radius::XS, egui::Stroke::new(sw, sc));
             let galley = p.layout_no_wrap(

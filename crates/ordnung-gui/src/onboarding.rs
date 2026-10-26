@@ -206,7 +206,7 @@ fn choice_card(
     let stroke = if selected {
         egui::Stroke::new(1.5, accent)
     } else {
-        egui::Stroke::new(1.0, crate::ui::tokens::color::SEPARATOR_OPAQUE)
+        egui::Stroke::new(1.0, crate::ui::tokens::color::separator_opaque())
     };
     let resp = egui::Frame::none()
         .fill(ui.visuals().extreme_bg_color)

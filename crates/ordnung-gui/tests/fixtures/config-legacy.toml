@@ -24,3 +24,5 @@ vinyl_view = "nope"
 graph_hide = ["nope"]
 hidden_release_mediums = ["nope"]
 column_order = ["nope", "artist"]
+accent = "purple"
+zebra_shade = 8

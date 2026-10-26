@@ -14,14 +14,15 @@ use super::tokens::{color, font, radius, space};
 /// Install fonts and the global style. Call once, before any frame is laid out.
 pub fn install(ctx: &egui::Context) {
     install_fonts(ctx);
-    restyle(ctx, color::ZEBRA_SHADE);
+    restyle(ctx, color::ROW_SHADE);
 }
 
 /// Push the style again after the appearance changed (Settings →
-/// Appearance): the accent set through [`color::set_accent`] and the
-/// added luminance of a shaded table row. Fonts are left alone.
-pub fn restyle(ctx: &egui::Context, zebra_shade: u8) {
-    apply_style(ctx, zebra_shade);
+/// Appearance): the background and accent set through
+/// [`color::set_background`] / [`color::set_accent`], and `row_shade`,
+/// how much darker a shaded table row is. Fonts are left alone.
+pub fn restyle(ctx: &egui::Context, row_shade: u8) {
+    apply_style(ctx, row_shade);
 }
 
 /// Install Inter as the primary UI face, with DejaVu Sans behind it as a
@@ -211,19 +212,19 @@ fn load_system_fallback_fonts(fonts: &mut FontDefinitions) -> Vec<String> {
 }
 
 /// Build the global [`egui::Style`] from the design tokens.
-fn apply_style(ctx: &egui::Context, zebra_shade: u8) {
+fn apply_style(ctx: &egui::Context, row_shade: u8) {
     let mut style = (*ctx.style()).clone();
     let v = &mut style.visuals;
 
     v.dark_mode = true;
-    // Every other table row (`TableBuilder::striped`) is painted in this;
-    // additive, so it lifts whatever surface the table sits on.
-    v.faint_bg_color = egui::Color32::from_additive_luminance(zebra_shade);
+    // Every other table row (`TableBuilder::striped`) is painted in this: a
+    // black veil, so it darkens whatever surface the table sits on.
+    v.faint_bg_color = egui::Color32::from_black_alpha(row_shade);
 
     // Surfaces.
-    v.panel_fill = color::BG;
-    v.window_fill = color::SURFACE;
-    v.extreme_bg_color = color::FIELD; // text-edit / sunken input background
+    v.panel_fill = color::bg();
+    v.window_fill = color::surface();
+    v.extreme_bg_color = color::field(); // text-edit / sunken input background
     v.window_stroke = Stroke::new(1.0, color::SEPARATOR);
     v.window_rounding = Rounding::same(radius::LG);
     v.menu_rounding = Rounding::same(radius::MD);
@@ -241,40 +242,40 @@ fn apply_style(ctx: &egui::Context, zebra_shade: u8) {
     let hairline = Stroke::new(1.0, color::SEPARATOR);
 
     // Non-interactive: labels, frame backgrounds, separators.
-    w.noninteractive.bg_fill = color::SURFACE;
-    w.noninteractive.weak_bg_fill = color::SURFACE;
+    w.noninteractive.bg_fill = color::surface();
+    w.noninteractive.weak_bg_fill = color::surface();
     w.noninteractive.bg_stroke = hairline;
     w.noninteractive.fg_stroke = Stroke::new(1.0, color::LABEL);
     w.noninteractive.rounding = Rounding::same(radius::SM);
     w.noninteractive.expansion = 0.0;
 
     // Inactive: a button/input at rest.
-    w.inactive.bg_fill = color::SURFACE_HI;
-    w.inactive.weak_bg_fill = color::SURFACE_HI;
+    w.inactive.bg_fill = color::surface_hi();
+    w.inactive.weak_bg_fill = color::surface_hi();
     w.inactive.bg_stroke = Stroke::NONE;
     w.inactive.fg_stroke = Stroke::new(1.0, color::LABEL);
     w.inactive.rounding = Rounding::same(radius::SM);
     w.inactive.expansion = 0.0;
 
     // Hovered.
-    w.hovered.bg_fill = color::SURFACE_HOVER;
-    w.hovered.weak_bg_fill = color::SURFACE_HOVER;
+    w.hovered.bg_fill = color::surface_hover();
+    w.hovered.weak_bg_fill = color::surface_hover();
     w.hovered.bg_stroke = Stroke::NONE;
     w.hovered.fg_stroke = Stroke::new(1.0, color::LABEL);
     w.hovered.rounding = Rounding::same(radius::SM);
     w.hovered.expansion = 0.0;
 
     // Active (pressed).
-    w.active.bg_fill = color::SURFACE_ACTIVE;
-    w.active.weak_bg_fill = color::SURFACE_ACTIVE;
+    w.active.bg_fill = color::surface_active();
+    w.active.weak_bg_fill = color::surface_active();
     w.active.bg_stroke = Stroke::NONE;
     w.active.fg_stroke = Stroke::new(1.0, color::LABEL);
     w.active.rounding = Rounding::same(radius::SM);
     w.active.expansion = 0.0;
 
     // Open (e.g. an expanded combo box).
-    w.open.bg_fill = color::SURFACE_HI;
-    w.open.weak_bg_fill = color::SURFACE_HI;
+    w.open.bg_fill = color::surface_hi();
+    w.open.weak_bg_fill = color::surface_hi();
     w.open.bg_stroke = Stroke::NONE;
     w.open.fg_stroke = Stroke::new(1.0, color::LABEL);
     w.open.rounding = Rounding::same(radius::SM);

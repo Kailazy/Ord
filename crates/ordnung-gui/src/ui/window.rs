@@ -711,7 +711,7 @@ fn block_grips(ui: &mut egui::Ui, id: egui::Id, rect: egui::Rect, both: bool) {
 /// The glass's edge, for a surface that isn't a window (a menu, a popup)
 /// and wants the same hairline.
 pub fn edge() -> egui::Stroke {
-    egui::Stroke::new(1.0, color::SEPARATOR_OPAQUE)
+    egui::Stroke::new(1.0, color::separator_opaque())
 }
 
 #[cfg(test)]

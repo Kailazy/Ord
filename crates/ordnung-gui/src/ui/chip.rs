@@ -60,7 +60,7 @@ pub fn show(
         .ctx()
         .animate_bool_with_time(resp.id.with("hot"), selected || resp.hovered(), HOT_ANIM);
     let rounding = egui::Rounding::same(H / 2.0);
-    ui.painter().rect_filled(rect, rounding, color::SURFACE_HI);
+    ui.painter().rect_filled(rect, rounding, color::surface_hi());
     if hot > 0.0 {
         ui.painter().rect_filled(
             rect,
@@ -78,7 +78,7 @@ pub fn show(
             egui::Image::new(tex).rounding(face_round).paint_at(ui, face_rect);
         }
         None => {
-            ui.painter().rect_filled(face_rect, face_round, color::FIELD);
+            ui.painter().rect_filled(face_rect, face_round, color::field());
             ui.painter().text(
                 face_rect.center(),
                 egui::Align2::CENTER_CENTER,

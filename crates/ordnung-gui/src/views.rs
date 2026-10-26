@@ -120,9 +120,9 @@ fn vinyl_tabs(
             se: 0.0,
         };
         let fill = if active {
-            Some(color::SURFACE_HI)
+            Some(color::surface_hi())
         } else if resp.hovered() {
-            Some(color::SURFACE)
+            Some(color::surface())
         } else {
             None
         };
@@ -179,7 +179,7 @@ fn vinyl_tabs(
             se: 0.0,
         };
         if active {
-            ui.painter().rect_filled(rect, rounding, color::SURFACE_HI);
+            ui.painter().rect_filled(rect, rounding, color::surface_hi());
             let y = rect.bottom() - 1.0;
             ui.painter().line_segment(
                 [
@@ -189,7 +189,7 @@ fn vinyl_tabs(
                 egui::Stroke::new(2.0, color::accent()),
             );
         } else if resp.hovered() {
-            ui.painter().rect_filled(rect, rounding, color::SURFACE);
+            ui.painter().rect_filled(rect, rounding, color::surface());
         }
         let ink = if active {
             color::accent_hover()
@@ -2754,7 +2754,7 @@ impl App {
                     ui.painter().rect_filled(
                         rect,
                         egui::Rounding::same(6.0),
-                        crate::ui::tokens::color::SURFACE,
+                        crate::ui::tokens::color::surface(),
                     );
                 }
                 // Hairline under each row, inset past the thumb so the covers

@@ -793,7 +793,7 @@ pub(crate) fn dig_controls(
             btn = btn.fill(if can_walk {
                 crate::ui::tokens::color::accent()
             } else {
-                crate::ui::tokens::color::SURFACE_HI
+                crate::ui::tokens::color::surface_hi()
             });
         }
         if ui

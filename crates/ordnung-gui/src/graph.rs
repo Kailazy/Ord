@@ -1901,7 +1901,7 @@ impl App {
             painter.rect_filled(
                 bg,
                 box_h * 0.5,
-                dim(color::SURFACE.gamma_multiply(if lit { 0.96 } else { 0.86 }), on),
+                dim(color::surface().gamma_multiply(if lit { 0.96 } else { 0.86 }), on),
             );
             let gc = egui::pos2(bg.left() + 5.0 + glyph_r, mid.y);
             knob_glyph(
@@ -2029,7 +2029,7 @@ impl App {
                     }));
                 }
                 None => {
-                    painter.rect_filled(sq, rounding, dim(color::SURFACE_HI, on));
+                    painter.rect_filled(sq, rounding, dim(color::surface_hi(), on));
                     // A blank sleeve: the disc peeking out.
                     if r >= 8.0 {
                         painter.circle_stroke(
@@ -2042,7 +2042,7 @@ impl App {
                 }
             }
             let ring = match rel.status {
-                Status::Owned => (1.0, color::SEPARATOR_OPAQUE),
+                Status::Owned => (1.0, color::separator_opaque()),
                 Status::Wanted => (2.0, color::accent()),
                 Status::Dug => (2.0, color::ORANGE),
             };
@@ -2182,9 +2182,9 @@ impl App {
                     if on_air {
                         color::accent_soft()
                     } else if lit {
-                        color::SURFACE_HOVER
+                        color::surface_hover()
                     } else {
-                        color::SURFACE_HI
+                        color::surface_hi()
                     },
                 );
                 let edge = match (lit, avail) {
@@ -2265,7 +2265,7 @@ impl App {
                 painter.rect_stroke(
                     pill,
                     pill.height() * 0.5,
-                    egui::Stroke::new(1.0, dim(color::BG, on)),
+                    egui::Stroke::new(1.0, dim(color::bg(), on)),
                 );
                 painter.galley(
                     c - galley.size() * 0.5,
@@ -2388,7 +2388,7 @@ impl App {
                     rect.max,
                 ),
                 0.0,
-                color::CONTENT_BG.gamma_multiply(0.85),
+                color::content_bg().gamma_multiply(0.85),
             );
             // The shelf marks, then the dug ring, each with its count.
             let caption = |x: &mut f32, text: String| {

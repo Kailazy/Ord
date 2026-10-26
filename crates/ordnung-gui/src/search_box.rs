@@ -759,7 +759,7 @@ fn search_hit_row(
     if art_t < 1.0 {
         // No art (or still decoding): a muted square carrying the kind's
         // mark, so the row keeps its shape and still says where it's from.
-        ui.painter().rect_filled(art, rounding, color::SURFACE_HI);
+        ui.painter().rect_filled(art, rounding, color::surface_hi());
         draw_hit_mark(ui.painter(), art.center(), 9.0, kind, false);
     }
     if let Some(handle) = &tex {
@@ -1000,7 +1000,7 @@ fn draw_hit_mark(painter: &egui::Painter, c: egui::Pos2, r: f32, kind: HitKind, 
             let label = if on_art {
                 egui::Color32::from_black_alpha(190)
             } else {
-                color::SURFACE
+                color::surface()
             };
             if owned {
                 painter.circle_filled(c, label_r, label);

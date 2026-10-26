@@ -74,7 +74,7 @@ pub fn pitch(ui: &mut egui::Ui, value: f32, range: f32, bpm: Option<f32>) -> Opt
     // The slot, its ticks, and the quartz-lock lamp at the centre tick.
     p.line_segment(
         [egui::pos2(x0, slot_y), egui::pos2(x1, slot_y)],
-        egui::Stroke::new(SLOT_W, color::FIELD),
+        egui::Stroke::new(SLOT_W, color::field()),
     );
     let ticks = (range / 2.0).round().max(1.0) as i32;
     for i in -ticks..=ticks {
@@ -90,7 +90,7 @@ pub fn pitch(ui: &mut egui::Ui, value: f32, range: f32, bpm: Option<f32>) -> Opt
             egui::Stroke::new(1.0, ink),
         );
     }
-    let lamp = if shown == 0.0 { color::GREEN } else { color::SURFACE_ACTIVE };
+    let lamp = if shown == 0.0 { color::GREEN } else { color::surface_active() };
     p.circle_filled(egui::pos2(x_for(0.0), slot_y - 6.0), 1.8, lamp);
 
     // The cap with its index line.
@@ -98,7 +98,7 @@ pub fn pitch(ui: &mut egui::Ui, value: f32, range: f32, bpm: Option<f32>) -> Opt
     p.rect_filled(
         cap,
         egui::Rounding::same(radius::XS / 2.0),
-        if active { color::SURFACE_HOVER } else { color::SURFACE_HI },
+        if active { color::surface_hover() } else { color::surface_hi() },
     );
     p.rect_stroke(
         cap,

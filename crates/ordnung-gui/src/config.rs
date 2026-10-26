@@ -279,13 +279,21 @@ pub struct Config {
     /// Shade every other row of the song and record tables, so a wide row
     /// can be followed across its columns. On by default.
     pub zebra_rows: bool,
-    /// How much lighter a shaded row is, as added luminance: a few steps
-    /// is a whisper, thirty a clear band. Ignored while `zebra_rows` is off.
-    pub zebra_shade: u8,
-    /// The accent colour (selections, links, the primary button) as a
-    /// lowercase `color::TAG_PALETTE` name. Empty, the default, is the
-    /// stock blue; an unknown name falls back to it too.
+    /// How much darker a shaded row is: the alpha of a black veil over
+    /// every other row, so forty is a whisper and a hundred a clear band.
+    /// Ignored while `zebra_rows` is off.
+    pub row_shade: u8,
+    /// The accent colour (selections, links, the primary button) as
+    /// `#rrggbb`. Empty, the default, is the stock blue; so is anything
+    /// unparseable. A lowercase `color::TAG_PALETTE` name, what 0.189
+    /// wrote, still loads.
     pub accent: String,
+    /// Accent colours the user kept from the picker as presets, `#rrggbb`
+    /// each, in the order they were saved.
+    pub accent_presets: Vec<String>,
+    /// The app background as `#rrggbb`; every surface is a fixed step from
+    /// it (see `color::bg`). Empty, the default, is the stock graphite.
+    pub background: String,
 }
 
 /// One saved snapshot of every tunable on the Waveform settings tab. Saving to
@@ -701,8 +709,10 @@ impl Default for Config {
             waveform_bass_floor_amount: default_waveform_bass_floor_amount(),
             waveform_presets: Vec::new(),
             zebra_rows: true,
-            zebra_shade: crate::ui::tokens::color::ZEBRA_SHADE,
+            row_shade: crate::ui::tokens::color::ROW_SHADE,
             accent: String::new(),
+            accent_presets: Vec::new(),
+            background: String::new(),
         }
     }
 }
@@ -710,17 +720,21 @@ impl Default for Config {
 impl Config {
     /// The chosen accent, `None` for the stock blue.
     pub fn accent_color(&self) -> Option<eframe::egui::Color32> {
-        crate::ui::tokens::color::TAG_PALETTE
-            .iter()
-            .find(|(name, _)| name.eq_ignore_ascii_case(&self.accent))
-            .map(|(_, c)| *c)
+        use crate::ui::tokens::color;
+        color::from_hex(&self.accent).or_else(|| {
+            color::TAG_PALETTE
+                .iter()
+                .find(|(name, _)| name.eq_ignore_ascii_case(&self.accent))
+                .map(|(_, c)| *c)
+        })
     }
 
     /// Push the appearance settings into the running style: at launch,
     /// and again whenever one of them changes.
     pub fn apply_appearance(&self, ctx: &eframe::egui::Context) {
+        crate::ui::tokens::color::set_background(crate::ui::tokens::color::from_hex(&self.background));
         crate::ui::tokens::color::set_accent(self.accent_color());
-        crate::ui::theme::restyle(ctx, self.zebra_shade);
+        crate::ui::theme::restyle(ctx, self.row_shade);
     }
 
     /// Whether releases on `medium` should be shown in the release picker.
@@ -1091,8 +1105,10 @@ mod tests {
                 },
             ],
             zebra_rows: false,
-            zebra_shade: 20,
-            accent: "purple".to_string(),
+            row_shade: 20,
+            accent: "#bf5af2".to_string(),
+            accent_presets: vec!["#ff453a".to_string(), "#30d158".to_string()],
+            background: "#10131f".to_string(),
         };
         let parsed: Config = toml::from_str(FULL).unwrap();
         // Every field, through Debug: exact for every type the config holds,
@@ -1148,6 +1164,8 @@ mod tests {
         // The grid/list switch is private to `views`; the string reaches it
         // untouched.
         assert_eq!(c.vinyl_view, "nope");
+        assert_eq!(c.accent_color(), Some(crate::ui::tokens::color::PURPLE));
+        assert_eq!(c.row_shade, crate::ui::tokens::color::ROW_SHADE);
     }
 
     /// Every spelling each enum-valued field accepts writes back as itself,

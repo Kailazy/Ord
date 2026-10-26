@@ -293,10 +293,10 @@ fn deck_cap(
         // Fill only, like every other button: the theme's resting fill, no edge.
         let (fill, ink) = match lit {
             Some(c) if enabled => (c, egui::Color32::from_gray(16)),
-            _ if !enabled => (color::FIELD, color::LABEL_4),
-            _ if down => (color::SURFACE_ACTIVE, color::LABEL),
-            _ if hovered => (color::SURFACE_HOVER, color::LABEL),
-            _ => (color::SURFACE_HI, color::LABEL_2),
+            _ if !enabled => (color::field(), color::LABEL_4),
+            _ if down => (color::surface_active(), color::LABEL),
+            _ if hovered => (color::surface_hover(), color::LABEL),
+            _ => (color::surface_hi(), color::LABEL_2),
         };
         ui.painter().rect_filled(rect, rounding, fill);
         ui.painter()

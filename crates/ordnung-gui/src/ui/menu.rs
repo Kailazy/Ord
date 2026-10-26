@@ -502,7 +502,7 @@ impl MenuUi<'_> {
         self.ui.painter().hline(
             (rect.left() + space::S2)..=(rect.right() - space::S2),
             y,
-            egui::Stroke::new(1.0, color::SEPARATOR_OPAQUE),
+            egui::Stroke::new(1.0, color::separator_opaque()),
         );
     }
 
@@ -576,9 +576,9 @@ impl MenuUi<'_> {
         }
         if hot > 0.0 {
             let fill = if resp.is_pointer_button_down_on() {
-                color::SURFACE_ACTIVE
+                color::surface_active()
             } else {
-                color::SURFACE_HOVER
+                color::surface_hover()
             };
             painter.rect_filled(
                 rect,

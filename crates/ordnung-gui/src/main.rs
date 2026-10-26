@@ -9,6 +9,7 @@
 
 mod analysis_lane;
 mod app;
+mod appearance;
 mod audio;
 mod config;
 mod covers;

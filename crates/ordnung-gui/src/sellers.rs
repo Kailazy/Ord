@@ -1028,9 +1028,9 @@ impl App {
                             rect,
                             egui::Rounding::same(5.0),
                             if resp.hovered() {
-                                color::SURFACE_HOVER
+                                color::surface_hover()
                             } else {
-                                color::SURFACE_HI
+                                color::surface_hi()
                             },
                         );
                     }
@@ -1432,7 +1432,7 @@ impl App {
             ui.painter().rect_filled(
                 rect,
                 egui::Rounding::same(6.0),
-                crate::ui::tokens::color::SURFACE,
+                crate::ui::tokens::color::surface(),
             );
         }
         // The find box's pick: a wash and a ring on the row, matching the

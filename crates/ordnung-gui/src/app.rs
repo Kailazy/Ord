@@ -4034,7 +4034,7 @@ impl App {
         // so it reads as raised above the nav sidebar and the top/bottom bars
         // (which keep the darker `BG`). Otherwise this is the default central frame.
         let content_frame =
-            egui::Frame::central_panel(&ctx.style()).fill(crate::ui::tokens::color::CONTENT_BG);
+            egui::Frame::central_panel(&ctx.style()).fill(crate::ui::tokens::color::content_bg());
         egui::CentralPanel::default()
             .frame(content_frame)
             .show(ctx, |ui| {

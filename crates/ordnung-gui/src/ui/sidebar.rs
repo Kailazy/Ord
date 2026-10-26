@@ -20,7 +20,7 @@ use eframe::egui;
 
 /// The surface: the glass tint flattened onto the app's ground.
 pub fn fill() -> egui::Color32 {
-    over(color::BG, color::SURFACE_GLASS)
+    over(color::bg(), color::surface_glass())
 }
 
 /// `over` (premultiplied) composited on `under`, opaque.
@@ -160,7 +160,7 @@ pub fn rule(ui: &mut egui::Ui) {
     let w = ui.available_width();
     let (rect, _) = ui.allocate_exact_size(egui::vec2(w, 1.0), egui::Sense::hover());
     ui.painter()
-        .rect_filled(rect, 0.0, color::SEPARATOR_OPAQUE);
+        .rect_filled(rect, 0.0, color::separator_opaque());
 }
 
 #[cfg(test)]

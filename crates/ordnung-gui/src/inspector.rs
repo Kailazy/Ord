@@ -181,7 +181,7 @@ impl App {
                 // The drawer's own surface, so the handle reads as the edge
                 // of the panel rather than a shape stuck to it.
                 let bg = if hovered {
-                    crate::ui::tokens::color::DRAWER_HOVER
+                    crate::ui::tokens::color::drawer_hover()
                 } else {
                     crate::ui::sidebar::fill()
                 };
@@ -388,14 +388,14 @@ impl App {
                 ui.painter().rect_stroke(
                     rect,
                     crate::ui::tokens::radius::MD,
-                    egui::Stroke::new(1.0, color::SEPARATOR_OPAQUE),
+                    egui::Stroke::new(1.0, color::separator_opaque()),
                 );
                 ui.add_space(space::S4);
             } else if cover_loading {
                 let side = ui.available_width();
                 let (rect, _) = ui.allocate_exact_size(egui::vec2(side, side), egui::Sense::hover());
                 ui.painter()
-                    .rect_filled(rect, crate::ui::tokens::radius::MD, color::FIELD);
+                    .rect_filled(rect, crate::ui::tokens::radius::MD, color::field());
                 ui.put(rect, egui::Spinner::new());
                 ui.add_space(space::S4);
             }

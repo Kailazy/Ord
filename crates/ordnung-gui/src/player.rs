@@ -2268,12 +2268,12 @@ pub(crate) fn segmented(
     ui.painter().rect_filled(
         rect,
         egui::Rounding::same(r),
-        crate::ui::tokens::color::FIELD,
+        crate::ui::tokens::color::field(),
     );
     ui.painter().rect_stroke(
         rect,
         egui::Rounding::same(r),
-        egui::Stroke::new(1.0, crate::ui::tokens::color::SURFACE_HI),
+        egui::Stroke::new(1.0, crate::ui::tokens::color::surface_hi()),
     );
 
     let mut hit = None;
@@ -2350,7 +2350,7 @@ pub(crate) fn segmented(
                     egui::pos2(cell.left(), cell.top() + 5.0),
                     egui::pos2(cell.left(), cell.bottom() - 5.0),
                 ],
-                egui::Stroke::new(1.0, crate::ui::tokens::color::SEPARATOR_OPAQUE),
+                egui::Stroke::new(1.0, crate::ui::tokens::color::separator_opaque()),
             );
         }
         let color = if resp.hovered() {

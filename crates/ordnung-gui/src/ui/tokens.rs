@@ -48,38 +48,82 @@ pub mod color {
     use std::sync::atomic::{AtomicU32, Ordering};
 
     // --- Surfaces, low → high elevation ---
-    /// App background behind panels. Matches egui's prior default dark fill
-    /// (`from_gray(27)`) so the window brightness is unchanged from before.
-    pub const BG: Color32 = Color32::from_rgb(27, 27, 27);
-    /// Content background for the main songs/table area — a touch lighter than
-    /// `BG` so the central list reads as raised above the nav sidebar and the
-    /// top/bottom bars (which stay at `BG`).
-    pub const CONTENT_BG: Color32 = Color32::from_rgb(35, 35, 37);
-    /// Default panel / resting surface.
-    pub const SURFACE: Color32 = Color32::from_rgb(32, 32, 35);
+    // Every surface is a fixed step from one base tone, the app background,
+    // which the user can change (Settings → Appearance, a look). Surfaces
+    // are read through these functions, never a const, so the whole app
+    // re-skins at once; the stock base comes out as the hand-tuned grays.
+    /// The stock app background: egui's prior default dark fill
+    /// (`from_gray(27)`), so the window brightness is what it always was.
+    pub const BG_STOCK: Color32 = Color32::from_rgb(27, 27, 27);
+    static BG_RT: AtomicU32 = AtomicU32::new(0x1B1B1B);
+
+    /// Set the app background, `None` for the stock gray. The style is
+    /// pushed separately (`theme::restyle`), so call that after.
+    pub fn set_background(c: Option<Color32>) {
+        BG_RT.store(to_packed(c.unwrap_or(BG_STOCK)), Ordering::Relaxed);
+    }
+    /// App background behind panels.
+    pub fn bg() -> Color32 {
+        from_packed(BG_RT.load(Ordering::Relaxed))
+    }
+    /// `base` moved `d` per channel, pinned to the byte range.
+    fn step(base: Color32, d: [i16; 3]) -> Color32 {
+        let c = |v: u8, d: i16| (i16::from(v) + d).clamp(0, 255) as u8;
+        Color32::from_rgb(c(base.r(), d[0]), c(base.g(), d[1]), c(base.b(), d[2]))
+    }
+    /// Content background for the main songs/table area over `base` — a
+    /// touch lighter, so the central list reads as raised above the nav
+    /// sidebar and the top/bottom bars (which stay on the base).
+    pub fn content_bg_of(base: Color32) -> Color32 {
+        step(base, [8, 8, 10])
+    }
+    pub fn content_bg() -> Color32 {
+        content_bg_of(bg())
+    }
+    /// Default panel / resting surface over `base`.
+    pub fn surface_of(base: Color32) -> Color32 {
+        step(base, [5, 5, 8])
+    }
+    pub fn surface() -> Color32 {
+        surface_of(bg())
+    }
     /// Raised surface — cards, hovered rows, menus.
-    pub const SURFACE_HI: Color32 = Color32::from_rgb(44, 44, 48);
+    pub fn surface_hi() -> Color32 {
+        step(bg(), [17, 17, 21])
+    }
     /// The see-through surface every floating layer shares: the record sheet
     /// over its frost, and the dropdowns and popups over whatever they open
     /// on. One alpha, so a menu opened over the sheet reads as the same
-    /// glass. `SURFACE` at 90% (what `gamma_multiply(0.9)` of it comes to).
-    pub const SURFACE_GLASS: Color32 = Color32::from_rgba_premultiplied(29, 29, 32, 230);
+    /// glass: `surface` at 90%.
+    pub fn surface_glass() -> Color32 {
+        surface().gamma_multiply(0.9)
+    }
     /// Sunken surface — text fields and other inputs.
-    pub const FIELD: Color32 = Color32::from_rgb(20, 20, 22);
-    /// Hovered interactive surface — one step above `SURFACE_HI`.
-    pub const SURFACE_HOVER: Color32 = Color32::from_rgb(54, 54, 58);
-    /// Pressed interactive surface — one step above `SURFACE_HOVER`.
-    pub const SURFACE_ACTIVE: Color32 = Color32::from_rgb(64, 64, 68);
+    pub fn field() -> Color32 {
+        step(bg(), [-7, -7, -5])
+    }
+    /// Hovered interactive surface — one step above `surface_hi`.
+    pub fn surface_hover() -> Color32 {
+        step(bg(), [27, 27, 31])
+    }
+    /// Pressed interactive surface — one step above `surface_hover`.
+    pub fn surface_active() -> Color32 {
+        step(bg(), [37, 37, 41])
+    }
     /// The pull tab's hovered fill — one elevation step up from the drawer, so
     /// the handle lifts under the pointer instead of flashing to a light grey.
-    pub const DRAWER_HOVER: Color32 = Color32::from_rgb(46, 46, 50);
+    pub fn drawer_hover() -> Color32 {
+        step(bg(), [19, 19, 23])
+    }
 
     // --- Hairlines ---
     /// Translucent separator that adapts to whatever sits behind it (white α20,
     /// premultiplied — equivalent to `from_white_alpha(20)` but const-constructible).
     pub const SEPARATOR: Color32 = Color32::from_rgba_premultiplied(20, 20, 20, 20);
     /// Opaque separator for use over a known dark surface.
-    pub const SEPARATOR_OPAQUE: Color32 = Color32::from_rgb(56, 56, 60);
+    pub fn separator_opaque() -> Color32 {
+        step(bg(), [29, 29, 33])
+    }
     /// The outline on a control at rest: a solid grey edge that lifts a
     /// button off the surface without hardening into a border. Opaque, not
     /// translucent, so it reads as one flat line rather than a tint of what
@@ -95,15 +139,11 @@ pub mod color {
     pub const LABEL_4: Color32 = Color32::from_rgb(88, 88, 96);
 
     // --- Accent ---
-    // The one hue the user can change (Settings → Appearance). It is read
-    // through the functions below, never a const, so every selection,
-    // link and primary button follows the choice at once. The stock blue
-    // keeps its hand-tuned companions; a chosen hue derives them.
+    // The one hue the user picks freely (Settings → Appearance). Read
+    // through the functions below, never a const, so every selection, link
+    // and primary button follows the choice at once.
     /// The stock accent, for showing the default choice. Draw with [`accent`].
     pub const ACCENT_STOCK: Color32 = Color32::from_rgb(74, 134, 232);
-    const ACCENT_HOVER_STOCK: Color32 = Color32::from_rgb(98, 156, 245);
-    const ACCENT_SOFT_STOCK: Color32 = Color32::from_rgb(44, 70, 120);
-    const NAV_ACCENT_STOCK: Color32 = Color32::from_rgb(64, 110, 180);
     static ACCENT_RT: AtomicU32 = AtomicU32::new(0x4A86E8);
 
     /// Set the accent, `None` for the stock blue. The style is pushed
@@ -111,44 +151,52 @@ pub mod color {
     pub fn set_accent(c: Option<Color32>) {
         ACCENT_RT.store(to_packed(c.unwrap_or(ACCENT_STOCK)), Ordering::Relaxed);
     }
-    fn accent_is_stock() -> bool {
-        ACCENT_RT.load(Ordering::Relaxed) == to_packed(ACCENT_STOCK)
-    }
     /// The accent: selections, links, the active control.
     pub fn accent() -> Color32 {
         from_packed(ACCENT_RT.load(Ordering::Relaxed))
     }
     /// The accent under the pointer, a step lighter.
     pub fn accent_hover() -> Color32 {
-        if accent_is_stock() {
-            ACCENT_HOVER_STOCK
-        } else {
-            accent().lerp_to_gamma(Color32::WHITE, 0.15)
-        }
+        accent().lerp_to_gamma(Color32::WHITE, 0.15)
     }
-    /// Pre-blended translucent accent for selection fills over a dark surface.
+    /// Translucent-looking accent for selection fills: `accent` blended
+    /// into the `base` it sits on.
+    pub fn accent_soft_of(accent: Color32, base: Color32) -> Color32 {
+        base.lerp_to_gamma(accent, 0.42)
+    }
     pub fn accent_soft() -> Color32 {
-        if accent_is_stock() {
-            ACCENT_SOFT_STOCK
-        } else {
-            BG.lerp_to_gamma(accent(), 0.42)
-        }
+        accent_soft_of(accent(), bg())
     }
-    /// The primary-action fill: the "Add songs…" button, the onboarding and
-    /// token buttons. The one saturated element on screen, a shade under
-    /// the accent so white text sits on it.
+    /// The primary-action fill over `base`: the "Add songs…" button, the
+    /// onboarding and token buttons. The one saturated element on screen,
+    /// a shade under the accent so white text sits on it.
+    pub fn nav_accent_of(accent: Color32, base: Color32) -> Color32 {
+        accent.lerp_to_gamma(base, 0.25)
+    }
     pub fn nav_accent() -> Color32 {
-        if accent_is_stock() {
-            NAV_ACCENT_STOCK
-        } else {
-            accent().lerp_to_gamma(BG, 0.25)
-        }
+        nav_accent_of(accent(), bg())
     }
 
-    /// Added luminance of a shaded table row by default (Settings →
-    /// Appearance): a whisper over `CONTENT_BG`, enough to follow a wide
-    /// row across its columns.
-    pub const ZEBRA_SHADE: u8 = 8;
+    /// How much darker a shaded table row is by default (Settings →
+    /// Appearance): the alpha of the black veil over every other row. A
+    /// whisper over `content_bg`, enough to follow a wide row across its
+    /// columns.
+    pub const ROW_SHADE: u8 = 40;
+
+    /// A look: an app background and the accent that suits it, picked as
+    /// one in Settings → Appearance. The first is the stock look.
+    pub struct Look {
+        pub name: &'static str,
+        pub background: Color32,
+        pub accent: Color32,
+    }
+    pub const LOOKS: &[Look] = &[
+        Look { name: "Graphite", background: BG_STOCK, accent: ACCENT_STOCK },
+        Look { name: "Midnight", background: Color32::from_rgb(16, 19, 31), accent: Color32::from_rgb(99, 140, 255) },
+        Look { name: "Pitch", background: Color32::from_rgb(9, 9, 9), accent: GREEN },
+        Look { name: "Mocha", background: Color32::from_rgb(33, 28, 25), accent: ORANGE },
+        Look { name: "Slate", background: Color32::from_rgb(40, 42, 47), accent: ACCENT_STOCK },
+    ];
 
     // --- System status hues (Apple HIG, dark) ---
     pub const RED: Color32 = Color32::from_rgb(255, 69, 58);
@@ -190,6 +238,16 @@ pub mod color {
     /// Pack a colour for the catalog (`0xRRGGBB`). Alpha is dropped.
     pub fn to_packed(c: Color32) -> u32 {
         ((c.r() as u32) << 16) | ((c.g() as u32) << 8) | c.b() as u32
+    }
+
+    /// A chosen colour as the config stores it, `#rrggbb`.
+    pub fn to_hex(c: Color32) -> String {
+        format!("#{:06x}", to_packed(c))
+    }
+    /// Parse `#rrggbb`; anything else is `None`.
+    pub fn from_hex(s: &str) -> Option<Color32> {
+        let hex = s.strip_prefix('#').filter(|h| h.len() == 6)?;
+        u32::from_str_radix(hex, 16).ok().map(from_packed)
     }
 }
 

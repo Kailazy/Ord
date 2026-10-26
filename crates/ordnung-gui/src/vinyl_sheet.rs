@@ -2857,7 +2857,9 @@ fn video_transport_ui(
     // The bar fills the sheet, so its own width is the width it's offered.
     let bar_w = ui.available_width();
     egui::Frame::none()
-        .fill(ui.visuals().faint_bg_color)
+        // egui's own faint fill, not the table row shade (a darkening veil
+        // since the rows went that way): the bar lifts off the sheet.
+        .fill(egui::Color32::from_additive_luminance(5))
         .rounding(crate::ui::tokens::radius::SM)
         .inner_margin(egui::Margin::symmetric(EDGE, space::S3))
         .show(ui, |ui| {

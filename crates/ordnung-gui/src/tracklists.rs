@@ -509,9 +509,9 @@ impl App {
                     let w = ui.available_width();
                     let (rect, resp) = ui.allocate_exact_size(egui::vec2(w, 40.0), egui::Sense::click());
                     if active {
-                        ui.painter().rect_filled(rect, egui::Rounding::same(6.0), color::SURFACE_HI);
+                        ui.painter().rect_filled(rect, egui::Rounding::same(6.0), color::surface_hi());
                     } else if resp.hovered() {
-                        ui.painter().rect_filled(rect, egui::Rounding::same(6.0), color::SURFACE);
+                        ui.painter().rect_filled(rect, egui::Rounding::same(6.0), color::surface());
                     }
                     let ink = if active || resp.hovered() { color::LABEL } else { color::LABEL_2 };
                     // Cut to the bar, not spilling past it.
@@ -1071,7 +1071,7 @@ impl App {
                         if current {
                             ui.painter().rect_filled(rect, egui::Rounding::same(6.0), color::accent_soft().gamma_multiply(0.45));
                         } else if resp.hovered() {
-                            ui.painter().rect_filled(rect, egui::Rounding::same(6.0), color::SURFACE);
+                            ui.painter().rect_filled(rect, egui::Rounding::same(6.0), color::surface());
                         }
                         let thumb = egui::Rect::from_min_size(rect.min + egui::vec2(4.0, 4.0), egui::vec2(44.0, 44.0));
                         let tex = (!c.thumb_url.is_empty())

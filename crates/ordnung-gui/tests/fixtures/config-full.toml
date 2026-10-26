@@ -138,8 +138,13 @@ waveform_smooth_release_ms = 45.0
 waveform_bass_floor_threshold = 0.375
 waveform_bass_floor_amount = 0.25
 zebra_rows = false
-zebra_shade = 20
-accent = "purple"
+row_shade = 20
+accent = "#bf5af2"
+accent_presets = [
+    "#ff453a",
+    "#30d158",
+]
+background = "#10131f"
 
 [column_widths]
 artist = 180.5
