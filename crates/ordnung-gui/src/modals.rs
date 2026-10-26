@@ -588,13 +588,17 @@ impl App {
         // is deliberately shorter than the old fixed 620px viewport; anyone who
         // wants more can drag it, and egui persists the size across sessions.
         let default_h = (ctx.screen_rect().height() - 260.0).clamp(320.0, 460.0);
-        crate::ui::window::Window::new("Settings")
+        let shown = crate::ui::window::Window::new("Settings")
             .open(&mut window_open)
             .resizable(true)
             .default_size([620.0, default_h])
             .min_width(520.0)
             .min_height(300.0)
             .show(ctx, |ui| {
+                // The rail's ground, the nav sidebar's base, filled once the
+                // frame is known (below): a slot here keeps it under the tabs.
+                let rail = ui.painter().add(egui::Shape::Noop);
+                let rule_y = ui.cursor().top() - crate::ui::window::TITLE_CLEARANCE;
                 let row = ui.horizontal_top(|ui| {
                     // Left rail: selectable category tabs (Ableton-style).
                     ui.vertical(|ui| {
@@ -620,8 +624,8 @@ impl App {
                         );
                     });
                     // Rail/content divider: reserve the gap here, draw the line
-                    // after the row lays out (below) so it spans exactly the
-                    // final content height. A `ui.separator()` expands to the
+                    // with the rail's ground once the frame is known (below),
+                    // so it spans the rail. A `ui.separator()` expands to the
                     // window's current height instead, which locks in any
                     // inherited height — the auto-sized window can grow but
                     // never shrink back (the "Settings keeps its bugged tall
@@ -1579,12 +1583,20 @@ impl App {
                     });
                     sep_x
                 });
-                ui.painter().vline(
-                    row.inner,
-                    row.response.rect.y_range(),
-                    ui.visuals().widgets.noninteractive.bg_stroke,
-                );
+                (rail, rule_y, row.inner)
             });
+        // The rail's ground and its edge, from the frame egui settled on,
+        // inset by the glass's own edge, which is painted under the content.
+        if let Some(egui::InnerResponse { inner: Some((rail, top, sep_x)), response }) = shown {
+            let style = ctx.style();
+            let v = &style.visuals;
+            let frame = response.rect.shrink(v.window_stroke.width / 2.0);
+            let rect = egui::Rect::from_min_max(egui::pos2(frame.left(), top), egui::pos2(sep_x, frame.bottom()));
+            let rounding = egui::Rounding { sw: v.window_rounding.sw, ..Default::default() };
+            let p = ctx.layer_painter(response.layer_id);
+            p.set(rail, egui::Shape::rect_filled(rect, rounding, crate::ui::tokens::color::bg()));
+            p.vline(sep_x, rect.y_range(), v.widgets.noninteractive.bg_stroke);
+        }
 
         if save {
             self.config.discogs_token = self.token_input.trim().to_string();
