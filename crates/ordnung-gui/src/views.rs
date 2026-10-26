@@ -445,7 +445,7 @@ fn note_bubble(ui: &egui::Ui, rect: egui::Rect, resp: egui::Response, note: &str
         crate::ui::tokens::font::icon(14.0),
         egui::Color32::from_gray(230),
     );
-    resp.on_hover_note(note);
+    resp.on_hover_note_now(note);
 }
 
 /// Render a marketplace price the way the grid shows it: symbol for the

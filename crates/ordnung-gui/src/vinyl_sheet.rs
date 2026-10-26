@@ -1670,6 +1670,22 @@ impl App {
                 // feedback path entirely.
                 ui.set_min_width(SHEET_W);
                 ui.set_max_width(SHEET_W);
+                // Your Discogs note, in the corner beside the close cross:
+                // a mark that pops the note the moment the pointer lands.
+                if let Some(note) = &sheet_note {
+                    let rect = crate::ui::window::beside_close(ui);
+                    let resp = ui.interact(rect, ui.id().with("sheet-note"), egui::Sense::hover());
+                    ui.painter().text(
+                        rect.center(),
+                        egui::Align2::CENTER_CENTER,
+                        crate::ui::phosphor_icons::named(
+                            crate::ui::phosphor_icons::app::CHAT_TEARDROP_TEXT,
+                        ),
+                        crate::ui::tokens::font::icon(crate::ui::tokens::font::body().size + 2.0),
+                        crate::ui::icon::col(&resp),
+                    );
+                    resp.on_hover_note_now(note);
+                }
                 ui.add_space(2.0);
                 // The cover runs exactly the height of the header beside it
                 // (names, imprint, price, the row of buttons): a square that
@@ -1696,8 +1712,11 @@ impl App {
                         // column 298 → cover 298 → column 292 …) and the
                         // header shimmers between two layouts. The width
                         // beside the smallest cover, clear of the window's
-                        // close button in the corner on the artist's line.
-                        ui.set_max_width(SHEET_W - C_MIN - C_GAP - crate::ui::window::CLOSE_W);
+                        // close button in the corner on the artist's line,
+                        // and of the note mark beside it when there is one.
+                        let corner =
+                            crate::ui::window::CLOSE_W * if sheet_note.is_some() { 2.0 } else { 1.0 };
+                        ui.set_max_width(SHEET_W - C_MIN - C_GAP - corner);
                         let artist_font = crate::ui::tokens::font::strong(
                             crate::ui::tokens::font::headline().size,
                         );
@@ -2048,13 +2067,6 @@ impl App {
                             .clicked()
                             {
                                 act = Some(Act::ToggleList(VinylList::Wantlist));
-                            }
-                            if let Some(note) = &sheet_note {
-                                crate::ui::icon_note(
-                                    ui,
-                                    crate::ui::phosphor_icons::app::CHAT_TEARDROP_TEXT,
-                                    note,
-                                );
                             }
                             // Dig from here: search Discogs outward from this
                             // record for pressings you don't already have.

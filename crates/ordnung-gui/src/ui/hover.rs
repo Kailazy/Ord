@@ -57,6 +57,9 @@ pub trait HoverNoteExt {
     /// [`Self::on_hover_note_ui`] at the pointer, for a widget too large to
     /// sit a note beside.
     fn on_hover_note_at_pointer(self, add: impl FnOnce(&mut egui::Ui)) -> Self;
+    /// [`Self::on_hover_note`] with no delay: the note is up the moment the
+    /// pointer arrives, for a mark whose whole job is to carry it.
+    fn on_hover_note_now(self, text: impl Into<String>) -> Self;
 }
 
 impl HoverNoteExt for egui::Response {
@@ -84,6 +87,24 @@ impl HoverNoteExt for egui::Response {
 
     fn on_hover_note_at_pointer(self, add: impl FnOnce(&mut egui::Ui)) -> Self {
         show(self, |resp| resp.on_hover_ui_at_pointer(|ui| on_glass(ui, add)))
+    }
+
+    fn on_hover_note_now(self, text: impl Into<String>) -> Self {
+        // egui reads the delay from the style as it decides, so it is
+        // zeroed for this one attach and put back after, only when the
+        // note could show at all (see `show`).
+        if !(self.contains_pointer() || self.is_tooltip_open()) {
+            return self;
+        }
+        let ctx = self.ctx.clone();
+        let saved = ctx.style();
+        ctx.style_mut(|s| {
+            s.interaction.tooltip_delay = 0.0;
+            s.interaction.show_tooltips_only_when_still = false;
+        });
+        let resp = self.on_hover_note(text);
+        ctx.set_style(saved);
+        resp
     }
 }
 

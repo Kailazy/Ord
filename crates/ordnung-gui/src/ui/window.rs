@@ -508,6 +508,19 @@ pub const CLOSE_SIDE: f32 = 24.0;
 /// title bar, a gap included; content on that row stops short of it.
 pub const CLOSE_W: f32 = CLOSE_SIDE + space::S3;
 
+/// The square beside the close cross on the first row of a window without
+/// a title bar, for a mark the content wants in the corner (the record
+/// sheet's note). Taken from the width the content pinned, so call it
+/// after the content's `set_max_width`; the content's first row should
+/// stop short of it, two [`CLOSE_W`] from the edge.
+pub fn beside_close(ui: &egui::Ui) -> egui::Rect {
+    let r = ui.max_rect();
+    egui::Rect::from_center_size(
+        egui::pos2(r.right() - CLOSE_W - CLOSE_SIDE / 2.0, r.top() + control_row_h(ui) / 2.0),
+        egui::Vec2::splat(CLOSE_SIDE),
+    )
+}
+
 /// Clearance the content keeps from the hairline under the title: the
 /// first line of a dialog is never flush against the rule. The title's
 /// own clearance from the rule is the frame's top margin, so the title

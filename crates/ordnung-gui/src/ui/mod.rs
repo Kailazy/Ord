@@ -80,16 +80,10 @@ pub fn icon_text(glyph: &str, text: &str, font: egui::FontId) -> egui::WidgetTex
 /// short explanation for a setting whose label alone cannot carry it. A
 /// setting whose label explains itself gets no note at all.
 pub fn info_note(ui: &mut egui::Ui, text: impl Into<String>) {
-    icon_note(ui, phosphor_icons::app::INFO, text);
-}
-
-/// A small Phosphor mark (`name`, see [`phosphor_icons::app`]) with `text` as
-/// its hover note.
-pub fn icon_note(ui: &mut egui::Ui, name: &str, text: impl Into<String>) {
     use hover::HoverNoteExt;
     ui.add(
         egui::Label::new(
-            egui::RichText::new(phosphor_icons::named(name))
+            egui::RichText::new(phosphor_icons::named(phosphor_icons::app::INFO))
                 .font(tokens::font::icon(tokens::font::body().size + 2.0))
                 .color(icon::REST),
         )
