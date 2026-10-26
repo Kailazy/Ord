@@ -611,6 +611,7 @@ impl App {
         // The Key column's one-click preset: the current song's harmonic
         // neighbours. Resolved before the window closure borrows `text`.
         let harmonic = (col == TableColumn::Key).then(|| self.harmonic_preset()).flatten();
+        let vinyl_mode = self.config.vinyl_mode;
 
         // Escape closes the bar; the filter stays.
         let mut stays = true;
@@ -626,7 +627,11 @@ impl App {
                 if let Some((label, keys)) = &harmonic {
                     if ui
                         .button(format!("Mixes with {label}"))
-                        .on_hover_note("Same key, its relative, and one step either way on the wheel")
+                        .on_hover_note(if vinyl_mode {
+                            "Keys as tagged; the green cells follow vinyl mode"
+                        } else {
+                            "Same key, its relative, and one step either way on the wheel"
+                        })
                         .clicked()
                     {
                         text = keys.clone();
@@ -990,8 +995,10 @@ impl App {
         // row body). Read off the rows: a playing song filtered out of the
         // view has no key here, and then nothing is tinted.
         let playing = self.audio.as_ref().and_then(|a| a.current());
-        let playing_camelot =
-            playing.and_then(|id| self.rows.iter().find(|r| r.id == id).and_then(|r| r.camelot));
+        let (playing_camelot, playing_bpm) = playing
+            .and_then(|id| self.rows.iter().find(|r| r.id == id))
+            .map_or((None, None), |r| (r.camelot, r.bpm_val));
+        let vinyl_mode = self.config.vinyl_mode;
         let selected_ordered: Vec<Id> = self
             .rows
             .iter()
@@ -1367,10 +1374,25 @@ impl App {
                             // song's (Camelot same / relative / ±1) lights its Key
                             // cell green, so the next track can be picked by
                             // colour while the current one plays.
-                            let mixes = matches!(
-                                (playing_camelot, r.camelot),
-                                (Some(a), Some(b)) if a.compatible_with(b)
-                            ) && playing != Some(r.id);
+                            // Vinyl mode asks the same of the key the row lands
+                            // on once a turntable beatmatches it to the playing
+                            // tempo, from the two tagged BPMs.
+                            let vinyl = match (playing_camelot, playing_bpm, r.camelot, r.bpm_val) {
+                                (Some(a), Some(a_bpm), Some(b), Some(b_bpm))
+                                    if vinyl_mode && playing != Some(r.id) =>
+                                {
+                                    b.vinyl_compatible_with(b_bpm, a, a_bpm)
+                                }
+                                _ => None,
+                            };
+                            let mixes = if vinyl_mode {
+                                vinyl.is_some()
+                            } else {
+                                matches!(
+                                    (playing_camelot, r.camelot),
+                                    (Some(a), Some(b)) if a.compatible_with(b)
+                                ) && playing != Some(r.id)
+                            };
                             // Every member of the multi-selection gets the highlighted row
                             // background; the primary row (drives the inspector) is also
                             // bolded so it stands out within a multi-selection.
@@ -1674,6 +1696,23 @@ impl App {
                                                 egui::TextStyle::Body.resolve(ui.style()),
                                                 fg,
                                             );
+                                            // A vinyl match was computed through a
+                                            // pitch shift; the wave in the corner
+                                            // says so. Set in the icon face: Inter
+                                            // shadows Phosphor's codepoints.
+                                            if vinyl.is_some() {
+                                                ui.painter().text(
+                                                    rect.right_bottom() - egui::vec2(2.0, 1.0),
+                                                    egui::Align2::RIGHT_BOTTOM,
+                                                    crate::ui::phosphor_icons::named(
+                                                        crate::ui::phosphor_icons::app::WAVE_SINE,
+                                                    ),
+                                                    crate::ui::tokens::font::icon(
+                                                        crate::ui::tokens::font::caption().size,
+                                                    ),
+                                                    fg,
+                                                );
+                                            }
                                         } else {
                                             ui.add(egui::Label::new(
                                                 egui::RichText::new(text).weak(),
@@ -1758,6 +1797,13 @@ impl App {
                                     // estimated lossy source), or prompt to analyze.
                                     if col == TableColumn::Quality {
                                         resp = resp.on_hover_note(quality_tooltip(r));
+                                    }
+                                    // Key cell in vinyl mode: the shift behind the green.
+                                    if let (TableColumn::Key, Some(v)) = (col, vinyl) {
+                                        resp = resp.on_hover_note(match v.semitones {
+                                            0 => format!("{:+.1}% vs. the playing deck · same key", v.pitch_pct),
+                                            n => format!("{:+.1}% vs. the playing deck · {n:+} st", v.pitch_pct),
+                                        });
                                     }
                                     if resp.clicked() {
                                         clicked = true;

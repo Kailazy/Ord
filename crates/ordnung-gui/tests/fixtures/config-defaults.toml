@@ -33,6 +33,7 @@ auto_convert = false
 auto_convert_sources = []
 volume = 1.0
 key_lock = false
+vinyl_mode = false
 mid_start_videos = false
 mid_start_files = false
 waveform_color_mode = "energy"

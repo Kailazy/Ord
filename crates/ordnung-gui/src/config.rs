@@ -198,6 +198,11 @@ pub struct Config {
     /// fader changes the tempo and keeps the musical key; off, it behaves
     /// like a turntable's and shifts both. Remembered like a deck setting.
     pub key_lock: bool,
+    /// Vinyl mode for the table's harmonic cue: on, a Key cell lights green
+    /// when the row's key mixes with the playing song's *after* the pitch
+    /// shift a turntable applies to beatmatch the two (from their tagged
+    /// BPMs); off (the default), the keys are compared at face value.
+    pub vinyl_mode: bool,
     /// Start a record's videos part-way in rather than at the top, so a
     /// preview of a release lands past the intro and the build. The
     /// fraction is `playback::MID_START_FRACTION`. Carries the old single
@@ -667,6 +672,7 @@ impl Default for Config {
             auto_convert_sources: Vec::new(),
             volume: 1.0,
             key_lock: false,
+            vinyl_mode: false,
             mid_start_videos: false,
             mid_start_files: false,
             waveform_color_mode: WaveformColorMode::Energy,
@@ -1005,6 +1011,7 @@ mod tests {
             auto_convert_sources: ["flac", "wav", "aiff", "aac", "mp3"].map(String::from).to_vec(),
             volume: 0.5,
             key_lock: true,
+            vinyl_mode: true,
             mid_start_videos: true,
             mid_start_files: true,
             waveform_color_mode: WaveformColorMode::Spectrum,

@@ -285,6 +285,7 @@ impl App {
         // applied to the engine after the panel closure.
         let mut set_pitch: Option<f32> = None;
         let mut toggle_key_lock = false;
+        let mut toggle_vinyl_mode = false;
         // Set by clicking the title/artist labels; applied after the panel closure
         // (jumping rebuilds rows and selection, which needs `&mut self`).
         let mut filter_album = false;
@@ -612,6 +613,33 @@ impl App {
                         {
                             toggle_key_lock = true;
                         }
+                        // Vinyl mode, the table's harmonic cue through a
+                        // turntable's pitch shift; its own toggle, not the
+                        // lock's inverse.
+                        let vinyl_lit =
+                            self.config.vinyl_mode.then_some(crate::ui::tokens::color::ACCENT_HOVER);
+                        let vinyl = if compact {
+                            crate::ui::button::deck_icon(
+                                ui,
+                                crate::ui::phosphor_icons::named(
+                                    crate::ui::phosphor_icons::app::VINYL,
+                                ),
+                                vinyl_lit,
+                                true,
+                            )
+                        } else {
+                            crate::ui::button::deck(ui, "Vinyl", vinyl_lit, true)
+                        };
+                        if vinyl
+                            .on_hover_note(if self.config.vinyl_mode {
+                                "Vinyl mode on: green keys stay in key once pitched to this tempo"
+                            } else {
+                                "Vinyl mode off: keys compared as tagged"
+                            })
+                            .clicked()
+                        {
+                            toggle_vinyl_mode = true;
+                        }
                     });
                     ui.add_space(12.0);
 
@@ -709,6 +737,10 @@ impl App {
             if let Some(a) = self.audio.as_mut() {
                 a.set_key_lock(self.config.key_lock);
             }
+            let _ = self.config.save();
+        }
+        if toggle_vinyl_mode {
+            self.config.vinyl_mode = !self.config.vinyl_mode;
             let _ = self.config.save();
         }
         if toggle {
@@ -2700,10 +2732,11 @@ fn zoom_step(secs: f32) -> usize {
 }
 
 /// Room left on the artwork row, after the pitch fader, under which the key
-/// lock drops its word for the lock mark: the word's key takes 68 pt and the
-/// mark's 34, and past the 12 pt gap, the 46 pt clock and the 86 pt tail
-/// (time and close) the scrubber wants 240 pt or so to be worth looking at.
-const KEY_WORD_ROOM: f32 = 460.0;
+/// lock and vinyl buttons drop their words for their marks: the words take
+/// 68 and 50 pt, the marks 34 each, and past the 12 pt gap, the 46 pt clock
+/// and the 86 pt tail (time and close) the scrubber wants 240 pt or so to
+/// be worth looking at.
+const KEY_WORD_ROOM: f32 = 520.0;
 
 /// How long the cue bar takes to slide into or out of the player.
 

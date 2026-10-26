@@ -42,6 +42,21 @@ pub struct Camelot {
     pub major: bool,
 }
 
+/// A turntable's pitch fader, ±8%, as a fraction. Deliberately not the app
+/// player's `PITCH_RANGE_PCT` (ordnung-gui `audio.rs`): widening that fader
+/// must not change which records count as mixable on a deck.
+const VINYL_PITCH_RANGE: f32 = 0.08;
+/// How far off a semitone a pitched record may land and still count as in key.
+const VINYL_DETUNE_CENTS: f32 = 30.0;
+
+/// How far a record is pitched, relative to the playing deck, to beatmatch it,
+/// and by how many semitones that moves it.
+#[derive(Debug, Clone, Copy)]
+pub struct VinylShift {
+    pub pitch_pct: f32,
+    pub semitones: i32,
+}
+
 impl Camelot {
     /// "8B", "5A", etc.
     pub fn label(self) -> String {
@@ -60,6 +75,39 @@ impl Camelot {
             return diff == 1 || diff == 11;
         }
         false
+    }
+
+    /// Shift by `semitones` (any sign): +1 st = +7 wheel positions, side kept.
+    pub fn transpose(self, semitones: i32) -> Camelot {
+        let number = (self.number as i32 - 1 + 7 * semitones).rem_euclid(12) as u8 + 1;
+        Camelot { number, major: self.major }
+    }
+
+    /// Vinyl counterpart of `compatible_with`: `self` at `bpm`, beatmatched on a
+    /// turntable to `playing` at `playing_bpm`. `Some` iff it lands in key.
+    pub fn vinyl_compatible_with(
+        self,
+        bpm: f32,
+        playing: Camelot,
+        playing_bpm: f32,
+    ) -> Option<VinylShift> {
+        // Also rejects NaN; an infinite BPM fails the range check below.
+        if !(bpm > 0.0 && playing_bpm > 0.0) {
+            return None;
+        }
+        let rho = [1.0, 2.0, 0.5]
+            .into_iter()
+            .map(|k| playing_bpm / (k * bpm))
+            .find(|r| (r - 1.0).abs() <= VINYL_PITCH_RANGE)?;
+        let d = 12.0 * rho.log2();
+        let n = d.round();
+        if (100.0 * (d - n)).abs() > VINYL_DETUNE_CENTS {
+            return None;
+        }
+        let n = n as i32;
+        self.transpose(n)
+            .compatible_with(playing)
+            .then_some(VinylShift { pitch_pct: (rho - 1.0) * 100.0, semitones: n })
     }
 }
 
@@ -250,6 +298,63 @@ mod tests {
         assert!(am.compatible_with(key(4, Mode::Minor))); // 9A, +1
         assert!(am.compatible_with(key(2, Mode::Minor))); // 7A, -1
         assert!(!am.compatible_with(key(6, Mode::Minor))); // 11A, not adjacent
+    }
+
+    #[test]
+    fn transpose_walks_the_wheel() {
+        let c = |number: u8, major: bool| Camelot { number, major };
+        for number in 1..=12 {
+            for major in [false, true] {
+                let k = c(number, major);
+                assert_eq!(k.transpose(12), k);
+                assert_eq!(k.transpose(-12), k);
+                // +7 st is one step up the wheel, 12 wrapping to 1.
+                assert_eq!(k.transpose(7), c(number % 12 + 1, major));
+            }
+        }
+        assert_eq!(c(8, true).transpose(1), c(3, true)); // 8B + 1 st wraps to 3B
+    }
+
+    #[test]
+    fn vinyl_compatibility_follows_the_pitch_fader() {
+        let c = |number: u8, major: bool| Camelot { number, major };
+        let a = |number: u8| c(number, false);
+        // (candidate, its bpm, playing, its bpm) -> (semitones, pitch %)
+        let shift = |cand: Camelot, bpm: f32, playing: Camelot, playing_bpm: f32| {
+            cand.vinyl_compatible_with(bpm, playing, playing_bpm)
+                .map(|s| (s.semitones, s.pitch_pct))
+        };
+        // Pitching 117 up to 124 is a semitone (d = +1.006): the paper match
+        // 7A moves off, the paper miss 1A lands on 8A.
+        assert_eq!(shift(a(7), 117.0, a(8), 124.0), None);
+        let (n, pct) = shift(a(1), 117.0, a(8), 124.0).unwrap();
+        assert_eq!(n, 1);
+        assert!((pct - 5.98).abs() < 0.01, "{pct}");
+        // Slowing 124 down to 117 is a semitone the other way.
+        let (n, pct) = shift(a(3), 124.0, a(8), 117.0).unwrap();
+        assert_eq!(n, -1);
+        assert!((pct + 5.645).abs() < 0.01, "{pct}");
+        // 1A pitched up to 8A is the relative of 8B.
+        assert_eq!(shift(a(1), 117.0, c(8, true), 124.0).map(|s| s.0), Some(1));
+        // Same tempo, double and half time: no shift.
+        assert_eq!(shift(a(9), 124.0, a(8), 124.0), Some((0, 0.0)));
+        assert_eq!(shift(a(8), 85.0, a(8), 170.0).map(|s| s.0), Some(0));
+        assert_eq!(shift(a(8), 170.0, a(8), 85.0).map(|s| s.0), Some(0));
+        // +12.7% is past the fader.
+        assert_eq!(shift(a(8), 110.0, a(8), 124.0), None);
+        // 29 cents sharp or flat of the semitone is still in key, 31 is not.
+        for bpm in [118.007, 122.027] {
+            assert_eq!(shift(a(8), bpm, a(8), 120.0).map(|s| s.0), Some(0), "{bpm}");
+        }
+        for bpm in [117.870, 122.168] {
+            assert_eq!(shift(a(8), bpm, a(8), 120.0), None, "{bpm}");
+        }
+        // A BPM that is not a positive finite number, on either deck, never matches.
+        for bad in [0.0, -120.0, f32::NAN, f32::INFINITY] {
+            assert_eq!(shift(a(8), bad, a(8), 124.0), None, "{bad}");
+            assert_eq!(shift(a(8), 124.0, a(8), bad), None, "{bad}");
+        }
+        assert_eq!(shift(a(8), -117.0, a(8), -124.0), None);
     }
 
     #[test]

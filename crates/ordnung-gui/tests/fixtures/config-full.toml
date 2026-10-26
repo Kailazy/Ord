@@ -74,6 +74,7 @@ auto_convert_sources = [
 ]
 volume = 0.5
 key_lock = true
+vinyl_mode = true
 mid_start_videos = true
 mid_start_files = true
 waveform_color_mode = "spectrum"
