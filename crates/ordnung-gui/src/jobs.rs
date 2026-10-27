@@ -203,6 +203,7 @@ impl App {
                 criterion: self.config.discogs_auto_match,
                 hidden_mediums: self.config.hidden_release_mediums.clone(),
                 skip_fields: self.config.skipped_fill_fields(),
+                fill_cover: self.config.fills(config::COVER_FILL),
             })
         } else {
             None
@@ -1843,6 +1844,7 @@ pub(crate) struct AutoMatchSpec {
     pub criterion: config::ReleaseAutoMatch,
     pub hidden_mediums: Vec<String>,
     pub skip_fields: Vec<discogs::FillField>,
+    pub fill_cover: bool,
 }
 
 /// Close out an import: report the tally, chaining auto-convert and then the
@@ -2080,7 +2082,7 @@ fn auto_match_tracks(
                         let album_says_so =
                             album.as_deref().is_some_and(|a| s.chosen.agrees_with("", Some(a)));
                         if listed || album_says_so {
-                            apply_release(catalog, &client, track_id, &s.chosen, &spec.skip_fields);
+                            apply_release(catalog, &client, track_id, &s.chosen, spec);
                             covers.push(track_id);
                             matched += 1;
                         } else {
@@ -2319,34 +2321,39 @@ fn best_candidate(
     }
 }
 
-/// Commit `c` as `track_id`'s release the way the picker's Save does: external
-/// cover art, empty tag fields from the cached release detail, the release
-/// link, and the fetched marker. Catalog only — the auto-write flow decides
-/// separately whether files get touched, exactly as after a manual pick.
+/// Commit `c` as `track_id`'s release the way the picker's Save does: the
+/// release link, external cover art unless Settings leaves covers alone, empty
+/// tag fields from the cached release detail minus the skipped ones, and the
+/// fetched marker. Catalog only — the auto-write flow decides separately
+/// whether files get touched, exactly as after a manual pick.
 fn apply_release(
     catalog: &Catalog,
     client: &discogs::Client,
     track_id: Id,
     c: &discogs::ReleaseCandidate,
-    skip: &[discogs::FillField],
+    spec: &AutoMatchSpec,
 ) {
-    let thumb_png = client.fetch_thumb(&c.thumb_url).unwrap_or_default();
-    let url = if c.cover_image_url.is_empty() {
-        &c.thumb_url
+    if spec.fill_cover {
+        let thumb_png = client.fetch_thumb(&c.thumb_url).unwrap_or_default();
+        let url = if c.cover_image_url.is_empty() {
+            &c.thumb_url
+        } else {
+            &c.cover_image_url
+        };
+        let full = client.fetch_full(url).unwrap_or_else(|| thumb_png.clone());
+        let _ = catalog.set_external_artwork(
+            track_id,
+            "discogs",
+            Some(&c.release_id),
+            Some(&c.thumb_url),
+            Some(&thumb_png),
+            Some(&full),
+        );
     } else {
-        &c.cover_image_url
-    };
-    let full = client.fetch_full(url).unwrap_or_else(|| thumb_png.clone());
-    let _ = catalog.set_external_artwork(
-        track_id,
-        "discogs",
-        Some(&c.release_id),
-        Some(&c.thumb_url),
-        Some(&thumb_png),
-        Some(&full),
-    );
+        let _ = catalog.set_external_release_link(track_id, "discogs", &c.release_id);
+    }
     if let Ok(rel) = catalog.release_cached_or(&c.release_id, || client.fetch_release(&c.release_id)) {
-        let _ = catalog.apply_release_tags(track_id, &rel, false, skip);
+        let _ = catalog.apply_release_tags(track_id, &rel, false, &spec.skip_fields);
     }
     let _ = catalog.mark_metadata_fetched(track_id);
 }
@@ -4492,6 +4499,7 @@ impl App {
             criterion: self.config.discogs_auto_match,
             hidden_mediums: self.config.hidden_release_mediums.clone(),
             skip_fields: self.config.skipped_fill_fields(),
+            fill_cover: self.config.fills(config::COVER_FILL),
         };
         self.spawn_job(ctx, "Matching the tracklist…", true, move |db, cancel, tx, ctx| {
             run_match_tracklist(db, spec, tracklist_id, scope, cancel, tx, ctx)

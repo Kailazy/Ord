@@ -9,6 +9,7 @@ hidden_release_mediums = [
 discogs_auto_fetch = false
 discogs_auto_match = "oldest"
 discogs_skip_fields = [
+    "cover",
     "country",
     "release_date",
 ]

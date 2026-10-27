@@ -547,22 +547,22 @@ impl App {
         ui.add_space(10.0);
 
         // ---- Fields to fill -----------------------------------------------
-        // Which tag fields a matched release writes, picked by hand or
-        // automatically. Cover art and the release link are the match itself.
         ui.horizontal(|ui| {
             ui.label(egui::RichText::new("Fields to fill").strong());
             crate::ui::info_note(
                 ui,
                 "What a matched release writes onto a song, picked by hand or \
-                 automatically. Off, the field keeps what it has.",
+                 automatically. Off, the song keeps what it has.",
             );
         });
         ui.add_space(4.0);
         let mut fields_dirty = false;
-        for field in discogs::FillField::ALL {
-            let mut filled = self.config.fills_field(field);
-            if ui.checkbox(&mut filled, field.label()).changed() {
-                self.config.set_field_filled(field, filled);
+        let rows = std::iter::once((config::COVER_FILL, "Cover art"))
+            .chain(discogs::FillField::ALL.map(|f| (f.key(), f.label())));
+        for (key, label) in rows {
+            let mut on = self.config.fills(key);
+            if ui.checkbox(&mut on, label).changed() {
+                self.config.set_fill(key, on);
                 fields_dirty = true;
             }
         }
@@ -2497,13 +2497,14 @@ files elsewhere on the device stay plain storage.",
                         .collect(),
                 ));
                 // Default the "set cover" toggle per track: leave an existing
-                // cover alone (off), offer to add one when the track has none (on).
-                // Only relevant to the song-data run — the artwork run ignores it.
+                // cover alone (off), offer to add one when the track has none (on)
+                // unless Settings leaves covers alone. Only relevant to the
+                // song-data run — the artwork run ignores it.
                 if self.artwork_enrich {
                     let has_art = Catalog::open(&self.db_path)
                         .and_then(|c| c.track_has_art(front))
                         .unwrap_or(false);
-                    self.artwork_set_cover = !has_art;
+                    self.artwork_set_cover = !has_art && self.config.fills(config::COVER_FILL);
                 }
             }
         }
