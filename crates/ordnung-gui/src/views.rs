@@ -2693,11 +2693,16 @@ impl App {
                                 c.artist, c.title, c.sub
                             )
                         };
+                        // The card's note shows only while the pointer is on
+                        // the cover itself: egui keeps an open tooltip up
+                        // anywhere inside its widget's rect, so it would ride
+                        // over the corner marks' own notes.
+                        let on_mark = note_hovered || badge_hovered || play_hovered || dig_hovered;
+                        let resp = if on_mark { resp } else { resp.on_hover_note(tip) };
                         // The cover opens the record sheet — but not when the
                         // click landed on the catalog badge or the play disc
                         // layered above it. Discogs itself is one click further
                         // in, from the sheet or the menu below.
-                        let resp = resp.on_hover_note(tip);
                         if resp.clicked() && !badge_clicked && !play_clicked && !dig_clicked {
                             action = Some(VinylGridAction::Open(c.key));
                         }
