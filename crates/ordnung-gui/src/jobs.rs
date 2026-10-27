@@ -202,6 +202,7 @@ impl App {
                 token,
                 criterion: self.config.discogs_auto_match,
                 hidden_mediums: self.config.hidden_release_mediums.clone(),
+                skip_fields: self.config.skipped_fill_fields(),
             })
         } else {
             None
@@ -1841,6 +1842,7 @@ pub(crate) struct AutoMatchSpec {
     pub token: String,
     pub criterion: config::ReleaseAutoMatch,
     pub hidden_mediums: Vec<String>,
+    pub skip_fields: Vec<discogs::FillField>,
 }
 
 /// Close out an import: report the tally, chaining auto-convert and then the
@@ -2078,7 +2080,7 @@ fn auto_match_tracks(
                         let album_says_so =
                             album.as_deref().is_some_and(|a| s.chosen.agrees_with("", Some(a)));
                         if listed || album_says_so {
-                            apply_release(catalog, &client, track_id, &s.chosen);
+                            apply_release(catalog, &client, track_id, &s.chosen, &spec.skip_fields);
                             covers.push(track_id);
                             matched += 1;
                         } else {
@@ -2326,6 +2328,7 @@ fn apply_release(
     client: &discogs::Client,
     track_id: Id,
     c: &discogs::ReleaseCandidate,
+    skip: &[discogs::FillField],
 ) {
     let thumb_png = client.fetch_thumb(&c.thumb_url).unwrap_or_default();
     let url = if c.cover_image_url.is_empty() {
@@ -2343,7 +2346,7 @@ fn apply_release(
         Some(&full),
     );
     if let Ok(rel) = catalog.release_cached_or(&c.release_id, || client.fetch_release(&c.release_id)) {
-        let _ = catalog.apply_release_tags(track_id, &rel, false);
+        let _ = catalog.apply_release_tags(track_id, &rel, false, skip);
     }
     let _ = catalog.mark_metadata_fetched(track_id);
 }
@@ -4488,6 +4491,7 @@ impl App {
             token,
             criterion: self.config.discogs_auto_match,
             hidden_mediums: self.config.hidden_release_mediums.clone(),
+            skip_fields: self.config.skipped_fill_fields(),
         };
         self.spawn_job(ctx, "Matching the tracklist…", true, move |db, cancel, tx, ctx| {
             run_match_tracklist(db, spec, tracklist_id, scope, cancel, tx, ctx)

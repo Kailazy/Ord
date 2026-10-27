@@ -2,6 +2,7 @@ discogs_token = ""
 hidden_release_mediums = []
 discogs_auto_fetch = true
 discogs_auto_match = "most_collected"
+discogs_skip_fields = []
 discogs_username = ""
 column_order = []
 hidden_columns = []

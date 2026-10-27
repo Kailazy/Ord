@@ -2089,11 +2089,18 @@ impl Catalog {
     /// picker's Save does, remembering what each field held so
     /// [`Self::remove_release_match`] can put it back. A field keeps the value
     /// from before the *first* match that touched it, so re-picking a release
-    /// never buries the original. Catalog only. Returns how many fields were
-    /// written.
-    pub fn apply_release_tags(&self, id: Id, rel: &ReleaseDetail, overwrite: bool) -> Result<usize> {
+    /// never buries the original. Fields in `skip` (the ones Settings turns
+    /// off) are left alone. Catalog only. Returns how many fields were written.
+    pub fn apply_release_tags(
+        &self,
+        id: Id,
+        rel: &ReleaseDetail,
+        overwrite: bool,
+        skip: &[FillField],
+    ) -> Result<usize> {
         let mut tags = self.get_track(id)?.tags;
-        let fills = rel.proposed_fills(&tags, overwrite);
+        let mut fills = rel.proposed_fills(&tags, overwrite);
+        fills.retain(|f| !skip.contains(&f.field));
         if fills.is_empty() {
             return Ok(0);
         }
@@ -2101,7 +2108,9 @@ impl Catalog {
         for f in &fills {
             undo.entry(f.field).or_insert_with(|| f.field.get(&tags));
         }
-        rel.apply_to_tags(&mut tags, overwrite);
+        for f in &fills {
+            f.field.set(&mut tags, Some(f.value.clone()));
+        }
         self.update_tags(id, &tags)?;
         let json = serde_json::to_string(&undo)
             .map_err(|e| Error::Invalid(format!("serializing match undo: {e}")))?;
@@ -5724,9 +5733,12 @@ mod tests {
         };
         cat.set_external_artwork(id, "discogs", Some("123"), None, Some(&[1]), None)
             .unwrap();
-        // Fill empties, then overwrite: the undo keeps the pre-first-match year.
-        assert_eq!(cat.apply_release_tags(id, &rel, false).unwrap(), 3);
-        assert_eq!(cat.apply_release_tags(id, &rel, true).unwrap(), 1);
+        // A skipped field is neither written nor remembered for undo.
+        assert_eq!(cat.apply_release_tags(id, &rel, false, &[FillField::Label]).unwrap(), 2);
+        assert_eq!(cat.get_track(id).unwrap().tags.label, None);
+        // Fill the rest, then overwrite: the undo keeps the pre-first-match year.
+        assert_eq!(cat.apply_release_tags(id, &rel, false, &[]).unwrap(), 1);
+        assert_eq!(cat.apply_release_tags(id, &rel, true, &[]).unwrap(), 1);
         cat.mark_metadata_fetched(id).unwrap();
         let t = cat.get_track(id).unwrap().tags;
         assert_eq!((t.genre.as_deref(), t.year), (Some("Acid"), Some(1993)));

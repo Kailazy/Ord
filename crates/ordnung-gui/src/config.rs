@@ -2,6 +2,7 @@
 //! catalog). Policy and process I/O live in the GUI boundary per
 //! `ordnung-architecture`; `ordnung-core` stays pure.
 
+use ordnung_core::discogs::FillField;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -36,6 +37,11 @@ pub struct Config {
     /// [`ReleaseAutoMatch`] key. Defaults to `"most_collected"` — the release
     /// the most Discogs users own, the strongest signal for "the normal one".
     pub discogs_auto_match: ReleaseAutoMatch,
+    /// Tag fields a matched release leaves alone, as stable [`FillField::key`]
+    /// keys. Empty (the default) fills every field. Stored as what's *skipped*,
+    /// like `hidden_release_mediums`, so a field added later fills without a
+    /// config migration.
+    pub discogs_skip_fields: Vec<String>,
     /// Discogs username of the token owner, captured on the first collection
     /// sync. Lets the "Vinyl Collection" view link to the user's collection
     /// page across launches without re-resolving it. Empty until a sync runs.
@@ -655,6 +661,7 @@ impl Default for Config {
             discogs_token: String::new(),
             discogs_auto_fetch: true,
             discogs_auto_match: ReleaseAutoMatch::MostCollected,
+            discogs_skip_fields: Vec::new(),
             discogs_username: String::new(),
             hidden_release_mediums: Vec::new(),
             library_root: None,
@@ -767,6 +774,24 @@ impl Config {
         if !shown {
             self.hidden_release_mediums.push(medium.key().to_string());
         }
+    }
+
+    /// Whether a matched release writes `field`. Everything is written unless
+    /// the field's key sits in `discogs_skip_fields`.
+    pub fn fills_field(&self, field: FillField) -> bool {
+        !self.discogs_skip_fields.iter().any(|k| k == field.key())
+    }
+
+    pub fn set_field_filled(&mut self, field: FillField, filled: bool) {
+        self.discogs_skip_fields.retain(|k| k != field.key());
+        if !filled {
+            self.discogs_skip_fields.push(field.key().to_string());
+        }
+    }
+
+    /// The fields a match leaves alone, for `Catalog::apply_release_tags`.
+    pub fn skipped_fill_fields(&self) -> Vec<FillField> {
+        FillField::ALL.into_iter().filter(|f| !self.fills_field(*f)).collect()
     }
 
     /// The waveform preset saved in 1-based `slot`, if any.
@@ -912,6 +937,19 @@ mod tests {
         assert_eq!(cfg.hidden_release_mediums, vec!["digital".to_string()]);
     }
 
+    #[test]
+    fn skipping_a_field_leaves_only_that_field_out() {
+        let mut cfg = Config::default();
+        assert!(cfg.skipped_fill_fields().is_empty());
+        cfg.set_field_filled(FillField::Country, false);
+        cfg.set_field_filled(FillField::Country, false);
+        cfg.set_field_filled(FillField::Year, false);
+        assert_eq!(cfg.skipped_fill_fields(), [FillField::Country, FillField::Year]);
+        // Re-filling removes the key rather than stacking duplicates.
+        cfg.set_field_filled(FillField::Country, true);
+        assert_eq!(cfg.discogs_skip_fields, ["year"]);
+    }
+
     /// Hiding everything would make the picker permanently empty, so it's
     /// treated as no filter at all.
     #[test]
@@ -1012,6 +1050,7 @@ mod tests {
                 .to_vec(),
             discogs_auto_fetch: false,
             discogs_auto_match: ReleaseAutoMatch::Oldest,
+            discogs_skip_fields: ["country", "release_date"].map(String::from).to_vec(),
             discogs_username: "kai".into(),
             library_root: Some(PathBuf::from("/Users/dj/Music/seeker")),
             column_order: [
@@ -1238,6 +1277,10 @@ mod tests {
         assert_eq!(
             ReleaseMedium::ALL.map(ReleaseMedium::key),
             ["vinyl", "cd", "digital", "cassette", "other"]
+        );
+        assert_eq!(
+            FillField::ALL.map(FillField::key),
+            ["genre", "label", "catalog_number", "country", "album", "release_date", "year"]
         );
         for s in Status::ALL {
             assert_eq!(Status::hidden(&[s.key().to_string()]), [s]);

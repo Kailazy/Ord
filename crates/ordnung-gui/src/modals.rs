@@ -545,6 +545,36 @@ impl App {
         ui.add_space(14.0);
         ui.separator();
         ui.add_space(10.0);
+
+        // ---- Fields to fill -----------------------------------------------
+        // Which tag fields a matched release writes, picked by hand or
+        // automatically. Cover art and the release link are the match itself.
+        ui.horizontal(|ui| {
+            ui.label(egui::RichText::new("Fields to fill").strong());
+            crate::ui::info_note(
+                ui,
+                "What a matched release writes onto a song, picked by hand or \
+                 automatically. Off, the field keeps what it has.",
+            );
+        });
+        ui.add_space(4.0);
+        let mut fields_dirty = false;
+        for field in discogs::FillField::ALL {
+            let mut filled = self.config.fills_field(field);
+            if ui.checkbox(&mut filled, field.label()).changed() {
+                self.config.set_field_filled(field, filled);
+                fields_dirty = true;
+            }
+        }
+        if fields_dirty {
+            self.save_config();
+            // An open picker's preview was built from the old field set.
+            self.preview_cache.clear();
+        }
+
+        ui.add_space(14.0);
+        ui.separator();
+        ui.add_space(10.0);
         // Required verbatim by the Discogs API Terms of Use, which oblige us to
         // display it "prominently" wherever the API and its content are used.
         ui.label(
@@ -2998,6 +3028,7 @@ files elsewhere on the device stay plain storage.",
             return;
         }
         self.preview_inflight.insert(key);
+        let skip = self.config.skipped_fill_fields();
         let release_id = release_id.to_string();
         let db_path = self.db_path.clone();
         let tx = self.preview_tx.clone();
@@ -3019,6 +3050,7 @@ files elsewhere on the device stay plain storage.",
                 Ok((detail, tags)) => detail
                     .proposed_fills(&tags, overwrite)
                     .into_iter()
+                    .filter(|f| !skip.contains(&f.field))
                     .map(|f| (f.field.label().to_string(), f.value))
                     .collect(),
                 Err(_) => Vec::new(),
@@ -3142,6 +3174,8 @@ files elsewhere on the device stay plain storage.",
         // Song-data run: whether to also write the cover. The artwork run always
         // writes it (that's its whole purpose); only enrich makes it optional.
         let set_cover = !enrich || self.artwork_set_cover;
+        // The fields Settings › Discogs turns off stay as they are.
+        let skip = self.config.skipped_fill_fields();
 
         self.artwork_saving = true;
         thread::spawn(move || {
@@ -3240,7 +3274,7 @@ files elsewhere on the device stay plain storage.",
                     if let Ok(rel) = catalog
                         .release_cached_or(&release_id, || client.fetch_release(&release_id))
                     {
-                        let _ = catalog.apply_release_tags(track_id, &rel, overwrite);
+                        let _ = catalog.apply_release_tags(track_id, &rel, overwrite, &skip);
                     }
                     // The user committed to a release for this track — mark it
                     // fetched so a later run won't re-present it (even if Discogs

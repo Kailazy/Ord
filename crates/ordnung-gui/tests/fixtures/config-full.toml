@@ -8,6 +8,10 @@ hidden_release_mediums = [
 ]
 discogs_auto_fetch = false
 discogs_auto_match = "oldest"
+discogs_skip_fields = [
+    "country",
+    "release_date",
+]
 discogs_username = "kai"
 library_root = "/Users/dj/Music/seeker"
 column_order = [

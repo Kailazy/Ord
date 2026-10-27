@@ -10,7 +10,7 @@
 //! Beyond artwork lookup, [`Client::fetch_release`] pulls a chosen release's
 //! full detail (genres/styles, label, catalog number, year, country) so the
 //! caller can fill in album-level tag fields the track is missing — see
-//! [`ReleaseDetail::apply_to_tags`] and `docs/design/discogs-track-inspector.md`.
+//! [`ReleaseDetail::proposed_fills`] and `docs/design/discogs-track-inspector.md`.
 
 use crate::error::{Error, Result};
 use crate::model::{SellerListing, Tags, VinylRecord};
@@ -664,7 +664,7 @@ impl ReleaseVideo {
 
 /// Which album-level tag field a [`FieldFill`] targets. Kept as an enum (rather
 /// than matching on display strings) so [`ReleaseDetail::proposed_fills`] and
-/// [`ReleaseDetail::apply_to_tags`] can never drift out of sync.
+/// [`crate::catalog::Catalog::apply_release_tags`] can never drift out of sync.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum FillField {
     Genre,
@@ -718,6 +718,30 @@ impl FillField {
             FillField::Year => "Year",
         }
     }
+
+    /// Stable lowercase key, as the GUI config lists the fields a match skips.
+    pub fn key(self) -> &'static str {
+        match self {
+            FillField::Genre => "genre",
+            FillField::Label => "label",
+            FillField::CatalogNumber => "catalog_number",
+            FillField::Country => "country",
+            FillField::Album => "album",
+            FillField::ReleaseDate => "release_date",
+            FillField::Year => "year",
+        }
+    }
+
+    /// Every field, in the order a release fills them.
+    pub const ALL: [FillField; 7] = [
+        FillField::Genre,
+        FillField::Label,
+        FillField::CatalogNumber,
+        FillField::Country,
+        FillField::Album,
+        FillField::ReleaseDate,
+        FillField::Year,
+    ];
 }
 
 /// One field this release would write into a track, with the value it would
@@ -1133,7 +1157,7 @@ impl ReleaseDetail {
 
     /// The album-level fields this release *would* write onto `tags`, with their
     /// values. This is the single source of truth for both the preview UI and
-    /// [`apply_to_tags`].
+    /// [`crate::catalog::Catalog::apply_release_tags`].
     ///
     /// When `overwrite` is false (the default), only fields currently empty on
     /// the track are proposed. When true, every field this release has a value
@@ -1205,10 +1229,10 @@ impl ReleaseDetail {
         out
     }
 
-    /// Write this release's album-level fields onto `tags`. With `overwrite =
-    /// false` only empty fields are filled (non-destructive); with `true`,
-    /// existing values are replaced too. Returns how many fields were written —
-    /// exactly the set [`proposed_fills`] reports for the same `overwrite` flag.
+    /// Test helper: write every [`Self::proposed_fills`] onto `tags` and return
+    /// how many. The app writes through `Catalog::apply_release_tags`, which
+    /// also honours the skipped fields and records the undo.
+    #[cfg(test)]
     pub fn apply_to_tags(&self, tags: &mut Tags, overwrite: bool) -> usize {
         let fills = self.proposed_fills(tags, overwrite);
         for f in &fills {
@@ -1784,7 +1808,7 @@ impl Client {
     }
 
     /// Fetch a single release's full detail (`GET /releases/{id}`) so the caller
-    /// can fill in album-level tag fields via [`ReleaseDetail::apply_to_tags`].
+    /// can fill in album-level tag fields via [`ReleaseDetail::proposed_fills`].
     /// One authenticated request — pace alongside the search rate limit.
     pub fn fetch_release(&self, release_id: &str) -> Result<ReleaseDetail> {
         Ok(self.get_release(release_id)?.into_detail())
