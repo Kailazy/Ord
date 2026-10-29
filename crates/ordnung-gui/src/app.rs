@@ -712,6 +712,11 @@ impl App {
         // everything else queries the catalog. Both feed the same
         // post-processing below so filters/selection/covers behave uniformly.
         let loaded = if matches!(self.view, LibraryView::Usb(..)) {
+            // The rows carry the songs' tags (see `usb_rows`), so the tag
+            // map is read before them, not only after as below.
+            if changed {
+                self.load_crate_sets();
+            }
             Ok(self.usb_rows())
         } else {
             // A tag's rows are the library tracks its songs resolve to,
@@ -1926,8 +1931,15 @@ impl App {
                         .map(|b| format!("{b:.2}"))
                         .unwrap_or_else(|| "—".into()),
                     key,
-                    // Device tracks aren't in the catalog, so they carry no
-                    // tags and no added date.
+                    // The song's tags, under the key the tag store uses
+                    // (see `crates::track_song_key`): a device track is
+                    // matched to no record, so the song alone. No added
+                    // date: the stick keeps none.
+                    tags: self.tag_words(&crate::crates::track_song_key(
+                        t.tags.artist.as_deref().unwrap_or(""),
+                        t.tags.title.as_deref().unwrap_or(""),
+                        None,
+                    )),
                     added: "—".into(),
                     // The stick's own ANLZ waveform first (free, matches what
                     // the player draws); our analyzer's when the export never
