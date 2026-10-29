@@ -2795,7 +2795,9 @@ impl App {
                         } else if let LibraryView::CrateSet(id) = self.view {
                             self.crate_count_words(id)
                         } else {
-                            format!("{} tracks", self.rows.len())
+                            // A note mark and the number (drawn below):
+                            // "tracks" said nothing the column didn't.
+                            self.rows.len().to_string()
                         };
                         let mut forms = vec![counts.clone()];
                         if !self.selection.is_empty() {
@@ -2808,6 +2810,8 @@ impl App {
                         }
                         forms
                     };
+                    let note_count =
+                        !matches!(self.view, LibraryView::Liked | LibraryView::CrateSet(_));
                     // Right-aligned utility group: counts and Settings live away from
                     // the left-edge library actions so the toolbar reads "do work …
                     // status & config". Laying this out right-to-left FIRST reserves
@@ -2880,17 +2884,37 @@ impl App {
                                         .size()
                                         .x
                                 };
+                                // The track count leads with a note mark,
+                                // whose width counts toward the room.
+                                let note = note_count.then(|| named(icons::MUSIC_NOTE));
+                                let note_w = note.map_or(0.0, |g| {
+                                    ui.painter()
+                                        .layout_no_wrap(
+                                            g.to_owned(),
+                                            font::icon(font::body().size + 2.0),
+                                            egui::Color32::PLACEHOLDER,
+                                        )
+                                        .size()
+                                        .x
+                                        + space::S3
+                                });
+                                let label = |text: &str| -> egui::WidgetText {
+                                    match note {
+                                        Some(g) => crate::ui::icon_text(g, text, font::body()),
+                                        None => text.into(),
+                                    }
+                                };
                                 let fitting = count_forms
                                     .iter()
-                                    .find(|f| width_of(ui, f) <= room)
+                                    .find(|f| width_of(ui, f) + note_w <= room)
                                     .or_else(|| count_forms.last());
                                 if let Some(text) = fitting {
-                                    if width_of(ui, text) <= room {
-                                        ui.label(text);
+                                    if width_of(ui, text) + note_w <= room {
+                                        ui.label(label(text));
                                     } else if room >= 24.0 {
                                         ui.scope(|ui| {
                                             ui.set_max_width(room);
-                                            ui.add(egui::Label::new(text).truncate());
+                                            ui.add(egui::Label::new(label(text)).truncate());
                                         });
                                     }
                                 }
