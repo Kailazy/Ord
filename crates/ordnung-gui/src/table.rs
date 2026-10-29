@@ -1385,7 +1385,10 @@ impl App {
                             });
                         }
                     })
-                    .body(|body| {
+                    .body(|mut body| {
+                        if self.config.zebra_fill {
+                            crate::ui::blank_stripes(&mut body, ROW_H, self.rows.len());
+                        }
                         body.rows(ROW_H, self.rows.len(), |mut row| {
                             let idx = row.index();
                             let r = &self.rows[idx];

@@ -289,6 +289,10 @@ pub struct Config {
     /// Shade every other row of the song and record tables, so a wide row
     /// can be followed across its columns. On by default.
     pub zebra_rows: bool,
+    /// Carry the shading on under a list too short to fill its view, so the
+    /// blank space below the last row reads as empty rows. Off by default;
+    /// ignored while `zebra_rows` is off.
+    pub zebra_fill: bool,
     /// How much darker a shaded row is: the alpha of a black veil over
     /// every other row, so forty is a whisper and a hundred a clear band.
     /// Ignored while `zebra_rows` is off.
@@ -720,6 +724,7 @@ impl Default for Config {
             waveform_bass_floor_amount: default_waveform_bass_floor_amount(),
             waveform_presets: Vec::new(),
             zebra_rows: true,
+            zebra_fill: false,
             row_shade: crate::ui::tokens::color::ROW_SHADE,
             accent: String::new(),
             accent_presets: Vec::new(),
@@ -1151,6 +1156,7 @@ mod tests {
                 },
             ],
             zebra_rows: false,
+            zebra_fill: true,
             row_shade: 20,
             accent: "#bf5af2".to_string(),
             accent_presets: vec!["#ff453a".to_string(), "#30d158".to_string()],

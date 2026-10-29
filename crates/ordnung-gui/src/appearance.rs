@@ -39,6 +39,9 @@ impl App {
             .checkbox(&mut self.config.zebra_rows, "Shade alternating rows")
             .changed();
         ui.add_enabled_ui(self.config.zebra_rows, |ui| {
+            dirty |= ui
+                .checkbox(&mut self.config.zebra_fill, "Shade the empty rows under a short list")
+                .changed();
             egui::Grid::new("settings_appearance_grid")
                 .num_columns(2)
                 .spacing([12.0, 8.0])

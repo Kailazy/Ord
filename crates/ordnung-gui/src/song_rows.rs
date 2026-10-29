@@ -162,7 +162,10 @@ impl App {
             .column(Column::remainder().at_least(160.0).clip(true))
             .column(Column::remainder().at_least(160.0).clip(true))
             .column(Column::exact(150.0).clip(true))
-            .body(|body| {
+            .body(|mut body| {
+                if self.config.zebra_fill {
+                    crate::ui::blank_stripes(&mut body, row_h, shown.len());
+                }
                 body.rows(row_h, shown.len(), |mut row| {
                     let i = shown[row.index()];
                     let s = &rows[i];

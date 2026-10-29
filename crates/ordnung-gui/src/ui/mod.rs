@@ -135,3 +135,92 @@ pub fn control_row<R>(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui) -> R) -
     })
     .inner
 }
+
+/// Carry a striped table's shading on under its last row: the even rows
+/// the table would shade, continued through the blank space to the bottom
+/// of the view, so a short list still reads as rows. Call it in the body
+/// before `rows`, with the same row height and count; it paints nothing
+/// once the rows reach the bottom.
+pub fn blank_stripes(body: &mut egui_extras::TableBody<'_>, row_h: f32, rows: usize) {
+    let spacing = body.ui_mut().spacing().item_spacing;
+    // The width a row paints: every column at its width, the gaps between,
+    // and half a gap past each edge, as egui_extras paints its stripes.
+    let widths = body.widths();
+    let width = widths.iter().sum::<f32>() + spacing.x * widths.len().saturating_sub(1) as f32;
+    let ui = body.ui_mut();
+    let rect = ui.available_rect_before_wrap();
+    let fill = ui.visuals().faint_bg_color;
+    let pitch = row_h + spacing.y;
+    let x = egui::Rangef::new(rect.left() - 0.5 * spacing.x, rect.left() + width + 0.5 * spacing.x);
+    let tops = (rows + rows % 2..).step_by(2).map(|i| rect.top() + i as f32 * pitch);
+    for top in tops.take_while(|&top| top < rect.bottom()) {
+        let y = egui::Rangef::new(top - 0.5 * spacing.y, top + row_h + 0.5 * spacing.y);
+        ui.painter().rect_filled(egui::Rect::from_x_y_ranges(x, y), 0.0, fill);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Three rows in a view with room for many: the shading continues at
+    /// the row pitch, on the even rows only, and stops at the view's
+    /// bottom.
+    #[test]
+    fn blank_stripes_continue_the_rows_to_the_bottom() {
+        use egui_extras::{Column, TableBuilder};
+        const ROW_H: f32 = 10.0;
+        const ROWS: usize = 3;
+        let fill = egui::Color32::from_rgb(1, 2, 3);
+        let ctx = egui::Context::default();
+        ctx.style_mut(|s| s.visuals.faint_bg_color = fill);
+        let input = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(200.0, 300.0))),
+            ..Default::default()
+        };
+        let mut first_top = 0.0;
+        let mut pitch = 0.0;
+        let mut bottom = 0.0;
+        let out = ctx.run(input, |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                TableBuilder::new(ui)
+                    .striped(true)
+                    .column(Column::remainder())
+                    .body(|mut body| {
+                        let rect = body.ui_mut().available_rect_before_wrap();
+                        first_top = rect.top();
+                        bottom = rect.bottom();
+                        pitch = ROW_H + body.ui_mut().spacing().item_spacing.y;
+                        blank_stripes(&mut body, ROW_H, ROWS);
+                        body.rows(ROW_H, ROWS, |mut row| {
+                            // An empty cell: content taller than the row
+                            // would stretch it.
+                            row.col(|_| {});
+                        });
+                    });
+            });
+        });
+        let mut tops: Vec<f32> = out
+            .shapes
+            .iter()
+            .filter_map(|c| match &c.shape {
+                egui::Shape::Rect(r) if r.fill == fill => Some(r.rect.top()),
+                _ => None,
+            })
+            .collect();
+        tops.sort_by(f32::total_cmp);
+        // Every stripe sits on an even row, the table's own two first,
+        // then one per even row until the view ends.
+        let expect: Vec<f32> = (0..)
+            .step_by(2)
+            .map(|i| first_top + i as f32 * pitch)
+            .take_while(|&top| top < bottom)
+            .collect();
+        assert!(expect.len() > 2, "the view had room for more rows: {expect:?}");
+        assert_eq!(tops.len(), expect.len(), "tops {tops:?} expected {expect:?}");
+        for (got, want) in tops.iter().zip(&expect) {
+            // A stripe reaches half a gap above its row.
+            assert!((got - (want - 0.5 * (pitch - ROW_H))).abs() < 0.5, "tops {tops:?} expected {expect:?}");
+        }
+    }
+}

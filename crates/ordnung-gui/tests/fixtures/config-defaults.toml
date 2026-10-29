@@ -99,6 +99,7 @@ waveform_bass_floor_threshold = 0.20000000298023224
 waveform_bass_floor_amount = 0.25
 waveform_presets = []
 zebra_rows = true
+zebra_fill = false
 row_shade = 40
 accent = ""
 accent_presets = []

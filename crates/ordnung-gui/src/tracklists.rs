@@ -697,7 +697,10 @@ impl App {
             // Wide enough for the fullest row (pip, OWNED, FILE, +, ↻) so it
             // never has to grow either. See `table_min_width`.
             .column(Column::exact(COL_BADGES).clip(true))
-            .body(|body| {
+            .body(|mut body| {
+                if self.config.zebra_fill {
+                    crate::ui::blank_stripes(&mut body, row_h, shown.len());
+                }
                 body.rows(row_h, shown.len(), |mut row| {
                     let i = shown[row.index()];
                     let e = self.tracklist_entries[i].clone();

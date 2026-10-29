@@ -590,7 +590,10 @@ impl App {
             .column(Column::remainder().at_least(180.0).clip(true))
             .column(Column::remainder().at_least(180.0).clip(true))
             .column(Column::exact(150.0).clip(true))
-            .body(|body| {
+            .body(|mut body| {
+                if self.config.zebra_fill {
+                    crate::ui::blank_stripes(&mut body, row_h, groups.len());
+                }
                 body.rows(row_h, groups.len(), |mut row| {
                     let gi = row.index();
                     let g = &groups[gi];
