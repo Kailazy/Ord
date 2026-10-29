@@ -1847,6 +1847,7 @@ selection.",
                             None,
                             confirm.scope.clone(),
                             replace,
+                            false,
                             player,
                         );
                     }

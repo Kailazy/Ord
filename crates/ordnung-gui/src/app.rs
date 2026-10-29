@@ -1737,7 +1737,49 @@ impl App {
             _ => format!("{} tracks", ids.len()),
         };
         let player = self.export_player();
-        self.spawn_export(ctx.clone(), dest, Vec::new(), ids, usb_playlist, scope, false, player);
+        self.spawn_export(
+            ctx.clone(),
+            dest,
+            Vec::new(),
+            ids,
+            usb_playlist,
+            scope,
+            false,
+            false,
+            player,
+        );
+    }
+
+    /// Rewrite a stick's rows for the tracks the library also holds from
+    /// the library's current data: a merge export of just those tracks,
+    /// which the exporter lands on their existing slots (same id, file and
+    /// ANLZ files, no audio copy) by `/Contents` file name, the key it
+    /// matches on. Tags, key, grid, cues and cover follow the library;
+    /// tracks only on the stick stay as they are.
+    #[cfg(feature = "usb-export")]
+    pub(crate) fn update_stick_from_library(&mut self, ctx: &egui::Context, vol: PathBuf) {
+        let on_stick = match ordnung_rbdb::pdb::read_stick(&vol) {
+            Ok(export) => export,
+            Err(e) => {
+                self.fail(format!("Couldn't read the device's export: {e}"));
+                return;
+            }
+        };
+        let paths = match Catalog::open(&self.db_path).and_then(|c| c.track_paths()) {
+            Ok(p) => p,
+            Err(e) => {
+                self.fail(format!("Couldn't read the catalog: {e}"));
+                return;
+            }
+        };
+        let ids = shared_track_ids(on_stick.tracks.values().map(|t| t.file_path.as_str()), &paths);
+        if ids.is_empty() {
+            self.status = "None of this device's tracks are in the library.".into();
+            return;
+        }
+        let scope = format!("{} tracks", ids.len());
+        let player = self.export_player();
+        self.spawn_export(ctx.clone(), vol, Vec::new(), ids, None, scope, false, true, player);
     }
 
     /// The player generation exports convert for, from Settings.
@@ -3822,6 +3864,10 @@ impl App {
             Some(SidebarAction::SetupUsb(vol)) => {
                 self.usb_setup_confirm = Some(vol);
             }
+            #[cfg(feature = "usb-export")]
+            Some(SidebarAction::UpdateUsb(vol)) => {
+                self.update_stick_from_library(ctx, vol);
+            }
             Some(SidebarAction::SavePlaylistText(id)) => {
                 self.save_playlist_text(id);
             }
@@ -4472,6 +4518,31 @@ pub(crate) fn read_usb_pdb(vol: &Path) -> Option<UsbScan> {
     })
 }
 
+/// The library tracks a stick holds, by file name lowercased (the stick is
+/// FAT32), the key the exporter matches on. A name two library tracks share
+/// can't say which one is on the stick, and exporting both would copy a
+/// second file: skipped.
+#[cfg(feature = "usb-export")]
+fn shared_track_ids<'a>(
+    stick_paths: impl Iterator<Item = &'a str>,
+    library: &[(Id, String)],
+) -> Vec<Id> {
+    let name_of = |p: &str| Path::new(p).file_name().map(|n| n.to_string_lossy().to_lowercase());
+    let mut by_name: HashMap<String, Option<Id>> = HashMap::new();
+    for (id, path) in library {
+        if let Some(name) = name_of(path) {
+            by_name.entry(name).and_modify(|e| *e = None).or_insert(Some(*id));
+        }
+    }
+    let mut ids: Vec<Id> = stick_paths
+        .filter_map(name_of)
+        .filter_map(|n| by_name.get(&n).copied().flatten())
+        .collect();
+    ids.sort_unstable();
+    ids.dedup();
+    ids
+}
+
 /// Each scanned file on a stick by its path under `vol`, lowercased: FAT32
 /// is case-insensitive, and this is how pdb rows find their files.
 fn usb_rel_index(vol: &Path, tracks: &[ScannedTrack]) -> HashMap<String, usize> {
@@ -4708,5 +4779,31 @@ mod usb_scan_tests {
         assert!(read_usb_pdb(&plain).is_none());
         let _ = std::fs::remove_dir_all(&vol);
         let _ = std::fs::remove_dir_all(&plain);
+    }
+}
+
+#[cfg(all(test, feature = "usb-export"))]
+mod stick_update_tests {
+    use super::*;
+
+    /// A stick row finds its library track by file name whatever the case
+    /// (FAT32), a name two library tracks share is skipped, and a track only
+    /// on the stick matches nothing.
+    #[test]
+    fn shared_tracks_match_by_file_name_and_skip_ambiguous_names() {
+        let library = vec![
+            (1, "/lib/A/one.mp3".to_string()),
+            (2, "/lib/B/Two.aiff".to_string()),
+            (3, "/lib/C/dup.mp3".to_string()),
+            (4, "/lib/D/dup.mp3".to_string()),
+        ];
+        let stick = [
+            "/Contents/ONE.mp3",
+            "/Contents/two.aiff",
+            "/Contents/dup.mp3",
+            "/Contents/only-here.mp3",
+        ];
+        assert_eq!(shared_track_ids(stick.iter().copied(), &library), vec![1, 2]);
+        assert!(shared_track_ids(std::iter::empty(), &library).is_empty());
     }
 }

@@ -2336,6 +2336,16 @@ impl Catalog {
             .collect())
     }
 
+    /// Every track's id and source path, nothing else: for matching files by
+    /// name (the device update) without loading tags.
+    pub fn track_paths(&self) -> Result<Vec<(Id, String)>> {
+        let mut stmt = self.conn.prepare("SELECT id, source_path FROM tracks")?;
+        let rows = stmt
+            .query_map([], |r| Ok((r.get::<_, i64>(0)? as Id, r.get::<_, String>(1)?)))?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(rows)
+    }
+
     /// Every track whose source file no longer exists on disk, carried as the
     /// lightweight [`MissingTrack`] (id + path + fingerprint) the relocation
     /// search needs — no tags, no audio properties. Read-only.

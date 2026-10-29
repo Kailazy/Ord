@@ -294,18 +294,25 @@ impl App {
         usb_playlist: Option<(u32, String)>,
         scope: String,
         replace: bool,
+        update: bool,
         player: ordnung_rbdb::export::PlayerTarget,
     ) {
-        let verb = if replace { "Exporting" } else { "Adding" };
-        let into = usb_playlist
-            .as_ref()
-            .map(|(_, n)| format!(" into \u{201C}{n}\u{201D}"))
-            .unwrap_or_default();
         let name = dest
             .file_name()
             .map(|n| n.to_string_lossy().into_owned())
             .unwrap_or_else(|| dest.display().to_string());
-        let status = format!("{verb} {scope}{into} to {name}…");
+        // `update`: the tracks are on the stick already and get their rows
+        // rewritten (see `App::update_stick_from_library`).
+        let status = if update {
+            format!("Updating {scope} on {name}…")
+        } else {
+            let verb = if replace { "Exporting" } else { "Adding" };
+            let into = usb_playlist
+                .as_ref()
+                .map(|(_, n)| format!(" into \u{201C}{n}\u{201D}"))
+                .unwrap_or_default();
+            format!("{verb} {scope}{into} to {name}…")
+        };
         let comment = self.config.export_comment;
         let to = dest.clone();
         if self.spawn_job(ctx, status, true, move |db, cancel, tx, ctx| {
@@ -316,6 +323,7 @@ impl App {
                 track_ids,
                 usb_playlist,
                 replace,
+                update,
                 player,
                 comment,
                 cancel,
@@ -1268,6 +1276,7 @@ pub(crate) fn run_export(
     track_ids: Vec<Id>,
     usb_playlist: Option<(u32, String)>,
     replace: bool,
+    update: bool,
     player: ordnung_rbdb::export::PlayerTarget,
     comment: crate::config::ExportComment,
     cancel: Arc<AtomicBool>,
@@ -1453,7 +1462,8 @@ pub(crate) fn run_export(
                     Some((_, pl)) => format!("\u{201C}{pl}\u{201D} on {name}"),
                     None => name,
                 };
-                format!("Added {what} to {onto}.{converted} Eject before unplugging.")
+                let (verb, prep) = if update { ("Updated", "on") } else { ("Added", "to") };
+                format!("{verb} {what} {prep} {onto}.{converted} Eject before unplugging.")
             };
             let _ = tx.send(JobMsg::Done(msg));
         }

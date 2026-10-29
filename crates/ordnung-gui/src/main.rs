@@ -2448,6 +2448,10 @@ enum SidebarAction {
     /// folder structure so it can receive exports (after confirmation).
     #[cfg(feature = "usb-export")]
     SetupUsb(PathBuf),
+    /// A rekordbox stick's right-click menu: rewrite the rows of the tracks
+    /// it shares with the library from the library's current data.
+    #[cfg(feature = "usb-export")]
+    UpdateUsb(PathBuf),
     /// Right-click on a local playlist: save its track list as a text file.
     SavePlaylistText(Id),
     /// Create a playlist on the mounted device, under the given rekordbox

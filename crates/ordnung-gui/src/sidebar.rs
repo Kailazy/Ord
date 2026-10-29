@@ -1414,6 +1414,21 @@ pub(crate) fn usb_volume_menu(
             *action = Some(SidebarAction::SetupUsb(v.path.clone()));
             ui.close_menu();
         }
+        // The stick's rows for tracks the library also holds, rewritten
+        // from the library (see `App::update_stick_from_library`).
+        #[cfg(feature = "usb-export")]
+        if v.is_rekordbox_export
+            && ui
+                .button("Update from library")
+                .on_hover_note(
+                    "Rewrite the tracks this device shares with the library \
+                     from the library's current tags, keys, grids and cues",
+                )
+                .clicked()
+        {
+            *action = Some(SidebarAction::UpdateUsb(v.path.clone()));
+            ui.close_menu();
+        }
     });
 }
 
