@@ -1805,6 +1805,29 @@ impl App {
 /Contents; files already there are kept. Library files on this Mac are only read.",
                     );
                 });
+                // Every CDJ mounts FAT32 and HFS+; exFAT only from the NXS2
+                // and CDJ-3000 on, APFS nowhere. Any other format exports
+                // fine and then fails at the booth, so say so here.
+                let kind = self
+                    .usb_volumes
+                    .iter()
+                    .find(|v| v.path == confirm.dest)
+                    .and_then(|v| v.fs_kind.as_deref())
+                    .filter(|k| !matches!(*k, "msdos" | "hfs"));
+                if let Some(kind) = kind {
+                    use crate::ui::phosphor_icons::{app as icons, named};
+                    use crate::ui::tokens::{color, font, space};
+                    ui.add_space(space::S2);
+                    ui.label(crate::ui::icon_text_in(
+                        named(icons::WARNING),
+                        &format!(
+                            "{name} is {kind}, not FAT32: the CDJ-2000 and CDJ-2000NXS \
+won't mount it (NXS2 and CDJ-3000 read exFAT)."
+                        ),
+                        font::body(),
+                        color::CAUTION,
+                    ));
+                }
                 // The mode is a live choice only over an existing export. On
                 // an empty stick merge and replace do the same thing, so
                 // there's nothing to toggle.

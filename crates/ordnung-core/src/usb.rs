@@ -23,6 +23,10 @@ pub struct UsbVolume {
     pub is_rekordbox_export: bool,
     /// Free and total bytes on the volume, when the filesystem reports them.
     pub space: Option<(u64, u64)>,
+    /// The filesystem as DiskArbitration names it: `msdos` for FAT, `exfat`,
+    /// `apfs`, `hfs`; `None` when the lookup failed. CDJ-2000 and NXS players
+    /// mount FAT32 only.
+    pub fs_kind: Option<String>,
 }
 
 /// Free and total bytes of the filesystem holding `path`, or `None` when it
@@ -86,6 +90,7 @@ pub fn detect_volumes() -> Vec<UsbVolume> {
                 is_rekordbox_export: is_rekordbox_export(&path),
                 space: volume_space(&path),
                 path,
+                fs_kind: None,
             });
         }
     }
@@ -113,7 +118,8 @@ pub fn detect_volumes() -> Vec<UsbVolume> {
         // ("Virtual Interface"), and other internal-disk volumes. A failed
         // lookup falls through to listing — better to show a stick we
         // couldn't classify than to hide it.
-        if let Some(info) = da::device_info(&path) {
+        let info = da::device_info(&path);
+        if let Some(info) = &info {
             if info.network == Some(true) {
                 continue;
             }
@@ -128,6 +134,7 @@ pub fn detect_volumes() -> Vec<UsbVolume> {
             name,
             is_rekordbox_export: is_rekordbox_export(&path),
             space: volume_space(&path),
+            fs_kind: info.and_then(|i| i.kind),
             path,
         });
     }
@@ -172,6 +179,7 @@ mod da {
         static kDADiskDescriptionDeviceProtocolKey: CFRef;
         static kDADiskDescriptionDeviceInternalKey: CFRef;
         static kDADiskDescriptionVolumeNetworkKey: CFRef;
+        static kDADiskDescriptionVolumeKindKey: CFRef;
     }
 
     const CF_STRING_ENCODING_UTF8: u32 = 0x0800_0100;
@@ -186,6 +194,8 @@ mod da {
         pub internal: Option<bool>,
         /// True for network mounts (SMB/AFP/NFS).
         pub network: Option<bool>,
+        /// The filesystem: "msdos", "exfat", "apfs", "hfs", …
+        pub kind: Option<String>,
     }
 
     pub(super) fn device_info(mount: &Path) -> Option<DeviceInfo> {
@@ -229,11 +239,13 @@ mod da {
                     let v = CFDictionaryGetValue(desc, kDADiskDescriptionVolumeNetworkKey);
                     (!v.is_null()).then(|| CFBooleanGetValue(v))
                 };
+                let kind = cf_string(CFDictionaryGetValue(desc, kDADiskDescriptionVolumeKindKey));
                 CFRelease(desc);
                 Some(DeviceInfo {
                     protocol,
                     internal,
                     network,
+                    kind,
                 })
             };
             CFRelease(disk);
