@@ -117,8 +117,9 @@ pub fn read_playlists(db_path: &Path) -> Result<DlpPlaylists, ReadError> {
     }
     out.playlists.sort_by_key(|p| p.sort_order);
 
-    // Memberships, joined straight to each member's file path — the only key
-    // both databases share (content ids are not the pdb's track ids).
+    // Memberships, joined to each member's file path: content ids equal the
+    // pdb's track ids on every stick seen, but the path is the key the
+    // reader matches on, so a stick whose ids ever differ still resolves.
     let mut stmt = conn
         .prepare(
             "SELECT pc.playlist_id, c.path \
@@ -265,35 +266,10 @@ pub(crate) fn build_library(
 
     conn.execute_batch("BEGIN")?;
     {
-        for (id, name) in &t.artists {
-            conn.execute(
-                "INSERT INTO artist VALUES (?1, ?2, ?3)",
-                rusqlite::params![*id as i64, name, name.to_lowercase()],
-            )?;
-        }
-        for (id, name) in &t.albums {
-            conn.execute(
-                "INSERT INTO album VALUES (?1, ?2, NULL, NULL, 0, ?3)",
-                rusqlite::params![*id as i64, name, name.to_lowercase()],
-            )?;
-        }
-        for (id, name) in &t.genres {
-            conn.execute(
-                "INSERT INTO genre VALUES (?1, ?2)",
-                rusqlite::params![*id as i64, name],
-            )?;
-        }
-        for (id, name) in &t.labels {
-            conn.execute(
-                "INSERT INTO label VALUES (?1, ?2)",
-                rusqlite::params![*id as i64, name],
-            )?;
-        }
-        for (id, name) in &t.keys {
-            conn.execute(
-                "INSERT INTO key VALUES (?1, ?2)",
-                rusqlite::params![*id as i64, name],
-            )?;
+        for (table, list) in named_tables(t) {
+            for (id, name) in list {
+                insert_named(&conn, table, *id as i64, name)?;
+            }
         }
         for (i, name) in crate::pdbw::COLORS.iter().enumerate() {
             conn.execute(
@@ -327,70 +303,8 @@ pub(crate) fn build_library(
                 rusqlite::params![id, mi, seq, vis, sub],
             )?;
         }
-        let mut content = conn
-            .prepare(
-                "INSERT INTO content VALUES (?1, ?2, ?3, NULL, ?4, ?5, ?6, ?7, \
-                 ?8, ?29, ?30, ?31, 0, ?9, ?10, ?11, ?12, 0, ?28, \
-                 ?13, ?14, ?15, NULL, ?16, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, \
-                 0, 1, 1, NULL, ?25, ?26, ?27, 41, 788224, 0, NULL, 1, 1)",
-            )?;
-        for tr in &t.tracks {
-            content
-                .execute(rusqlite::params![
-                    tr.id as i64,
-                    tr.title,
-                    // rekordbox 7 leaves titleForSearch empty on every row of
-                    // its exports (94 of 94 reference tracks); nothing reads it.
-                    "",
-                    tr.tempo_centi_bpm as i64,
-                    tr.duration_s as i64,
-                    tr.track_number as i64,
-                    tr.disc_number as i64,
-                    zero_null(tr.artist_id),
-                    zero_null(tr.album_id),
-                    zero_null(tr.genre_id),
-                    zero_null(tr.label_id),
-                    zero_null(tr.key_id),
-                    tr.comment,
-                    tr.rating as i64,
-                    tr.year as i64, // rekordbox writes 0, not NULL, for no year
-                    tr.date_added,
-                    tr.file_path,
-                    tr.filename,
-                    tr.file_size as i64,
-                    tr.file_type as i64,
-                    tr.bitrate_kbps as i64,
-                    tr.sample_depth as i64,
-                    tr.sample_rate_hz as i64,
-                    tr.isrc,
-                    t.master_db_id as i64,
-                    tr.master_content_id as i64,
-                    tr.analyze_path,
-                    zero_null(tr.artwork_id),
-                    zero_null(tr.remixer_id),
-                    zero_null(tr.original_artist_id),
-                    zero_null(tr.composer_id),
-                ])?;
-        }
-        drop(content);
-        for p in &t.playlists {
-            conn.execute(
-                "INSERT INTO playlist VALUES (?1, ?2, ?3, NULL, ?4, ?5)",
-                rusqlite::params![
-                    p.id as i64,
-                    p.sort_order as i64,
-                    p.name,
-                    p.is_folder as i64,
-                    p.parent_id as i64,
-                ],
-            )?;
-        }
-        for (idx, track, playlist) in &t.playlist_entries {
-            conn.execute(
-                "INSERT INTO playlist_content VALUES (?1, ?2, ?3)",
-                rusqlite::params![*playlist as i64, *track as i64, *idx as i64],
-            )?;
-        }
+        insert_content(&conn, &t.tracks, t.master_db_id)?;
+        insert_playlists(&conn, t)?;
         conn.execute(
             "INSERT INTO property VALUES (?1, '1000', ?2, ?3, 0, ?4)",
             rusqlite::params![
@@ -402,6 +316,214 @@ pub(crate) fn build_library(
         )?;
     }
     conn.execute_batch("COMMIT")?;
+    Ok(())
+}
+
+/// Bring a local copy of a stick's own Device Library Plus up to `t` for a
+/// merge. The rows `resolved` names (new and re-selected tracks) are
+/// replaced, their artist, album, genre, label and key interned into the
+/// stick's own tables by name; new artwork is added; the playlist tables
+/// are rewritten from `t`; `property.numberOfContents` is recounted.
+/// Everything else the stick carries stays as rekordbox wrote it: the
+/// carried tracks' rows, My Tags, cues, history, and the property row's
+/// name, dates and tag id, so rekordbox still knows the stick as its own.
+pub(crate) fn update_library(
+    db_path: &Path,
+    t: &crate::pdbw::PdbTables,
+    resolved: &[u32],
+) -> Result<(), ReadError> {
+    let conn = open(db_path, rusqlite::OpenFlags::default())?;
+    conn.execute_batch("BEGIN")?;
+    {
+        fn name_of(list: &[(u32, String)], id: u32) -> Option<&str> {
+            list.iter().find(|(i, _)| *i == id).map(|(_, n)| n.as_str())
+        }
+        let mut rows = Vec::new();
+        for tr in t.tracks.iter().filter(|tr| resolved.contains(&tr.id)) {
+            // Its cue rows go with it: the library's cues replace them in
+            // the ANLZ files, and a DLP cue the ANLZ no longer has is stale.
+            conn.execute(
+                "DELETE FROM hotCueBankList_cue WHERE cue_id IN \
+                 (SELECT cue_id FROM cue WHERE content_id = ?1)",
+                [tr.id as i64],
+            )?;
+            conn.execute("DELETE FROM cue WHERE content_id = ?1", [tr.id as i64])?;
+            conn.execute("DELETE FROM content WHERE content_id = ?1", [tr.id as i64])?;
+            let mut row = tr.clone();
+            row.artist_id = intern(&conn, "artist", name_of(&t.artists, tr.artist_id))?;
+            row.composer_id = intern(&conn, "artist", name_of(&t.artists, tr.composer_id))?;
+            row.remixer_id = intern(&conn, "artist", name_of(&t.artists, tr.remixer_id))?;
+            row.original_artist_id =
+                intern(&conn, "artist", name_of(&t.artists, tr.original_artist_id))?;
+            row.album_id = intern(&conn, "album", name_of(&t.albums, tr.album_id))?;
+            row.genre_id = intern(&conn, "genre", name_of(&t.genres, tr.genre_id))?;
+            row.label_id = intern(&conn, "label", name_of(&t.labels, tr.label_id))?;
+            row.key_id = intern(&conn, "key", name_of(&t.keys, tr.key_id))?;
+            rows.push(row);
+        }
+        insert_content(&conn, &rows, t.master_db_id)?;
+        for (id, _) in &t.artwork {
+            conn.execute(
+                "INSERT OR IGNORE INTO image VALUES (?1, ?2)",
+                rusqlite::params![*id as i64, crate::artwork::dlp_path(*id)],
+            )?;
+        }
+        conn.execute("DELETE FROM playlist_content", [])?;
+        conn.execute("DELETE FROM playlist", [])?;
+        insert_playlists(&conn, t)?;
+        conn.execute(
+            "UPDATE property SET numberOfContents = (SELECT COUNT(*) FROM content)",
+            [],
+        )?;
+    }
+    conn.execute_batch("COMMIT")?;
+    checkpoint(&conn)
+}
+
+/// Fold the WAL into the main file: the copy may have come with the stick's
+/// WAL ([`scratch_copy`]), and only the main file is placed back.
+pub(crate) fn checkpoint(conn: &rusqlite::Connection) -> Result<(), ReadError> {
+    conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE)")?;
+    Ok(())
+}
+
+/// Copy a stick's database to `tmp` on local disk to edit it — SQLite cannot
+/// write in place on macOS's msdos driver — with the stick's WAL beside it
+/// when there is one, so rows a yanked stick left only in the WAL come along.
+pub(crate) fn scratch_copy(db_path: &Path, tmp: &Path) -> std::io::Result<()> {
+    remove_scratch(tmp);
+    std::fs::copy(db_path, tmp)?;
+    let wal = crate::export::sibling(db_path, "-wal");
+    if wal.is_file() {
+        std::fs::copy(&wal, crate::export::sibling(tmp, "-wal"))?;
+    }
+    Ok(())
+}
+
+/// Remove a scratch database and its journal sidecars.
+pub(crate) fn remove_scratch(tmp: &Path) {
+    let _ = std::fs::remove_file(tmp);
+    for suffix in ["-wal", "-shm"] {
+        let _ = std::fs::remove_file(crate::export::sibling(tmp, suffix));
+    }
+}
+
+/// The id `name` has in one of the DLP's interned tables (`artist`, `album`,
+/// `genre`, `label`, `key`), inserted after the table's highest when new; 0
+/// for no name.
+fn intern(conn: &rusqlite::Connection, table: &str, name: Option<&str>) -> rusqlite::Result<u32> {
+    use rusqlite::OptionalExtension;
+    let Some(name) = name else { return Ok(0) };
+    let have: Option<i64> = conn
+        .query_row(&format!("SELECT {table}_id FROM {table} WHERE name = ?1"), [name], |r| r.get(0))
+        .optional()?;
+    if let Some(id) = have {
+        return Ok(id as u32);
+    }
+    let id: i64 =
+        conn.query_row(&format!("SELECT COALESCE(MAX({table}_id), 0) + 1 FROM {table}"), [], |r| r.get(0))?;
+    insert_named(conn, table, id, name)?;
+    Ok(id as u32)
+}
+
+/// The five interned name tables and the rows `t` holds for each.
+fn named_tables(t: &crate::pdbw::PdbTables) -> [(&'static str, &Vec<(u32, String)>); 5] {
+    [
+        ("artist", &t.artists),
+        ("album", &t.albums),
+        ("genre", &t.genres),
+        ("label", &t.labels),
+        ("key", &t.keys),
+    ]
+}
+
+/// One row of an interned name table, in the shape rekordbox gives it.
+fn insert_named(conn: &rusqlite::Connection, table: &str, id: i64, name: &str) -> rusqlite::Result<usize> {
+    match table {
+        "artist" => conn.execute(
+            "INSERT INTO artist VALUES (?1, ?2, ?3)",
+            rusqlite::params![id, name, name.to_lowercase()],
+        ),
+        "album" => conn.execute(
+            "INSERT INTO album VALUES (?1, ?2, NULL, NULL, 0, ?3)",
+            rusqlite::params![id, name, name.to_lowercase()],
+        ),
+        _ => conn.execute(&format!("INSERT INTO {table} VALUES (?1, ?2)"), rusqlite::params![id, name]),
+    }
+}
+
+/// The `content` rows for `tracks`, every row stamped with `master_db_id`.
+fn insert_content(
+    conn: &rusqlite::Connection,
+    tracks: &[crate::pdbw::TrackRow],
+    master_db_id: u32,
+) -> rusqlite::Result<()> {
+    let mut content = conn.prepare(
+        "INSERT INTO content VALUES (?1, ?2, ?3, NULL, ?4, ?5, ?6, ?7, \
+         ?8, ?29, ?30, ?31, 0, ?9, ?10, ?11, ?12, 0, ?28, \
+         ?13, ?14, ?15, NULL, ?16, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, \
+         0, 1, 1, NULL, ?25, ?26, ?27, 41, 788224, 0, NULL, 1, 1)",
+    )?;
+    for tr in tracks {
+        content.execute(rusqlite::params![
+            tr.id as i64,
+            tr.title,
+            // rekordbox 7 leaves titleForSearch empty on every row of
+            // its exports (94 of 94 reference tracks); nothing reads it.
+            "",
+            tr.tempo_centi_bpm as i64,
+            tr.duration_s as i64,
+            tr.track_number as i64,
+            tr.disc_number as i64,
+            zero_null(tr.artist_id),
+            zero_null(tr.album_id),
+            zero_null(tr.genre_id),
+            zero_null(tr.label_id),
+            zero_null(tr.key_id),
+            tr.comment,
+            tr.rating as i64,
+            tr.year as i64, // rekordbox writes 0, not NULL, for no year
+            tr.date_added,
+            tr.file_path,
+            tr.filename,
+            tr.file_size as i64,
+            tr.file_type as i64,
+            tr.bitrate_kbps as i64,
+            tr.sample_depth as i64,
+            tr.sample_rate_hz as i64,
+            tr.isrc,
+            master_db_id as i64,
+            tr.master_content_id as i64,
+            tr.analyze_path,
+            zero_null(tr.artwork_id),
+            zero_null(tr.remixer_id),
+            zero_null(tr.original_artist_id),
+            zero_null(tr.composer_id),
+        ])?;
+    }
+    Ok(())
+}
+
+/// The playlist tree and memberships of `t`, into empty playlist tables.
+fn insert_playlists(conn: &rusqlite::Connection, t: &crate::pdbw::PdbTables) -> rusqlite::Result<()> {
+    for p in &t.playlists {
+        conn.execute(
+            "INSERT INTO playlist VALUES (?1, ?2, ?3, NULL, ?4, ?5)",
+            rusqlite::params![
+                p.id as i64,
+                p.sort_order as i64,
+                p.name,
+                p.is_folder as i64,
+                p.parent_id as i64,
+            ],
+        )?;
+    }
+    for (idx, track, playlist) in &t.playlist_entries {
+        conn.execute(
+            "INSERT INTO playlist_content VALUES (?1, ?2, ?3)",
+            rusqlite::params![*playlist as i64, *track as i64, *idx as i64],
+        )?;
+    }
     Ok(())
 }
 
@@ -430,6 +552,61 @@ mod tests {
     /// The full production writer must persist the complete 22-table schema
     /// and its rows — a partially written exportLibrary.db is exactly what a
     /// player rejects as "Device library is corrupted".
+    #[test]
+    fn merge_updates_the_sticks_own_library_and_keeps_its_tags() {
+        let dir = std::env::temp_dir().join(format!("ordnung-dlp-merge-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let db = dir.join("exportLibrary.db");
+        let row = |id: u32, title: &str, artist_id: u32| crate::pdbw::TrackRow {
+            id,
+            title: title.into(),
+            filename: format!("{id}.mp3"),
+            file_path: format!("/Contents/{id}.mp3"),
+            artist_id,
+            ..Default::default()
+        };
+        let mut t = crate::pdbw::PdbTables {
+            tracks: vec![row(1, "One", 1), row(2, "Two", 1)],
+            artists: vec![(1, "A".into())],
+            created_date: "2026-09-04".into(),
+            master_db_id: 7,
+            ..Default::default()
+        };
+        build_library(&db, &t, "STICK").unwrap();
+        // What rekordbox would add on the stick: a My Tag on track 1.
+        open(&db, rusqlite::OpenFlags::default())
+            .unwrap()
+            .execute_batch(
+                "INSERT INTO myTag VALUES (5, 1, 'Peak', 0, 0); INSERT INTO myTag_content VALUES (5, 1); \
+                 INSERT INTO cue (cue_id, content_id) VALUES (9, 1); INSERT INTO cue (cue_id, content_id) VALUES (10, 2);",
+            )
+            .unwrap();
+        // The merge: 1 re-selected under artist B, 3 new, 2 carried; one playlist.
+        t.tracks = vec![row(1, "One", 2), row(3, "Three", 1), row(2, "Two", 1)];
+        t.artists = vec![(1, "A".into()), (2, "B".into())];
+        t.playlists = vec![RbPlaylist { id: 1, parent_id: 0, sort_order: 1, is_folder: false, name: "set".into() }];
+        t.playlist_entries = vec![(0, 3, 1), (1, 1, 1)];
+        update_library(&db, &t, &[1, 3]).unwrap();
+
+        let conn = open_read_only(&db).unwrap();
+        let count = |sql: &str| conn.query_row(sql, [], |r| r.get::<_, i64>(0)).unwrap();
+        assert_eq!(count("SELECT count(*) FROM content"), 3);
+        assert_eq!(count("SELECT count(*) FROM myTag_content WHERE myTag_id = 5 AND content_id = 1"), 1);
+        // The re-selected row's cues are the library's now; the carried row keeps its own.
+        assert_eq!(count("SELECT count(*) FROM cue WHERE content_id = 1"), 0);
+        assert_eq!(count("SELECT count(*) FROM cue WHERE content_id = 2"), 1);
+        assert_eq!(count("SELECT numberOfContents FROM property"), 3);
+        assert_eq!(count("SELECT deviceName = 'STICK' FROM property"), 1);
+        // B interned beside A in the stick's own table; row 1 points at it.
+        let b = count("SELECT artist_id FROM artist WHERE name = 'B'");
+        assert_eq!(count("SELECT count(*) FROM artist"), 2);
+        assert_eq!(count("SELECT artist_id_artist FROM content WHERE content_id = 1"), b);
+        assert_eq!(count("SELECT masterDbId FROM content WHERE content_id = 3"), 7);
+        assert_eq!(count("SELECT count(*) FROM playlist_content WHERE playlist_id = 1"), 2);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     #[test]
     fn library_persists_every_table() {
         let dir = std::env::temp_dir().join(format!("ordnung-dlpw-test-{}", std::process::id()));

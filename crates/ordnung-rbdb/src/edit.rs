@@ -940,19 +940,18 @@ fn with_local_dlp(
     backup_once(db_path);
     let err_io = |e: std::io::Error| ReadError::Dlp(e.to_string());
     let tmp = crate::dlp::scratch_db_path("ordnung-dlp-edit");
-    let _ = std::fs::remove_file(&tmp);
-    std::fs::copy(db_path, &tmp).map_err(err_io)?;
+    crate::dlp::scratch_copy(db_path, &tmp).map_err(err_io)?;
     let result = (|| {
         let conn = crate::dlp::open(&tmp, rusqlite::OpenFlags::default())?;
         conn.execute_batch("BEGIN")?;
         f(&conn)?;
         conn.execute_batch("COMMIT")?;
-        Ok(())
+        crate::dlp::checkpoint(&conn)
     })();
     if result.is_ok() {
         crate::dlp::place_library(&tmp, db_path).map_err(err_io)?;
     }
-    let _ = std::fs::remove_file(&tmp);
+    crate::dlp::remove_scratch(&tmp);
     result
 }
 

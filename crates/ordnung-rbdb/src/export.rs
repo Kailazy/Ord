@@ -1420,9 +1420,19 @@ fn export_impl(
         .map(|s| s.to_string_lossy().into_owned())
         .unwrap_or_else(|| "ORDNUNG".into());
     let dlp_tmp = crate::dlp::scratch_db_path("ordnung-dlp-write");
-    let _ = std::fs::remove_file(&dlp_tmp);
-    crate::dlp::build_library(&dlp_tmp, &tables, &device_name)
-        .map_err(|e| ExportError::Dlp(e.to_string()))?;
+    crate::dlp::remove_scratch(&dlp_tmp);
+    // A merge edits a copy of the stick's own DLP, so everything rekordbox
+    // wrote there besides the library rows (My Tags, cues, history, the
+    // property row) survives; anything else gets a fresh database.
+    let stick_dlp = rb_dir.join("exportLibrary.db");
+    let built = if mode == ExportMode::Merge && stick_dlp.is_file() {
+        crate::dlp::scratch_copy(&stick_dlp, &dlp_tmp).map_err(io_err(stick_dlp))?;
+        let resolved_ids: Vec<u32> = resolved.iter().map(|t| t.row.id).collect();
+        crate::dlp::update_library(&dlp_tmp, &tables, &resolved_ids)
+    } else {
+        crate::dlp::build_library(&dlp_tmp, &tables, &device_name)
+    };
+    built.map_err(|e| ExportError::Dlp(e.to_string()))?;
     let checked = validate_export(
         dest_root,
         &pdb_bytes,
@@ -1431,7 +1441,7 @@ fn export_impl(
         tables.playlists.len(),
     );
     if let Err(why) = checked {
-        let _ = std::fs::remove_file(&dlp_tmp);
+        crate::dlp::remove_scratch(&dlp_tmp);
         return Err(ExportError::Validation(why));
     }
 
@@ -1445,7 +1455,7 @@ fn export_impl(
     // back when a player or rekordbox rejects what this export wrote.
     keep_previous_set(&rb_dir);
     let placed = crate::dlp::place_library(&dlp_tmp, &rb_dir.join("exportLibrary.db"));
-    let _ = std::fs::remove_file(&dlp_tmp);
+    crate::dlp::remove_scratch(&dlp_tmp);
     placed.map_err(|e| ExportError::Dlp(e.to_string()))?;
 
     // My Tags live in exportExt.pdb keyed by track id. A merge keeps every
