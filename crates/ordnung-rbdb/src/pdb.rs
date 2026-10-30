@@ -107,6 +107,13 @@ pub struct RbTrack {
     /// Track and disc number, as stored. `0` when unknown.
     pub track_number: u32,
     pub disc_number: u16,
+    /// The library this row came from and its id there, the row's 0x18 and
+    /// 0x14 words; the DLP's `content.masterDbId` / `masterContentId` must
+    /// agree or rekordbox refuses the stick. `0` on a row never given them.
+    pub master_db_id: u32,
+    pub master_content_id: u32,
+    /// `YYYY-MM-DD` the track was added (string slot 10); empty when unset.
+    pub date_added: String,
     /// Remixer, composer and original artist, resolved through the Artists
     /// table like `artist`.
     pub remixer: Option<String>,
@@ -317,6 +324,9 @@ fn parse_export(data: &[u8]) -> Result<RbExport, ReadError> {
                                 color_id: data.get(row + 0x58).copied().unwrap_or(0),
                                 track_number: u32_at(data, row + 0x34).unwrap_or(0),
                                 disc_number: u16_at(data, row + 0x4C).unwrap_or(0),
+                                master_db_id: u32_at(data, row + 0x18).unwrap_or(0),
+                                master_content_id: u32_at(data, row + 0x14).unwrap_or(0),
+                                date_added: string_at(10).unwrap_or_default(),
                                 remixer: None,
                                 composer: None,
                                 original_artist: None,

@@ -297,7 +297,15 @@ fn merge_adds_to_an_existing_export_without_clobbering_it() {
         track(10, &a, Format::Mp3, "Alpha", "AA"),
         track(11, &b, Format::Mp3, "Beta", "BB"),
     ];
-    export_usb_with(&usb, &tracks_a, &set_a, ExportOptions::default(), &mut |_| {}, &cancel).unwrap();
+    let as_lib_77 = ExportOptions { master_db_id: 77, ..Default::default() };
+    export_usb_with(&usb, &tracks_a, &set_a, as_lib_77, &mut |_| {}, &cancel).unwrap();
+    let pdb_path = usb.join("PIONEER/rekordbox/export.pdb");
+    let before: std::collections::HashMap<String, u32> = pdb::read_export(&pdb_path)
+        .unwrap()
+        .tracks
+        .values()
+        .map(|t| (t.title.clone(), t.master_content_id))
+        .collect();
 
     // Merge a second playlist "set B" with gamma (a new track) and alpha
     // (already on the stick — must reuse its file, not duplicate it).
@@ -314,13 +322,23 @@ fn merge_adds_to_an_existing_export_without_clobbering_it() {
         track(12, &c, Format::Mp3, "Gamma", "CC"),
         track(10, &a, Format::Mp3, "Alpha", "AA"),
     ];
-    let report =
-        export_usb_with(&usb, &tracks_b, &set_b, ExportOptions { mode: ExportMode::Merge, ..Default::default() }, &mut |_| {}, &cancel).unwrap();
+    let as_lib_99 = ExportOptions { mode: ExportMode::Merge, master_db_id: 99, ..Default::default() };
+    let report = export_usb_with(&usb, &tracks_b, &set_b, as_lib_99, &mut |_| {}, &cancel).unwrap();
     // The stick now carries all three tracks (beta was carried over untouched).
     assert_eq!(report.tracks_exported, 3, "merge keeps the earlier tracks");
 
     let export = pdb::read_export(&usb.join("PIONEER/rekordbox/export.pdb")).unwrap();
     assert_eq!(export.tracks.len(), 3);
+    // The stick's library id wins over the merging library's, on every row,
+    // and every row carries a content id.
+    assert!(export.tracks.values().all(|t| t.master_db_id == 77 && t.master_content_id != 0));
+    // Re-selected (Alpha) and carried (Beta) rows keep the content id the
+    // stick gave them; only the new row gets a fresh one.
+    for t in export.tracks.values() {
+        if let Some(id) = before.get(&t.title) {
+            assert_eq!(*id, t.master_content_id, "{}", t.title);
+        }
+    }
     let titles: std::collections::HashSet<&str> =
         export.tracks.values().map(|t| t.title.as_str()).collect();
     assert!(titles.contains("Alpha") && titles.contains("Beta") && titles.contains("Gamma"));
@@ -618,6 +636,7 @@ fn classic_player_target_converts_flac_and_high_rates_to_aiff() {
     let opts = ExportOptions {
         mode: ExportMode::Replace,
         player: PlayerTarget::Classic,
+        ..Default::default()
     };
     let mut details = Vec::new();
     let report = export_usb_with(&usb, &tracks, &[], opts, &mut |p| details.push(p.detail), &cancel)

@@ -338,6 +338,7 @@ impl App {
             format!("{verb} {scope}{into} to {name}…")
         };
         let comment = self.config.export_comment;
+        let db_id = self.export_db_id();
         let to = dest.clone();
         if self.spawn_job(ctx, status, true, move |db, cancel, tx, ctx| {
             run_export(
@@ -350,6 +351,7 @@ impl App {
                 update,
                 player,
                 comment,
+                db_id,
                 cancel,
                 tx,
                 ctx,
@@ -1401,6 +1403,7 @@ pub(crate) fn run_export(
     update: bool,
     player: ordnung_rbdb::export::PlayerTarget,
     comment: crate::config::ExportComment,
+    master_db_id: u32,
     cancel: Arc<AtomicBool>,
     tx: Sender<JobMsg>,
     ctx: egui::Context,
@@ -1538,7 +1541,7 @@ pub(crate) fn run_export(
         &dest,
         &tracks,
         &playlists,
-        ExportOptions { mode, player },
+        ExportOptions { mode, player, master_db_id },
         &mut |p| {
             let stage = match p.stage {
                 ExportStage::CopyingAudio => "Copying",

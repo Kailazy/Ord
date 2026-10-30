@@ -121,6 +121,9 @@ pub struct Config {
     /// (both, notes first) or `"none"`. Remembered from the export
     /// confirm's dropdown. See `ExportComment`.
     pub export_comment: ExportComment,
+    /// The id this install stamps on the sticks it writes as their library
+    /// id (rekordbox stamps its library's DBID); minted on the first export.
+    pub export_db_id: u32,
     /// Which of the sidebar's three width tiers is in force: `"icon"`,
     /// `"narrow"` or `"wide"` (the default). The sidebar snaps between designed
     /// layouts rather than resizing freely, so what persists is the chosen tier,
@@ -687,6 +690,7 @@ impl Default for Config {
             nav_primary: NavPrimary::Digital,
             export_convert_for_older_players: false,
             export_comment: ExportComment::Notes,
+            export_db_id: 0,
             nav_density: crate::sidebar::NavDensity::Narrow,
             nav_collapsed: Vec::new(),
             inspector_density: crate::inspector::InspectorDensity::Expanded,

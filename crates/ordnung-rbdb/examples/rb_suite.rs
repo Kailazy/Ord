@@ -351,6 +351,8 @@ fn export_catalog(db: &Path, stick: &Path) -> Res<()> {
     let opts = ExportOptions {
         mode: ExportMode::Replace,
         player: PlayerTarget::Modern,
+        // The reference stick's own library id, so the diff stays on the rows.
+        master_db_id: 0x8F45_2FDB,
     };
     let report = export_usb_with(stick, &tracks, &playlists, opts, &mut |_| {}, &AtomicBool::new(false))
         .map_err(|e| format!("export: {e}"))?;

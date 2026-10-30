@@ -154,13 +154,17 @@ pub(crate) struct PdbTables {
     pub playlist_entries: Vec<(u32, u32, u32)>,
     /// `YYYY-MM-DD` stamp for the type-19 summary row.
     pub created_date: String,
+    /// The library the rows come from, at 0x18 of every track row and as
+    /// the DLP's `content.masterDbId`: rekordbox refuses a stick whose two
+    /// databases disagree on it.
+    pub master_db_id: u32,
 }
 
 // ---------------------------------------------------------------------------
 // Row encoders
 // ---------------------------------------------------------------------------
 
-fn track_row(t: &TrackRow, index_shift: u16) -> Vec<u8> {
+fn track_row(t: &TrackRow, index_shift: u16, master_db_id: u32) -> Vec<u8> {
     let mut r = Vec::with_capacity(0x120);
     let u16le = |r: &mut Vec<u8>, v: u16| r.extend_from_slice(&v.to_le_bytes());
     let u32le = |r: &mut Vec<u8>, v: u32| r.extend_from_slice(&v.to_le_bytes());
@@ -171,8 +175,7 @@ fn track_row(t: &TrackRow, index_shift: u16) -> Vec<u8> {
     u32le(&mut r, t.composer_id);
     u32le(&mut r, t.file_size);
     u32le(&mut r, t.master_content_id);
-    u16le(&mut r, 0x2FDB); // constant in every golden row
-    u16le(&mut r, 0x8F45); // constant in every golden row
+    u32le(&mut r, master_db_id); // 0x18: the library id, the same as the DLP's
     u32le(&mut r, t.artwork_id);
     u32le(&mut r, t.key_id);
     u32le(&mut r, t.original_artist_id);
@@ -628,7 +631,7 @@ pub(crate) fn build_export_pdb(t: &PdbTables) -> Vec<u8> {
         out
     }
 
-    tables[0] = encode_paged(&t.tracks, |tr, sh| track_row(tr, sh));
+    tables[0] = encode_paged(&t.tracks, |tr, sh| track_row(tr, sh, t.master_db_id));
     tables[1] = t
         .genres
         .iter()
@@ -721,6 +724,7 @@ mod tests {
                 ..Default::default()
             },
             0,
+            1,
         );
         // First string offset must be 0x88.
         assert_eq!(u16::from_le_bytes([r[0x5E], r[0x5F]]), 0x88);
@@ -741,6 +745,7 @@ mod tests {
                 ..Default::default()
             },
             0,
+            1,
         );
         let at = |slot: usize| u16::from_le_bytes([r[0x5E + 2 * slot], r[0x5F + 2 * slot]]) as usize;
         let (comment_at, title_at) = (at(16), at(17));

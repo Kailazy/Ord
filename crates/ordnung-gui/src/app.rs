@@ -2021,6 +2021,19 @@ impl App {
         self.spawn_export(ctx.clone(), vol, Vec::new(), ids, None, scope, false, true, player);
     }
 
+    /// The library id this install stamps on sticks it writes (see
+    /// `ExportOptions::master_db_id`), minted once and kept in the config.
+    #[cfg(feature = "usb-export")]
+    pub(crate) fn export_db_id(&mut self) -> u32 {
+        if self.config.export_db_id == 0 {
+            use std::hash::{BuildHasher, Hasher};
+            let r = std::collections::hash_map::RandomState::new().build_hasher().finish();
+            self.config.export_db_id = (r as u32).max(1);
+            self.save_config();
+        }
+        self.config.export_db_id
+    }
+
     /// The player generation exports convert for, from Settings.
     #[cfg(feature = "usb-export")]
     pub(crate) fn export_player(&self) -> ordnung_rbdb::export::PlayerTarget {

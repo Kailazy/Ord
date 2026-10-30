@@ -423,10 +423,21 @@ impl PlayerTarget {
 }
 
 /// Everything that shapes one export run beyond the selection itself.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ExportOptions {
     pub mode: ExportMode,
     pub player: PlayerTarget,
+    /// The id this library stamps on the rows it writes (pdb 0x18, DLP
+    /// `content.masterDbId`), the way rekordbox stamps its library's DBID;
+    /// a stick that already carries rows keeps their id instead.
+    pub master_db_id: u32,
+}
+
+impl Default for ExportOptions {
+    fn default() -> Self {
+        // `1`: an export with no library behind it (tests, the suite).
+        Self { mode: Default::default(), player: Default::default(), master_db_id: 1 }
+    }
 }
 
 /// How audio of `format` at `rate` Hz has to be converted for `player`, if
@@ -468,6 +479,8 @@ pub fn stick_transcode_for(
 /// files) without re-copying anything.
 struct ExistingTrack {
     row: TrackRow,
+    /// The library id the stick's rows carry (0x18); a merge keeps it.
+    master_db_id: u32,
     /// Interned names read back off the stick, re-interned into this
     /// export's tables when the row is carried over.
     artist: Option<String>,
@@ -505,7 +518,16 @@ fn read_existing(
         let name = t.file_path.rsplit('/').next().unwrap_or("").to_string();
         let mut row = TrackRow {
             id: *id,
-            master_content_id: master_content_id(*id),
+            // The library pair as the stick has it; a row from before Ord
+            // wrote the pair gets the derived content id.
+            master_content_id: if t.master_content_id != 0 {
+                t.master_content_id
+            } else {
+                master_content_id(*id)
+            },
+            track_number: t.track_number,
+            disc_number: t.disc_number,
+            date_added: t.date_added.clone(),
             tempo_centi_bpm: t.tempo_centi_bpm,
             duration_s: t.duration_s,
             bitrate_kbps: t.bitrate_kbps,
@@ -521,7 +543,6 @@ fn read_existing(
             filename: name.clone(),
             file_path: t.file_path.clone(),
             sample_depth: 16,
-            // date_added is stamped with the export date by the caller.
             ..Default::default()
         };
         // Re-fetch file size from the stick so the row stays truthful.
@@ -531,6 +552,7 @@ fn read_existing(
             .unwrap_or(0);
         tracks.push(ExistingTrack {
             row,
+            master_db_id: t.master_db_id,
             artist: t.artist.clone(),
             album: t.album.clone(),
             genre: t.genre.clone(),
@@ -688,7 +710,7 @@ pub fn setup_device(dest_root: &Path, cancel: &AtomicBool) -> Result<ExportRepor
         &[],
         ExportOptions {
             mode: ExportMode::Merge,
-            player: PlayerTarget::default(),
+            ..Default::default()
         },
         &mut |_| {},
         cancel,
@@ -817,7 +839,12 @@ fn export_impl(
         let reuse = existing_by_path
             .get(&path_key(&format!("/Contents/{base}")))
             .cloned();
-        let reuse_id = reuse.as_ref().map(|(id, _)| *id);
+        // The stick's own row for a re-selected track: its content id, added
+        // date and analysis path stay with it. rekordbox keys a track by the
+        // library pair; a fresh hash beside its DBID would resolve to nothing.
+        let kept = reuse
+            .as_ref()
+            .and_then(|(id, _)| existing_tracks.iter().find(|e| e.row.id == *id));
         let (id, name) = match reuse {
             // The stick's own spelling of the name: its directory entry is
             // whatever form it was created in, and a CDJ compares code units.
@@ -875,7 +902,7 @@ fn export_impl(
             id,
             sample_rate_hz: out_rate.unwrap_or_else(|| props.map(|p| p.sample_rate_hz).unwrap_or(0)),
             file_size,
-            master_content_id: master_content_id(id),
+            master_content_id: kept.map_or_else(|| master_content_id(id), |e| e.row.master_content_id),
             artwork_id,
             key_id,
             // rekordbox's "Label" column is the publisher tag (ID3 TPUB); the
@@ -913,7 +940,10 @@ fn export_impl(
             file_type: file_type(if transcode.is_some() { Format::Aiff } else { t.format }),
             rating: t.tags.rating.unwrap_or(0).min(5),
             isrc: t.tags.isrc.clone().unwrap_or_default(),
-            date_added: date.clone(),
+            date_added: match kept {
+                Some(e) if !e.row.date_added.is_empty() => e.row.date_added.clone(),
+                _ => date.clone(),
+            },
             analyze_path: String::new(), // assigned once every row is known, below
             analyze_date: date.clone(),
             comment: clamp(t.tags.comment.as_deref().unwrap_or(""), 500),
@@ -947,12 +977,7 @@ fn export_impl(
             bands: analysis.map(|a| a.waveform_bands.clone()).unwrap_or_default(),
             cues: t.cues.clone(),
             copy_needed,
-            old_anlz_path: reuse_id.and_then(|id| {
-                existing_tracks
-                    .iter()
-                    .find(|e| e.row.id == id)
-                    .map(|e| e.row.analyze_path.clone())
-            }),
+            old_anlz_path: kept.map(|e| e.row.analyze_path.clone()),
             transcode,
             expected_bytes,
         });
@@ -987,8 +1012,10 @@ fn export_impl(
             }
             None => 0,
         };
-        // Their date_added is set to this export's date for consistency.
-        row.date_added = date.clone();
+        // A row from before Ord carried dates gets this export's.
+        if row.date_added.is_empty() {
+            row.date_added = date.clone();
+        }
         row.analyze_date = date.clone();
         carried.push(row);
     }
@@ -1300,6 +1327,15 @@ fn export_impl(
     report.playlists_exported = playlist_rows.len();
     report.tracks_exported = resolved.len() + carried.len();
 
+    // One library id for both databases: the stick's own when it has rows
+    // (rekordbox refuses a stick whose pdb and DLP disagree on it, and keeps
+    // recognising the tracks), else this library's.
+    let master_db_id = existing_tracks
+        .iter()
+        .map(|e| e.master_db_id)
+        .find(|&id| id != 0)
+        .unwrap_or(opts.master_db_id);
+
     // The full track set the database lists: freshly resolved + carried-over.
     let all_track_rows: Vec<TrackRow> = resolved
         .iter()
@@ -1321,6 +1357,7 @@ fn export_impl(
         playlists: playlist_rows,
         playlist_entries: entries,
         created_date: date,
+        master_db_id,
     };
 
     // ---- validate before placing ------------------------------------------
@@ -1351,8 +1388,13 @@ fn export_impl(
     crate::dlp::write_library(&dlp, &tables, &device_name)
         .map_err(|e| ExportError::Dlp(e.to_string()))?;
 
+    // My Tags live in exportExt.pdb keyed by track id. A merge keeps every
+    // id, so the stick's own tag database stays; a replace renumbers from 1
+    // and gets the empty one.
     let ext_pdb = rb_dir.join("exportExt.pdb");
-    write_atomic(&ext_pdb, &pdbw::build_export_ext_pdb()).map_err(io_err(ext_pdb))?;
+    if mode == ExportMode::Replace || !ext_pdb.is_file() {
+        write_atomic(&ext_pdb, &pdbw::build_export_ext_pdb()).map_err(io_err(ext_pdb))?;
+    }
     let pdb = rb_dir.join("export.pdb");
     write_atomic(&pdb, &pdb_bytes).map_err(io_err(pdb))?;
 
@@ -1411,7 +1453,7 @@ mod tests {
         std::fs::write(rb.join("export.pdb"), b"not a database").unwrap();
         let opts = ExportOptions {
             mode: ExportMode::Merge,
-            player: PlayerTarget::default(),
+            ..Default::default()
         };
         let err = export_usb_with(&dir, &[], &[], opts, &mut |_| {}, &AtomicBool::new(false))
             .unwrap_err();

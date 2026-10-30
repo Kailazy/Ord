@@ -202,9 +202,6 @@ const SORTS: &[(i64, i64, i64, i64, i64)] = &[
     (17, 22, 0, 0, 0),
 ];
 
-/// Fixed masterDbId stamped on every row (rekordbox uses its install's random
-/// id; any consistent nonzero value serves).
-const MASTER_DB_ID: i64 = 715_983_263;
 
 /// Write a complete `exportLibrary.db` beside an `export.pdb`, mirroring the
 /// same resolved library. Overwrites any existing database (and removes stale
@@ -351,7 +348,7 @@ fn build_library(
                     tr.sample_depth as i64,
                     tr.sample_rate_hz as i64,
                     tr.isrc,
-                    MASTER_DB_ID,
+                    t.master_db_id as i64,
                     tr.master_content_id as i64,
                     tr.analyze_path,
                     zero_null(tr.artwork_id),
@@ -385,7 +382,7 @@ fn build_library(
                 device_name,
                 t.tracks.len() as i64,
                 t.created_date,
-                MASTER_DB_ID,
+                t.master_db_id as i64,
             ],
         )?;
     }
@@ -449,6 +446,7 @@ mod tests {
             }],
             playlist_entries: vec![(1, 1, 1)],
             created_date: "2026-09-04".into(),
+            master_db_id: 1,
         };
         write_library(&db, &tables, "TEST").expect("write");
 
