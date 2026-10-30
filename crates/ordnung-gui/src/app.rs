@@ -2952,20 +2952,20 @@ impl App {
                                         .size()
                                         .x
                                 };
-                                // The track count leads with a note mark,
-                                // whose width counts toward the room.
+                                // The track count leads with a note mark. Its
+                                // width is reserved in every view, drawn or not,
+                                // so the slot is one width across view changes.
                                 let note = note_count.then(|| named(icons::MUSIC_NOTE));
-                                let note_w = note.map_or(0.0, |g| {
-                                    ui.painter()
-                                        .layout_no_wrap(
-                                            g.to_owned(),
-                                            font::icon(font::body().size + 2.0),
-                                            egui::Color32::PLACEHOLDER,
-                                        )
-                                        .size()
-                                        .x
-                                        + space::S3
-                                });
+                                let note_w = ui
+                                    .painter()
+                                    .layout_no_wrap(
+                                        named(icons::MUSIC_NOTE).to_owned(),
+                                        font::icon(font::body().size + 2.0),
+                                        egui::Color32::PLACEHOLDER,
+                                    )
+                                    .size()
+                                    .x
+                                    + space::S3;
                                 let label = |text: &str| -> egui::WidgetText {
                                     match note {
                                         Some(g) => crate::ui::icon_text(g, text, font::body()),
@@ -2983,9 +2983,10 @@ impl App {
                                     .fold(0.0, f32::max)
                                     + note_w)
                                     .min(room);
+                                let drawn_note_w = note.map_or(0.0, |_| note_w);
                                 let fitting = count_forms
                                     .iter()
-                                    .find(|f| width_of(ui, f) + note_w <= w)
+                                    .find(|f| width_of(ui, f) + drawn_note_w <= w)
                                     .or_else(|| count_forms.last());
                                 if let Some(text) = fitting.filter(|_| w >= 24.0) {
                                     let (rect, _) = ui.allocate_exact_size(
