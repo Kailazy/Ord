@@ -3825,14 +3825,15 @@ impl App {
                                 {
                                     *view = LibraryView::Usb(v.path.clone(), None);
                                 }
-                                // How full the stick is, as a hairline under
-                                // the tile; the mark at its end says the
-                                // numbers.
-                                if let Some((free, total)) = v.space.filter(|(_, t)| *t > 0) {
-                                    ui.add_space(space::S2);
-                                    crate::sidebar::capacity_line(ui, total.saturating_sub(free), total);
+                                // How full the stick is, as a line flush
+                                // under the tile; the mark at its end says
+                                // the numbers.
+                                match v.space.filter(|(_, t)| *t > 0) {
+                                    Some((free, total)) => {
+                                        crate::sidebar::capacity_line(ui, total.saturating_sub(free), total)
+                                    }
+                                    None => ui.add_space(space::S3),
                                 }
-                                ui.add_space(space::S3);
                                 // Header for the stick's rekordbox tree (drawn
                                 // in the scrolling middle panel). On a
                                 // rekordbox export the "+" creates a playlist

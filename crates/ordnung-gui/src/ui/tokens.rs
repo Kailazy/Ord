@@ -40,6 +40,9 @@ pub mod stroke {
     /// The edge of a control at rest: a touch over a hairline, so at Retina it
     /// comes out as a clean solid line rather than a feathered one.
     pub const OUTLINE: f32 = 1.5;
+    /// A filled line that shows a level (how full a stick is): thick enough
+    /// to read as a bar, not an edge.
+    pub const GAUGE: f32 = 3.0;
 }
 
 /// Spacing: 4 and its multiples, 2 only for a nudge inside a control.

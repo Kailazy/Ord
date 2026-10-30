@@ -111,7 +111,7 @@ impl App {
 }
 
 use crate::ui::phosphor_icons::{app as icons, named};
-use crate::ui::tokens::{color, font, radius, space};
+use crate::ui::tokens::{color, font, radius, space, stroke};
 
 /// Height of a top-level source tile ("Library", "Vinyl"). One number for
 /// both, because they are peers: two sizes for two siblings was the loudest
@@ -1115,28 +1115,43 @@ fn list_header_at(ui: &mut egui::Ui, caption: &str, tip: &str, open: Option<bool
 /// of `total`, with an info mark at its end whose note gives the numbers.
 /// Quiet on purpose, it sits right under the stick's tile.
 pub(crate) fn capacity_line(ui: &mut egui::Ui, used: u64, total: u64) {
-    // A row of its own height: a bare right-to-left layout centres its
-    // content in all the space below it.
-    ui.horizontal(|ui| {
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            crate::ui::info_note(
-                ui,
-                format!(
-                    "{} / {} used",
-                    crate::util::fmt_bytes(used),
-                    crate::util::fmt_bytes(total)
-                ),
-            );
-            let (rect, _) = ui.allocate_exact_size(
-                egui::vec2(ui.available_width(), space::S1),
-                egui::Sense::hover(),
-            );
-            ui.painter().rect_filled(rect, radius::XS, color::separator_opaque());
-            let mut fill = rect;
-            fill.set_width(rect.width() * (used as f32 / total as f32).clamp(0.0, 1.0));
-            ui.painter().rect_filled(fill, radius::XS, color::LABEL_3);
-        });
-    });
+    // The line sits at the top of its row, parted from the tile by the
+    // item spacing alone; the mark is centred on the line and rises into
+    // that gap, still clear of the tile. The row ends at the glyph's
+    // visual bottom, not the icon font's tall line box, so the header
+    // below stays close: hence painted by hand rather than a label.
+    let size = font::footnote().size;
+    let (row, _) = ui.allocate_exact_size(
+        egui::vec2(ui.available_width(), (stroke::GAUGE + size) / 2.0),
+        egui::Sense::hover(),
+    );
+    let mid = row.top() + stroke::GAUGE / 2.0;
+    let mark = egui::Rect::from_center_size(
+        egui::pos2(row.right() - size / 2.0, mid),
+        egui::Vec2::splat(size),
+    );
+    let line = egui::Rect::from_min_max(
+        row.left_top(),
+        egui::pos2(mark.left() - space::S2, row.top() + stroke::GAUGE),
+    );
+    let p = ui.painter();
+    p.rect_filled(line, radius::XS, color::separator_opaque());
+    let mut fill = line;
+    fill.set_width(line.width() * (used as f32 / total as f32).clamp(0.0, 1.0));
+    p.rect_filled(fill, radius::XS, color::LABEL_3);
+    p.text(
+        mark.center(),
+        egui::Align2::CENTER_CENTER,
+        named(icons::INFO),
+        font::icon(size),
+        crate::ui::icon::REST,
+    );
+    ui.interact(mark, ui.id().with("capacity"), egui::Sense::hover())
+        .on_hover_note(format!(
+            "{} / {} used",
+            crate::util::fmt_bytes(used),
+            crate::util::fmt_bytes(total)
+        ));
 }
 
 /// A caption on its own, for a list that has no "+" (a plain volume's
