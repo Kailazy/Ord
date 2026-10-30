@@ -401,8 +401,9 @@ fn pcob(list_type: u32, cues: &[Cue]) -> Vec<u8> {
     for c in list {
         let mut e = Vec::with_capacity(0x38 - 12);
         e.extend_from_slice(&c.hot_slot.map_or(0, |s| s as u32 + 1).to_be_bytes());
-        // status: 0 for a point (as rekordbox 7 writes), 4 for a loop (DS).
-        e.extend_from_slice(&(if c.is_loop() { 4u32 } else { 0 }).to_be_bytes());
+        // status: 0, as rekordbox 7 writes for every cue it saves; 4 marks an
+        // active loop, one the player engages by itself, which no Ord cue is.
+        e.extend_from_slice(&0u32.to_be_bytes());
         e.extend_from_slice(&0x0001_0000u32.to_be_bytes());
         e.extend_from_slice(&0xFFFFu16.to_be_bytes()); // order_first
         e.extend_from_slice(&0xFFFFu16.to_be_bytes()); // order_last
