@@ -320,26 +320,36 @@ pub(crate) fn draw_playlist_nodes(
     for p in all.iter().filter(|p| p.parent == parent) {
         // While this entry is being (re)named, show the inline editor in place
         // of its normal row — this is what makes a just-created playlist editable.
-        if draw_inline_rename(ui, p, renaming, action) {
+        // A folder's children stay listed under the editor, indented as the
+        // open header would show them.
+        let renaming_this = draw_inline_rename(ui, p, renaming, action);
+        if renaming_this && !p.is_folder {
             continue;
         }
         if p.is_folder {
-            if density.icons_only() {
+            if density.icons_only() || renaming_this {
                 // A collapsing header is a disclosure triangle plus a name, and
                 // the rail has room for neither. Folders flatten to their
                 // playlists here: the rail lists the things you actually
                 // navigate to, and the hierarchy comes back at the wider tiers.
-                draw_playlist_nodes(
-                    ui,
-                    density,
-                    all,
-                    Some(p.id),
-                    volumes,
-                    view,
-                    renaming,
-                    action,
-                    drop_rects,
-                );
+                let mut children = |ui: &mut egui::Ui| {
+                    draw_playlist_nodes(
+                        ui,
+                        density,
+                        all,
+                        Some(p.id),
+                        volumes,
+                        view,
+                        renaming,
+                        action,
+                        drop_rects,
+                    )
+                };
+                if renaming_this {
+                    ui.indent(("pl-folder", p.id), children);
+                } else {
+                    children(ui);
+                }
                 continue;
             }
             // A folder the user gave an icon or a colour leads with that mark
@@ -569,12 +579,14 @@ fn inline_rename_editor(
 ) -> Option<Option<String>> {
     // Inset the editor a few px on each side so its rounded focus ring sits inside
     // the panel's clip boundary — at full width the blue outline lands on the edge
-    // and gets clipped, leaving the "cut off" look. The inner margin gives the text
-    // tile-like padding and lifts the box to roughly the height of a nav row.
+    // and gets clipped, leaving the "cut off" look. The inner margin makes the box
+    // exactly a nav row tall, and the row's gap follows it, so the rows below
+    // stay where they were while the name is edited.
     // `desired_width` is the *inner* text width: egui adds the margin on top, so
     // subtract it here or the box overruns the panel on the right.
     let inset = 3.0;
-    let margin = egui::Margin::symmetric(10.0, 7.0);
+    let text_h = ui.text_style_height(&egui::TextStyle::Body).round();
+    let margin = egui::Margin::symmetric(10.0, ((PLAYLIST_ROW_H - text_h) / 2.0).max(0.0));
     let avail = ui.available_width();
     let resp = ui
         .horizontal(|ui| {
@@ -587,6 +599,7 @@ fn inline_rename_editor(
             )
         })
         .inner;
+    ui.add_space(PLAYLIST_ROW_GAP);
     // Grab focus only on the first frame the box appears. Re-requesting it every
     // frame would pin focus to the box and make clicking away impossible. The
     // box is also scrolled into view then, focus ring and all: a row made at
@@ -886,23 +899,32 @@ pub(crate) fn draw_usb_playlist_nodes(
     action: &mut Option<SidebarAction>,
 ) {
     for p in all.iter().filter(|p| p.parent_id == parent) {
-        if draw_usb_inline_rename(ui, p, renaming, action) {
+        // As in the catalog tree: a folder being renamed keeps its children.
+        let renaming_this = draw_usb_inline_rename(ui, p, renaming, action);
+        if renaming_this && !p.is_folder {
             continue;
         }
         if p.is_folder {
-            if density.icons_only() {
+            if density.icons_only() || renaming_this {
                 // Flattened in the rail, as with catalog folders above.
-                draw_usb_playlist_nodes(
-                    ui,
-                    density,
-                    all,
-                    tracks_by_playlist,
-                    p.id,
-                    vol,
-                    view,
-                    renaming,
-                    action,
-                );
+                let mut children = |ui: &mut egui::Ui| {
+                    draw_usb_playlist_nodes(
+                        ui,
+                        density,
+                        all,
+                        tracks_by_playlist,
+                        p.id,
+                        vol,
+                        view,
+                        renaming,
+                        action,
+                    )
+                };
+                if renaming_this {
+                    ui.indent(("usb-pl-folder", vol, p.id), children);
+                } else {
+                    children(ui);
+                }
                 continue;
             }
             // Same header style as the catalog's folders; only the open
