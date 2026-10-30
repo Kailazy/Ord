@@ -1698,8 +1698,18 @@ impl App {
                 let col_h: Option<f32> = ui.data(|d| d.get_temp(col_h_id));
                 const C_MIN: f32 = 160.0;
                 const C_GAP: f32 = 14.0;
+                // The corner the column's first line keeps clear of: the
+                // close cross, and the note mark beside it when there is one.
+                let corner =
+                    crate::ui::window::CLOSE_W * if sheet_note.is_some() { 2.0 } else { 1.0 };
                 ui.horizontal(|ui| {
-                    let c = col_h.map_or(C_MIN, |h| h.max(C_MIN)).round();
+                    // Capped so cover + gap + the column's wrap width never
+                    // pass the sheet's width (a line loading later used to
+                    // push the window wider); past the cap a tall column
+                    // leaves a strip under the cover instead.
+                    let c = col_h
+                        .map_or(C_MIN, |h| h.clamp(C_MIN, C_MIN + corner))
+                        .round();
                     let (rect, _) = ui.allocate_exact_size(egui::vec2(c, c), egui::Sense::hover());
                     crate::ui::cover::paint_at(ui, rect, cover.as_ref(), 6.0, None);
                     ui.add_space(C_GAP);
@@ -1714,8 +1724,6 @@ impl App {
                         // beside the smallest cover, clear of the window's
                         // close button in the corner on the artist's line,
                         // and of the note mark beside it when there is one.
-                        let corner =
-                            crate::ui::window::CLOSE_W * if sheet_note.is_some() { 2.0 } else { 1.0 };
                         ui.set_max_width(SHEET_W - C_MIN - C_GAP - corner);
                         let artist_font = crate::ui::tokens::font::strong(
                             crate::ui::tokens::font::headline().size,
@@ -1786,7 +1794,17 @@ impl App {
                                     act = Some(Act::LabelPage);
                                 }
                                 if let Some(rest) = rest {
-                                    ui.label(egui::RichText::new(format!(" · {rest}")).color(ink));
+                                    // Cut to the line: a long catalogue
+                                    // number must not widen the sheet.
+                                    let galley = crate::ui::text::truncated(
+                                        ui,
+                                        format!(" · {rest}"),
+                                        crate::ui::tokens::font::body(),
+                                        ink,
+                                        ui.available_width(),
+                                        true,
+                                    );
+                                    ui.label(galley);
                                 }
                             });
                         }
@@ -1798,7 +1816,29 @@ impl App {
                         ui.horizontal(|ui| {
                             ui.spacing_mut().item_spacing.x = 8.0;
                             if !sub.is_empty() {
-                                ui.label(egui::RichText::new(&sub).weak());
+                                // Discogs format lines run long; cut this one
+                                // short of the Versions word rather than let
+                                // it widen the sheet.
+                                let versions_w = ui
+                                    .painter()
+                                    .layout_no_wrap(
+                                        "Versions".into(),
+                                        crate::ui::tokens::font::footnote(),
+                                        egui::Color32::PLACEHOLDER,
+                                    )
+                                    .size()
+                                    .x
+                                    + 12.0
+                                    + ui.spacing().item_spacing.x;
+                                let galley = crate::ui::text::truncated(
+                                    ui,
+                                    sub.clone(),
+                                    egui::TextStyle::Body.resolve(ui.style()),
+                                    ui.visuals().weak_text_color(),
+                                    ui.available_width() - versions_w,
+                                    true,
+                                );
+                                ui.label(galley);
                             }
                             if crate::ui::button::inline(ui, "Versions")
                                 .on_hover_note("Other versions of this record, to swap one in")
@@ -1824,6 +1864,13 @@ impl App {
                         // exactly as fresh as the last sweep.
                         ui.horizontal_wrapped(|ui| {
                             ui.spacing_mut().item_spacing.x = 6.0;
+                            // A button's height from the first frame, so the
+                            // row (and the sheet) stays put when a dropdown
+                            // lands on it later.
+                            ui.set_min_height(
+                                ui.text_style_height(&egui::TextStyle::Button)
+                                    + 2.0 * ui.spacing().button_padding.y,
+                            );
                             let price_ink = egui::Color32::from_rgb(120, 200, 140);
                             ui.label(egui::RichText::new("Discogs").weak());
                             if crate::ui::button::name_link(
@@ -1867,12 +1914,58 @@ impl App {
                                 });
                             }
                             if let Some((line, rows, page)) = &bandcamp {
-                                ui.separator();
-                                // Name and price wrap as one, so a narrow
-                                // sheet never strands the name on the line
-                                // above.
-                                ui.horizontal(|ui| {
-                                ui.label(egui::RichText::new("Bandcamp").weak());
+                                // Lands after the record, so it keeps to the
+                                // room left on the line: the shop's name goes
+                                // first when tight, then the price is cut (the
+                                // dropdown has every format in full). A nested
+                                // row here once widened the sheet by 180 pt.
+                                let font = egui::TextStyle::Body.resolve(ui.style());
+                                let ctx = ui.ctx().clone();
+                                let text_w = move |s: &str| {
+                                    ctx.fonts(|f| {
+                                        f.layout_no_wrap(s.to_owned(), font.clone(), price_ink)
+                                            .size()
+                                            .x
+                                    })
+                                };
+                                let gap = ui.spacing().item_spacing.x;
+                                let menu_w = if rows.len() > 1 {
+                                    text_w(" ▾") + 2.0 * ui.spacing().button_padding.x
+                                } else {
+                                    0.0
+                                };
+                                let avail = ui.available_size_before_wrap().x;
+                                let sep_w = 6.0 + gap;
+                                let word_w = text_w("Bandcamp") + gap;
+                                let mut room = avail - sep_w - word_w - menu_w - 6.0;
+                                if room >= 80.0 {
+                                    ui.separator();
+                                    ui.label(egui::RichText::new("Bandcamp").weak());
+                                } else if avail - sep_w - menu_w - 6.0 >= 40.0 {
+                                    ui.separator();
+                                    room = avail - sep_w - menu_w - 6.0;
+                                } else {
+                                    // ponytail: no room at all on the line
+                                    // (long Discogs price plus a sellers
+                                    // menu): take the next one, the one
+                                    // case the sheet still grows a line.
+                                    ui.end_row();
+                                    ui.label(egui::RichText::new("Bandcamp").weak());
+                                    room = ui.available_size_before_wrap().x - word_w - menu_w - 6.0;
+                                }
+                                let shown = crate::ui::text::truncated(
+                                    ui,
+                                    line.clone(),
+                                    egui::TextStyle::Body.resolve(ui.style()),
+                                    price_ink,
+                                    room,
+                                    true,
+                                )
+                                .rows
+                                .first()
+                                .map(|r| r.text())
+                                .unwrap_or_default();
+                                let line = &shown;
                                 // The line is the dropdown only when there
                                 // is something to choose: several formats
                                 // open the list, one format is the link
@@ -1907,7 +2000,6 @@ impl App {
                                         open_url(url);
                                     }
                                 }
-                                });
                             }
                         });
                         // The copy the user was actually looking at, when the
@@ -2737,15 +2829,12 @@ impl App {
                     }
 
                     ui.add_space(6.0);
-                    ui.label(
-                        egui::RichText::new(if t.ready && t.duration > 0.0 {
-                            fmt_time(t.duration)
-                        } else {
-                            "--:--".to_string()
-                        })
-                        .font(font::mono_small())
-                        .color(egui::Color32::from_gray(170)),
-                    );
+                    let total = if t.ready && t.duration > 0.0 {
+                        fmt_time(t.duration)
+                    } else {
+                        "--:--".to_string()
+                    };
+                    crate::player::time_readout(ui, &total);
                     ui.add_space(4.0);
                     if crate::ui::icon::close_button(ui, "Stop the record") {
                         close = true;
@@ -3113,13 +3202,6 @@ fn sheet_row_ui(
     // position or a title, and two rows sharing an id share hover state — one
     // cursor would light up both.
     let id = ui.id().with(("sheet-row", index));
-    // Whether the guess chip was under the pointer last frame: decided
-    // before the row lays out, since the chip's own target is registered
-    // only after the row's hit (see below).
-    let guess_hovered = ui
-        .ctx()
-        .read_response(id.with("guess"))
-        .is_some_and(|r| r.hovered());
     // The names in the row's credit, likewise: laid out now, drawn as links
     // after the row's hit target.
     let mut links: Vec<RowLink> = Vec::new();
@@ -3182,7 +3264,9 @@ fn sheet_row_ui(
                 } else {
                     egui::Color32::from_gray(120)
                 });
-                ui.label(if playing { title.strong() } else { title });
+                // The mark column says which row plays; bold here widened
+                // the title and moved the credit after it.
+                ui.label(title);
                 // Who played it, on the records where the header can't say —
                 // a compilation credits "Various", so the per-track artist is
                 // the only place the performer's name appears. Dimmer than the
@@ -3299,10 +3383,9 @@ fn sheet_row_ui(
                             // the left end of a right-to-left run, so the
                             // wider text grows into the empty middle and
                             // nothing beside it shifts.
-                            let text = match row.guess {
-                                Some(c) if guess_hovered => format!("▶ video {c}%"),
-                                _ => "▶ video".to_string(),
-                            };
+                            // One text in every state; the hover note
+                            // carries the match percentage.
+                            let text = "▶ video";
                             let chip = ui.label(
                                 egui::RichText::new(text)
                                     .small()

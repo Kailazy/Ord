@@ -1,6 +1,23 @@
 //! Split out of `main.rs`; part of the GUI `App`.
 use super::*;
 
+/// A time readout (`m:ss`) in a slot as wide as every time with that many
+/// minute digits, right-aligned: the close cross after it stays put from
+/// track to track. Also the record bar's total (see `vinyl_sheet`).
+pub(crate) fn time_readout(ui: &mut egui::Ui, text: &str) {
+    let font = crate::ui::tokens::font::mono_small();
+    let ink = egui::Color32::from_gray(170);
+    let digits = text.find(':').unwrap_or(1).max(2);
+    let template = format!("{}:88", "8".repeat(digits));
+    let size = ui
+        .painter()
+        .layout_no_wrap(template, font.clone(), ink)
+        .size();
+    let (rect, _) = ui.allocate_exact_size(size, egui::Sense::hover());
+    ui.painter()
+        .text(rect.right_center(), egui::Align2::RIGHT_CENTER, text, font, ink);
+}
+
 impl App {
     /// Start playing `id` in the now-playing bar, or toggle pause if it's already
     /// the loaded track. Captures the title/artist so the bar can render even when
@@ -713,11 +730,7 @@ impl App {
 
                     // Total time.
                     ui.add_space(6.0);
-                    ui.label(
-                        egui::RichText::new(fmt_time(dur))
-                            .font(crate::ui::tokens::font::mono_small())
-                            .color(egui::Color32::from_gray(170)),
-                    );
+                    time_readout(ui, &fmt_time(dur));
 
                     // Dismiss the player.
                     ui.add_space(4.0);
