@@ -1339,29 +1339,28 @@ impl App {
                                             );
                                             // Painted, not laid out: a label that grew
                                             // by " ▲" widened the unclipped columns. The
-                                            // marks keep a slot at the cell's right edge
-                                            // whether or not they show, and the title
-                                            // truncates short of it.
+                                            // marks sit at the cell's right edge, a column
+                                            // gap short of the divider so they never touch
+                                            // the next title, and the title truncates short
+                                            // of the marks showing (an empty galley is 0
+                                            // wide and paints nothing).
                                             let cell = ui.max_rect();
                                             let font = crate::ui::tokens::font::strong(
                                                 crate::ui::tokens::font::body().size,
                                             );
                                             let ink = crate::ui::tokens::color::LABEL_2;
-                                            let marks = format!("{arrow}{filt}");
-                                            let slot_w = ui
-                                                .painter()
-                                                .layout_no_wrap(" ▲ ⌕".into(), font.clone(), ink)
-                                                .size()
-                                                .x;
-                                            // The marks stop a column gap short of the
-                                            // divider, so they never touch the next title.
                                             let inset = ui.spacing().item_spacing.x;
+                                            let marks = ui.painter().layout_no_wrap(
+                                                format!("{arrow}{filt}"),
+                                                font.clone(),
+                                                ink,
+                                            );
                                             let title = crate::ui::text::truncated(
                                                 ui,
                                                 col.label(),
-                                                font.clone(),
+                                                font,
                                                 ink,
-                                                cell.width() - slot_w - inset,
+                                                cell.width() - marks.size().x - inset,
                                                 true,
                                             );
                                             let y = cell.center().y - title.size().y / 2.0;
@@ -1370,15 +1369,11 @@ impl App {
                                                 title,
                                                 ink,
                                             );
-                                            if !marks.is_empty() {
-                                                let marks =
-                                                    ui.painter().layout_no_wrap(marks, font, ink);
-                                                ui.painter().galley(
-                                                    egui::pos2(cell.right() - inset - marks.size().x, y),
-                                                    marks,
-                                                    ink,
-                                                );
-                                            }
+                                            ui.painter().galley(
+                                                egui::pos2(cell.right() - inset - marks.size().x, y),
+                                                marks,
+                                                ink,
+                                            );
                                             if resp.hovered() {
                                                 ui.ctx().set_cursor_icon(
                                                     egui::CursorIcon::PointingHand,
