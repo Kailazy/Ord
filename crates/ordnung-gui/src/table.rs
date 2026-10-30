@@ -129,6 +129,7 @@ impl App {
             || self.batch_convert.is_some()
             || self.confirm_delete.is_some()
             || self.confirm_usb_delete.is_some()
+            || self.confirm_usb_convert.is_some()
             || self.confirm_vinyl_edit.is_some()
             || self.collect_wanted.is_some()
             || self.settings_open
@@ -969,6 +970,15 @@ impl App {
         let menu_usb_playlist = match &self.view {
             LibraryView::Usb(_, pid) => *pid,
             _ => None,
+        };
+        // Whether the viewed device is a rekordbox export: only its rows have
+        // a database row to convert in place.
+        let menu_usb_rekordbox = match &self.view {
+            LibraryView::Usb(vol, _) => self
+                .usb_volumes
+                .iter()
+                .any(|v| &v.path == vol && v.is_rekordbox_export),
+            _ => false,
         };
         // Reordering ("Move to top/bottom") rewrites the whole playlist order, so
         // only offer it on an unfiltered view where the visible rows are the full
@@ -1908,6 +1918,20 @@ impl App {
                                                 ));
                                                 ui.close_menu();
                                             }
+                                            if menu_usb_rekordbox
+                                                && ui
+                                                    .button("Convert for older players")
+                                                    .on_hover_note(
+                                                        "Re-encode to AIFF on the device if a \
+                                                         CDJ-2000-era player can't play it",
+                                                    )
+                                                    .clicked()
+                                            {
+                                                menu_action = Some(TrackMenuAction::ConvertForPlayers(
+                                                    drag_ids.clone(),
+                                                ));
+                                                ui.close_menu();
+                                            }
                                             ui.separator();
                                             if ui.button("Reveal in Finder").clicked() {
                                                 menu_action =
@@ -2659,6 +2683,11 @@ impl App {
             }
             Some(TrackMenuAction::DeleteFromDevice(ids)) => {
                 self.confirm_usb_delete = Some(ids);
+            }
+            Some(TrackMenuAction::ConvertForPlayers(ids)) => {
+                if let LibraryView::Usb(vol, _) = self.view.clone() {
+                    self.usb_convert_for_players(vol, Some(ids));
+                }
             }
             Some(TrackMenuAction::RevealInFinder(path)) => reveal_in_finder(&path),
             Some(TrackMenuAction::CopyPath(path)) => {

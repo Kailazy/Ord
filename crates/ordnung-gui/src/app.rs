@@ -346,8 +346,8 @@ impl App {
             confirm_bulk_write: false,
             confirm_delete: None,
             confirm_usb_delete: None,
+            confirm_usb_convert: None,
             write_edits_running: false,
-            #[cfg(feature = "usb-export")]
             export_running_to: None,
             auto_write_stalled_at: None,
             auto_write_job: false,
@@ -1510,6 +1510,58 @@ impl App {
         // Drop the scan cache: poll_usb re-reads the stick (instantly from
         // its pdb, then the file scan), the same path Rescan takes.
         self.usb_loaded_for = None;
+    }
+
+    /// "Convert for older players": the tracks on the stick (or just the
+    /// given device rows) that a CDJ-2000-era player can't play — FLAC, or
+    /// audio above 48 kHz — are listed for conversion to 16-bit AIFF in
+    /// place, behind a confirm; their rows, cues, grids, artwork and
+    /// playlist entries stay with them (see `jobs::run_usb_convert`).
+    pub(crate) fn usb_convert_for_players(&mut self, vol: PathBuf, ids: Option<Vec<Id>>) {
+        if self.is_busy() {
+            self.status = "Another job is running — try again when it finishes.".into();
+            return;
+        }
+        let export = match ordnung_rbdb::pdb::read_stick(&vol) {
+            Ok(e) => e,
+            Err(e) => {
+                self.fail(format!("Couldn't read the device's export: {e}"));
+                return;
+            }
+        };
+        let only: Option<Vec<String>> = ids.map(|ids| {
+            self.usb_rel_paths(&vol, &ids)
+                .into_iter()
+                .map(|p| p.to_lowercase())
+                .collect()
+        });
+        let mut rel_paths: Vec<String> = export
+            .tracks
+            .values()
+            .filter(|t| {
+                ordnung_rbdb::export::stick_transcode_for(
+                    ordnung_rbdb::export::PlayerTarget::Classic,
+                    t,
+                )
+                .is_some()
+            })
+            .map(|t| t.file_path.trim_start_matches('/').to_string())
+            .filter(|p| only.as_ref().map_or(true, |o| o.contains(&p.to_lowercase())))
+            .collect();
+        rel_paths.sort();
+        if rel_paths.is_empty() {
+            self.status = if only.is_some() {
+                "The selected tracks already play on older players.".into()
+            } else {
+                "Every track on this device already plays on older players.".into()
+            };
+            return;
+        }
+        if !ordnung_core::convert::ffmpeg_available() {
+            self.fail("Converting needs ffmpeg, which isn't installed yet.".into());
+            return;
+        }
+        self.confirm_usb_convert = Some((vol, rel_paths));
     }
 
     /// Mirror a freshly written device export into the sidebar state:
@@ -3979,6 +4031,9 @@ impl App {
                     self.usb_loaded_for = None;
                 }
             }
+            Some(SidebarAction::ConvertUsb(vol)) => {
+                self.usb_convert_for_players(vol, None);
+            }
             #[cfg(feature = "usb-export")]
             Some(SidebarAction::SetupUsb(vol)) => {
                 self.usb_setup_confirm = Some(vol);
@@ -4514,6 +4569,7 @@ impl App {
         self.draw_bulk_write_confirm(ctx);
         self.draw_delete_confirm(ctx);
         self.draw_usb_delete_confirm(ctx);
+        self.draw_usb_convert_confirm(ctx);
         self.draw_vinyl_edit_confirm(ctx);
         self.draw_collect_wanted(ctx);
         self.draw_dig_window(ctx);

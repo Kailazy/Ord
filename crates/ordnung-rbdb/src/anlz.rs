@@ -899,6 +899,20 @@ pub fn write_cues(dat_path: &std::path::Path, cues: &[Cue]) -> std::io::Result<(
     Ok(())
 }
 
+/// Point a track's analysis files at a new audio path: the `PPTH` of its
+/// `ANLZ0000.DAT`, `.EXT` and `.2EX` (whichever exist) is replaced in
+/// place, everything else byte-identical — for a file converted on the
+/// stick under a new name.
+pub fn write_path(dat_path: &std::path::Path, usb_path: &str) -> std::io::Result<()> {
+    for ext in ["DAT", "EXT", "2EX"] {
+        let p = dat_path.with_extension(ext);
+        if p.is_file() {
+            rewrite_file(&p, |d| splice_sections(d, &[b"PPTH"], &[ppth(usb_path)], None))?;
+        }
+    }
+    Ok(())
+}
+
 /// Replace the beatgrid of a track already on a stick: the `PQTZ` in its
 /// `ANLZ0000.DAT`, and the `.EXT`'s extended `PQT2` (reduced to the
 /// header-only form so it can't disagree with the new grid). Everything

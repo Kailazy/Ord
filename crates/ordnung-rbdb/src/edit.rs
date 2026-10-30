@@ -27,9 +27,10 @@
 //! recoverable.
 
 use std::collections::{HashMap, HashSet};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
-use ordnung_core::model::{Beat, Cue};
+use ordnung_core::convert::ConvertSpec;
+use ordnung_core::model::{AudioProperties, Beat, Cue, Format};
 
 use crate::pdb::{
     rb_dir, u32_at, RbExport, RbPlaylist, RbTrack, ReadError, TYPE_PLAYLIST_ENTRIES,
@@ -452,6 +453,9 @@ pub fn write_stick_cues(
 /// on the device.
 const ANALYSIS_COUNTER: (usize, &str) = (3, "analysisDataUpdateCount");
 const CUE_COUNTER: (usize, &str) = (4, "cueUpdateCount");
+/// String slot 2 of a track row, `informationUpdateCount`: stepped when the
+/// track's data (here its file) changes.
+const INFO_COUNTER_SLOT: usize = 2;
 
 /// Bump one change counter of a track in both stick databases, optionally
 /// patching the pdb row's tempo in the same rewrite. The pdb row is
@@ -526,6 +530,177 @@ pub fn write_stick_beatgrid(
         .filter(|b| *b > 0.0)
         .map(|bpm| (bpm * 100.0).round().clamp(0.0, u32::MAX as f32) as u32);
     bump_track_counter(volume_root, track_id, ANALYSIS_COUNTER, centi)
+}
+
+// ---------------------------------------------------------------------------
+// Converting a track's audio in place
+// ---------------------------------------------------------------------------
+
+/// Convert one of a stick's tracks in place, for a player that can't play
+/// the file as it is: `spec` is encoded (at `rate` Hz, `None` keeping the
+/// source's) into a sibling file under the track's own name and the new
+/// extension, the row, the Device Library Plus and the ANLZ files are
+/// pointed at it ([`relink_converted_track`]), and only then is the
+/// original removed — so the stick never holds a track without a playable
+/// file, and cues, grids, waveforms, artwork and playlist entries stay with
+/// it. `track_id` is the pdb track id. Refuses when a file of the converted
+/// name is already on the stick. Returns the converted file's path.
+pub fn convert_stick_track(
+    volume_root: &Path,
+    track_id: u32,
+    spec: &ConvertSpec,
+    rate: Option<u32>,
+) -> Result<PathBuf, ReadError> {
+    let pdb_path = rb_dir(volume_root).join("export.pdb");
+    let export = crate::pdb::read_export(&pdb_path)?;
+    let track = export
+        .tracks
+        .get(&track_id)
+        .ok_or(ReadError::Format("no such track row"))?;
+    let src = volume_root.join(track.file_path.trim_start_matches('/'));
+    let convert_err = |msg: String| ReadError::Convert {
+        path: src.clone(),
+        msg,
+    };
+    let stem = src
+        .file_stem()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let ext = ordnung_core::convert::target_extension(spec.target);
+    let dest = src.with_file_name(format!("{stem}.{ext}"));
+    if dest == src || dest.exists() {
+        return Err(convert_err(
+            "a file of the converted name is already on the device".into(),
+        ));
+    }
+    // The source's own tags and cover ride along: ffmpeg carries only some
+    // of them into an AIFF, and while the player reads the row, the file
+    // should stay a complete file.
+    let tags = ordnung_core::scan::scan_file(&src).map(|s| s.tags).unwrap_or_default();
+    let cover = ordnung_core::tag::read_front_cover_raw(&src).ok().flatten();
+    // Encode to a sibling temp name (real extension last so ffmpeg picks
+    // the muxer), then move into place: an interrupted conversion never
+    // leaves a half file under the track's name.
+    let tmp = src.with_file_name(format!("{stem}.ordnung-tmp.{ext}"));
+    let _ = std::fs::remove_file(&tmp);
+    let placed = ordnung_core::convert::convert_file_resampled(&src, spec, &tmp, false, rate)
+        .map_err(|e| convert_err(e.to_string()))
+        .and_then(|_| {
+            // Best effort: a file whose tags can't be written still plays.
+            let _ = ordnung_core::tag::embed_full(&tmp, &tags, cover.as_ref());
+            crate::export::sync_existing(&tmp).map_err(ReadError::io(&tmp))
+        })
+        .and_then(|_| std::fs::rename(&tmp, &dest).map_err(ReadError::io(&dest)));
+    if let Err(e) = placed {
+        let _ = std::fs::remove_file(&tmp);
+        return Err(e);
+    }
+    let relinked = (|| {
+        let props = ordnung_core::scan::scan_file(&dest)
+            .map_err(|e| convert_err(e.to_string()))?
+            .properties;
+        let size = std::fs::metadata(&dest).map(|m| m.len()).unwrap_or(0);
+        let new_rel = dest
+            .strip_prefix(volume_root)
+            .map_err(|_| ReadError::Format("converted file left the volume"))?
+            .to_string_lossy()
+            .into_owned();
+        relink_converted_track(volume_root, track_id, &new_rel, spec.target, &props, size)
+    })();
+    if let Err(e) = relinked {
+        let _ = std::fs::remove_file(&dest);
+        return Err(e);
+    }
+    // Only now is the original expendable.
+    let _ = std::fs::remove_file(&src);
+    Ok(dest)
+}
+
+/// Point a stick's track at the file it was converted into, in place: the
+/// `export.pdb` row takes the new path, name, type, size, rate, depth and
+/// bitrate (and its information counter steps, as rekordbox's does when a
+/// track's data changes), the Device Library Plus row follows, and the
+/// track's ANLZ files are re-pathed — so cues, grids, waveforms, artwork
+/// and every playlist entry stay with the track. `track_id` is the pdb
+/// track id; `new_rel` the converted file's path relative to the volume
+/// root. The caller owns the audio: it converts first and removes the old
+/// file only after this returns. The pristine databases and analysis files
+/// are kept as `*.orig` siblings from the first edit on.
+pub fn relink_converted_track(
+    volume_root: &Path,
+    track_id: u32,
+    new_rel: &str,
+    format: Format,
+    props: &AudioProperties,
+    file_size: u64,
+) -> Result<(), ReadError> {
+    let new_path = format!("/{}", new_rel.trim_start_matches('/'));
+    let new_name = new_path.rsplit('/').next().unwrap_or_default().to_string();
+    let depth = u16::from(props.bit_depth.unwrap_or(16));
+    // The bitrate a player shows: the stream's own for lossy files, the
+    // PCM rate for the rest, as the export writes it.
+    let bitrate = props
+        .bitrate_kbps
+        .unwrap_or(props.sample_rate_hz * u32::from(depth) * 2 / 1000);
+    let dir = rb_dir(volume_root);
+    let pdb_path = dir.join("export.pdb");
+    backup_once(&pdb_path);
+    let mut anlz = String::new();
+    let old_path = rewrite_track_row(&pdb_path, track_id, |row| {
+        anlz = row.strings[14].clone();
+        row.header[0x08..0x0C].copy_from_slice(&props.sample_rate_hz.to_le_bytes());
+        let size = file_size.min(u32::MAX as u64) as u32;
+        row.header[0x10..0x14].copy_from_slice(&size.to_le_bytes());
+        row.header[0x30..0x34].copy_from_slice(&bitrate.to_le_bytes());
+        row.header[0x52..0x54].copy_from_slice(&depth.to_le_bytes());
+        row.header[0x5A..0x5C].copy_from_slice(&crate::export::file_type(format).to_le_bytes());
+        let n: u32 = row.strings[INFO_COUNTER_SLOT].trim().parse().unwrap_or(0);
+        row.strings[INFO_COUNTER_SLOT] = (n + 1).to_string();
+        row.strings[19] = new_name.clone();
+        row.strings[20] = new_path.clone();
+    })?;
+    let dlp_path = dir.join("exportLibrary.db");
+    if dlp_path.is_file() {
+        backup_once(&dlp_path);
+        with_local_dlp(&dlp_path, |conn| {
+            let key = old_path.trim_start_matches('/').to_lowercase();
+            let mut stmt = conn.prepare("SELECT content_id, path FROM content")?;
+            let ids: Vec<i64> = stmt
+                .query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?)))?
+                .flatten()
+                .filter(|(_, p)| p.trim_start_matches('/').to_lowercase() == key)
+                .map(|(id, _)| id)
+                .collect();
+            for id in ids {
+                conn.execute(
+                    "UPDATE content SET path = ?1, fileName = ?2, fileSize = ?3, fileType = ?4, \
+                     bitrate = ?5, bitDepth = ?6, samplingRate = ?7, \
+                     informationUpdateCount = COALESCE(informationUpdateCount, 0) + 1 \
+                     WHERE content_id = ?8",
+                    rusqlite::params![
+                        new_path,
+                        new_name,
+                        file_size as i64,
+                        i64::from(crate::export::file_type(format)),
+                        i64::from(bitrate),
+                        i64::from(depth),
+                        i64::from(props.sample_rate_hz),
+                        id,
+                    ],
+                )?;
+            }
+            Ok(())
+        })?;
+    }
+    // The analysis files name the audio they describe.
+    if !anlz.is_empty() {
+        let dat = volume_root.join(anlz.trim_start_matches('/'));
+        if dat.is_file() {
+            backup_anlz(&dat);
+            crate::anlz::write_path(&dat, &new_path).map_err(ReadError::io(&dat))?;
+        }
+    }
+    Ok(())
 }
 
 /// The beatgrid a track had before Ordnung first edited it on this stick —
@@ -633,7 +808,8 @@ fn page_slots(data: &[u8], page_off: usize) -> Vec<(bool, usize)> {
 /// batch words) and its presence bitmasks — including deleted slots — and
 /// only lays its heap and offset words out afresh. Refuses a page the grown
 /// row no longer fits, leaving the file as it was. Returns the row's file
-/// path (the key the DLP shares). Atomic (temp file + rename).
+/// path as it was before the edit (the key the DLP shares). Atomic (temp
+/// file + rename).
 fn rewrite_track_row(
     pdb_path: &Path,
     track_id: u32,
@@ -679,10 +855,10 @@ fn rewrite_track_row(
         let (mut r, end) =
             decode_track_row(&data, row).ok_or(ReadError::Format("malformed track row"))?;
         if row == target {
+            file_path = r.strings[20].clone();
             if let Some(edit) = edit.take() {
                 edit(&mut r);
             }
-            file_path = r.strings[20].clone();
             heap.extend_from_slice(&encode_track_row(&r));
         } else {
             heap.extend_from_slice(&pdbw::pad4(data[row..row + end].to_vec()));
@@ -1087,20 +1263,25 @@ mod tests {
         assert_eq!(std::fs::read(dat.with_extension("DAT.orig")).unwrap(), pristine);
     }
 
-    /// The 21 string slots of the row with `id`, as stored.
-    fn row_strings(pdb: &Path, id: u32) -> [String; 21] {
-        use crate::pdb::{page_rows, table_dir, table_pages, u32_at, TYPE_TRACKS};
+    /// The row with `id` as stored: header words and its 21 string slots.
+    fn track_row(pdb: &Path, id: u32) -> TrackRowEdit {
+        use crate::pdb::{page_rows, table_dir, table_pages};
         let data = std::fs::read(pdb).unwrap();
         if let Some((_, first, last)) = table_dir(&data).unwrap().find(TYPE_TRACKS) {
             for page_off in table_pages(&data, pdbw::PAGE, first, last) {
                 for row in page_rows(&data, pdbw::PAGE, page_off, TYPE_TRACKS) {
                     if u32_at(&data, row + 0x48) == Some(id) {
-                        return decode_track_row(&data, row).unwrap().0.strings;
+                        return decode_track_row(&data, row).unwrap().0;
                     }
                 }
             }
         }
         panic!("row {id} not found");
+    }
+
+    /// The 21 string slots of the row with `id`, as stored.
+    fn row_strings(pdb: &Path, id: u32) -> [String; 21] {
+        track_row(pdb, id).strings
     }
 
     #[test]
@@ -1358,6 +1539,120 @@ mod tests {
         assert!(pdb.with_extension("pdb.orig").is_file());
         assert!(db.with_extension("db.orig").is_file());
         assert_eq!(delete_stick_tracks(&root, &["Contents/nope.mp3".into()]).unwrap(), 0);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn relink_repoints_row_dlp_and_anlz_and_keeps_the_rest() {
+        let root = temp_root("relink");
+        let pdb = root.join("PIONEER/rekordbox/export.pdb");
+        std::fs::copy(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/demo_tracks_export.pdb"),
+            &pdb,
+        )
+        .unwrap();
+        let before = read_export(&pdb).unwrap();
+        let id = 2;
+        let t = before.tracks[&id].clone();
+        let was: u32 = row_strings(&pdb, id)[INFO_COUNTER_SLOT].trim().parse().unwrap_or(0);
+        // The track's analysis pair, naming the old audio and holding a cue.
+        let cue = Cue {
+            hot_slot: Some(2),
+            position_ms: 3_000,
+            loop_end_ms: None,
+            label: Some("drop".into()),
+            color: None,
+        };
+        let inp = AnlzInput {
+            usb_path: &t.file_path,
+            beats: &[],
+            duration_ms: 4_100,
+            preview: &[],
+            bands: &[],
+            scroll: &[],
+            cues: std::slice::from_ref(&cue),
+        };
+        let dat = root.join(t.analyze_path.as_deref().unwrap().trim_start_matches('/'));
+        std::fs::create_dir_all(dat.parent().unwrap()).unwrap();
+        std::fs::write(&dat, crate::anlz::build_dat(&inp)).unwrap();
+        std::fs::write(dat.with_extension("EXT"), crate::anlz::build_ext(&inp)).unwrap();
+        let cues_before = crate::anlz::read_cues(&dat);
+        assert_eq!(cues_before.len(), 1);
+        let db = root.join("PIONEER/rekordbox/exportLibrary.db");
+        {
+            let conn = crate::dlp::open(&db, rusqlite::OpenFlags::default()).unwrap();
+            conn.execute_batch(
+                "CREATE TABLE content(content_id INTEGER PRIMARY KEY, path varchar, fileName varchar, \
+                     fileSize INTEGER, fileType INTEGER, bitrate INTEGER, bitDepth INTEGER, \
+                     samplingRate INTEGER, informationUpdateCount INTEGER);",
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO content VALUES (902, ?1, 'Demo Track 2.mp3', 1, 1, 320, 16, 44100, NULL)",
+                [&t.file_path],
+            )
+            .unwrap();
+        }
+        let props = AudioProperties {
+            sample_rate_hz: 48_000,
+            bit_depth: Some(16),
+            channels: 2,
+            duration_ms: 4_100,
+            bitrate_kbps: None,
+        };
+        let new_path = "/Contents/Loopmasters/UnknownAlbum/Demo Track 2.aiff";
+        relink_converted_track(&root, id, &new_path[1..], Format::Aiff, &props, 12_345).unwrap();
+
+        let after = read_export(&pdb).unwrap();
+        let n = &after.tracks[&id];
+        assert_eq!(n.file_path, new_path);
+        assert_eq!(n.sample_rate_hz, 48_000);
+        assert_eq!(n.bitrate_kbps, 1536);
+        assert_eq!(
+            (&n.title, n.duration_s, n.tempo_centi_bpm, &n.analyze_path, &n.key),
+            (&t.title, t.duration_s, t.tempo_centi_bpm, &t.analyze_path, &t.key)
+        );
+        assert_eq!(after.tracks[&1], before.tracks[&1], "the other row must not change");
+        let row = track_row(&pdb, id);
+        assert_eq!(row.strings[19], "Demo Track 2.aiff");
+        assert_eq!(row.strings[INFO_COUNTER_SLOT], (was + 1).to_string());
+        assert_eq!(u32::from_le_bytes(row.header[0x10..0x14].try_into().unwrap()), 12_345);
+        assert_eq!(u16::from_le_bytes(row.header[0x52..0x54].try_into().unwrap()), 16);
+        assert_eq!(u16::from_le_bytes(row.header[0x5A..0x5C].try_into().unwrap()), 12);
+
+        let conn = crate::dlp::open_read_only(&db).unwrap();
+        let got: (String, String, i64, i64, i64, i64, i64, i64) = conn
+            .query_row(
+                "SELECT path, fileName, fileSize, fileType, bitrate, bitDepth, samplingRate, \
+                 informationUpdateCount FROM content WHERE content_id = 902",
+                [],
+                |r| {
+                    Ok((
+                        r.get(0)?,
+                        r.get(1)?,
+                        r.get(2)?,
+                        r.get(3)?,
+                        r.get(4)?,
+                        r.get(5)?,
+                        r.get(6)?,
+                        r.get(7)?,
+                    ))
+                },
+            )
+            .unwrap();
+        assert_eq!(
+            got,
+            (new_path.into(), "Demo Track 2.aiff".into(), 12_345, 12, 1536, 16, 48_000, 1)
+        );
+        drop(conn);
+
+        assert_eq!(crate::anlz::read_track_path(&dat).as_deref(), Some(new_path));
+        assert_eq!(
+            crate::anlz::read_track_path(&dat.with_extension("EXT")).as_deref(),
+            Some(new_path)
+        );
+        assert_eq!(crate::anlz::read_cues(&dat), cues_before, "cues must survive the re-path");
+        assert!(dat.with_extension("DAT.orig").is_file());
         let _ = std::fs::remove_dir_all(&root);
     }
 }

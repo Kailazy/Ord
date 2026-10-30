@@ -164,12 +164,11 @@ impl App {
                 self.cover_full_cache.clear();
                 self.cover_inflight.clear();
             }
-            // A finished USB export changed the stick's playlists/tracks on
-            // disk. If the device view is showing that same stick, drop
-            // `usb_loaded_for` so `poll_usb` re-scans it next frame and the new
-            // playlists appear — otherwise the view keeps the pre-export tree
-            // until a manual rescan or app restart.
-            #[cfg(feature = "usb-export")]
+            // A finished USB export (or in-place conversion) changed the
+            // stick's playlists/tracks on disk. If the device view is showing
+            // that same stick, drop `usb_loaded_for` so `poll_usb` re-scans it
+            // next frame and the new rows appear — otherwise the view keeps
+            // the old tree until a manual rescan or app restart.
             if let Some(dest) = self.export_running_to.take() {
                 if self.usb_loaded_for.as_deref() == Some(dest.as_path()) {
                     self.usb_loaded_for = None;
@@ -356,6 +355,26 @@ impl App {
         }) {
             // Reuse the export-completion hook: when the job lands, the device
             // view re-scans and the new (empty) rekordbox tree appears.
+            self.export_running_to = Some(to);
+        }
+    }
+
+    /// Re-encode the given tracks on a stick for CDJ-2000-era players, after
+    /// the confirm (see [`App::usb_convert_for_players`]). The device view
+    /// re-scans when the job lands, through the export-completion hook.
+    pub(crate) fn spawn_usb_convert(&mut self, ctx: egui::Context, vol: PathBuf, rel_paths: Vec<String>) {
+        let name = vol
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_else(|| vol.display().to_string());
+        let status = format!(
+            "Converting {} track(s) on {name} for older players…",
+            rel_paths.len()
+        );
+        let to = vol.clone();
+        if self.spawn_job(ctx, status, true, move |_, cancel, tx, ctx| {
+            run_usb_convert(vol, name, rel_paths, cancel, tx, ctx)
+        }) {
             self.export_running_to = Some(to);
         }
     }
@@ -1228,6 +1247,78 @@ fn run_usb_setup(
         Err(e) => JobMsg::Failed(format!("Couldn't set up {name}: {e}")),
     };
     let _ = tx.send(msg);
+    ctx.request_repaint();
+}
+
+/// Convert each of `rel_paths` on the stick at `vol` in place for
+/// CDJ-2000-era players ([`ordnung_rbdb::edit::convert_stick_track`]),
+/// one after the other, reporting per-track failures the way the export
+/// does. Tracks that already play are skipped silently.
+fn run_usb_convert(
+    vol: PathBuf,
+    name: String,
+    rel_paths: Vec<String>,
+    cancel: Arc<AtomicBool>,
+    tx: Sender<JobMsg>,
+    ctx: egui::Context,
+) {
+    use ordnung_rbdb::export::{stick_transcode_for, PlayerTarget};
+    let export = match ordnung_rbdb::pdb::read_stick(&vol) {
+        Ok(e) => e,
+        Err(e) => {
+            let _ = tx.send(JobMsg::Failed(format!("Couldn't read the device's export: {e}")));
+            ctx.request_repaint();
+            return;
+        }
+    };
+    let key = |p: &str| p.trim_start_matches('/').to_lowercase();
+    let by_path: std::collections::HashMap<String, u32> = export
+        .tracks
+        .iter()
+        .map(|(id, t)| (key(&t.file_path), *id))
+        .collect();
+    let total = rel_paths.len();
+    let mut converted = 0;
+    let mut failures: Vec<(String, String)> = Vec::new();
+    for (done, rel) in rel_paths.iter().enumerate() {
+        if cancel.load(Ordering::Relaxed) {
+            break;
+        }
+        let Some(&id) = by_path.get(&key(rel)) else {
+            continue;
+        };
+        let t = &export.tracks[&id];
+        let Some((spec, rate)) = stick_transcode_for(PlayerTarget::Classic, t) else {
+            continue;
+        };
+        let label = if t.title.is_empty() {
+            rel.rsplit('/').next().unwrap_or(rel).to_string()
+        } else {
+            t.title.clone()
+        };
+        let _ = tx.send(JobMsg::Status(format!("Converting {label}…")));
+        let _ = tx.send(JobMsg::Progress { done, total });
+        ctx.request_repaint();
+        match ordnung_rbdb::edit::convert_stick_track(&vol, id, &spec, rate) {
+            Ok(_) => converted += 1,
+            Err(e) => failures.push((label, e.to_string())),
+        }
+    }
+    if !failures.is_empty() {
+        let _ = tx.send(JobMsg::Failures {
+            title: "Convert for older players".into(),
+            items: failures,
+        });
+    }
+    let msg = if cancel.load(Ordering::Relaxed) {
+        format!(
+            "Conversion stopped: {converted} of {total} track(s) on {name} converted. \
+             Eject before unplugging."
+        )
+    } else {
+        format!("Converted {converted} track(s) on {name} for older players. Eject before unplugging.")
+    };
+    let _ = tx.send(JobMsg::Done(msg));
     ctx.request_repaint();
 }
 

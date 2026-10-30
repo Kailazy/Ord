@@ -228,7 +228,7 @@ struct ExportTrack {
 }
 
 /// rekordbox file-type enum (master.db `FileType`).
-fn file_type(f: Format) -> u16 {
+pub(crate) fn file_type(f: Format) -> u16 {
     match f {
         Format::Mp3 => 1,
         Format::Aac => 4,
@@ -381,12 +381,17 @@ pub struct ExportOptions {
     pub player: PlayerTarget,
 }
 
-/// How a track has to be converted for `player`, if at all: the AIFF spec
-/// and the output sample rate (`None` keeps the source's).
-fn transcode_for(player: PlayerTarget, t: &Track) -> Option<(ConvertSpec, Option<u32>)> {
-    let rate = t.properties.as_ref().map(|p| p.sample_rate_hz).unwrap_or(0);
+/// How audio of `format` at `rate` Hz has to be converted for `player`, if
+/// at all: the AIFF spec and the output sample rate (`None` keeps the
+/// source's). The one rule behind the export's conversion of library
+/// tracks and the in-place conversion of a stick's own files.
+pub fn transcode_for(
+    player: PlayerTarget,
+    format: Format,
+    rate: u32,
+) -> Option<(ConvertSpec, Option<u32>)> {
     let too_fast = rate > player.max_sample_rate_hz();
-    let unplayable = player == PlayerTarget::Classic && t.format == Format::Flac;
+    let unplayable = player == PlayerTarget::Classic && format == Format::Flac;
     if !too_fast && !unplayable {
         return None;
     }
@@ -398,6 +403,16 @@ fn transcode_for(player: PlayerTarget, t: &Track) -> Option<(ConvertSpec, Option
     // one keeps its rate.
     let out_rate = too_fast.then_some(player.max_sample_rate_hz());
     Some((spec, out_rate))
+}
+
+/// [`transcode_for`] on a track already on a stick, judged by the file
+/// extension its row names and the sample rate the row stores.
+pub fn stick_transcode_for(
+    player: PlayerTarget,
+    t: &crate::pdb::RbTrack,
+) -> Option<(ConvertSpec, Option<u32>)> {
+    let format = ordnung_core::scan::format_from_ext(Path::new(&t.file_path));
+    transcode_for(player, format, t.sample_rate_hz)
 }
 
 /// One track already on the stick, reconstructed from the existing export so a
@@ -725,7 +740,11 @@ fn export_impl(
         };
         // A file the player can't play goes onto the stick as an AIFF
         // conversion, under the AIFF name, so a later merge finds it there.
-        let transcode = transcode_for(opts.player, t);
+        let transcode = transcode_for(
+            opts.player,
+            t.format,
+            t.properties.as_ref().map_or(0, |p| p.sample_rate_hz),
+        );
         if transcode.is_some() {
             ext = ".aiff".to_string();
         }
@@ -1341,42 +1360,27 @@ mod tests {
 
     #[test]
     fn player_target_decides_what_converts() {
-        let mk = |format: Format, rate: u32| Track {
-            id: 1,
-            source_path: "/x".into(),
-            format,
-            properties: Some(ordnung_core::model::AudioProperties {
-                sample_rate_hz: rate,
-                bit_depth: Some(24),
-                channels: 2,
-                duration_ms: 1000,
-                bitrate_kbps: None,
-            }),
-            tags: Default::default(),
-            analysis: None,
-            cues: Vec::new(),
-        };
         // Modern players take FLAC and 96 kHz as-is; only faster gets resampled.
-        assert!(transcode_for(PlayerTarget::Modern, &mk(Format::Flac, 96_000)).is_none());
+        assert!(transcode_for(PlayerTarget::Modern, Format::Flac, 96_000).is_none());
         assert_eq!(
-            transcode_for(PlayerTarget::Modern, &mk(Format::Wav, 192_000)).map(|(s, r)| (s.target, r)),
+            transcode_for(PlayerTarget::Modern, Format::Wav, 192_000).map(|(s, r)| (s.target, r)),
             Some((Format::Aiff, Some(96_000)))
         );
         // Classic players: FLAC converts at its own rate, >48 kHz lands on 48.
         assert_eq!(
-            transcode_for(PlayerTarget::Classic, &mk(Format::Flac, 44_100)).map(|(s, r)| (s.target, r)),
+            transcode_for(PlayerTarget::Classic, Format::Flac, 44_100).map(|(s, r)| (s.target, r)),
             Some((Format::Aiff, None))
         );
         assert_eq!(
-            transcode_for(PlayerTarget::Classic, &mk(Format::Flac, 96_000)).map(|(_, r)| r),
+            transcode_for(PlayerTarget::Classic, Format::Flac, 96_000).map(|(_, r)| r),
             Some(Some(48_000))
         );
         assert_eq!(
-            transcode_for(PlayerTarget::Classic, &mk(Format::Aiff, 88_200)).map(|(_, r)| r),
+            transcode_for(PlayerTarget::Classic, Format::Aiff, 88_200).map(|(_, r)| r),
             Some(Some(48_000))
         );
-        assert!(transcode_for(PlayerTarget::Classic, &mk(Format::Mp3, 44_100)).is_none());
-        assert!(transcode_for(PlayerTarget::Classic, &mk(Format::Aiff, 48_000)).is_none());
+        assert!(transcode_for(PlayerTarget::Classic, Format::Mp3, 44_100).is_none());
+        assert!(transcode_for(PlayerTarget::Classic, Format::Aiff, 48_000).is_none());
     }
 
     #[test]

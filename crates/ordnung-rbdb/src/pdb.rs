@@ -26,6 +26,9 @@ pub enum ReadError {
     Format(&'static str),
     #[error("device library plus: {0}")]
     Dlp(String),
+    /// Converting a stick's file in place failed (see `edit::convert_stick_track`).
+    #[error("couldn't convert {path}: {msg}")]
+    Convert { path: std::path::PathBuf, msg: String },
 }
 
 impl From<rusqlite::Error> for ReadError {

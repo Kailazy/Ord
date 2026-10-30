@@ -583,6 +583,24 @@ type-4 My Tag links drop the same way, and only then do the audio, the
 ANLZ trio (plus `.orig` siblings, the directory if emptied) and — when no
 surviving row shares the artwork id — the four artwork files go.
 
+**Converting a track in place** (`edit::convert_stick_track`, 2026-10-30,
+"Convert for older players": the export's `PlayerTarget::Classic` rule —
+FLAC, or above 48 kHz, to 16-bit AIFF at ≤48 kHz) encodes to a sibling
+temp name, moves it under the track's own stem with the new extension,
+then `relink_converted_track` re-encodes the row in place: header words
+sample rate @0x08, file size @0x10, bitrate @0x30 (PCM = rate × depth × 2
+/ 1000, as the export writes), depth @0x52, file type @0x5a, strings 19
+(filename) and 20 (path), and slot 2 `informationUpdateCount` + 1; the DLP
+`content` row's `path/fileName/fileSize/fileType/bitrate/bitDepth/
+samplingRate/informationUpdateCount` follow, and the ANLZ `PPTH` of the
+`.DAT`/`.EXT`/`.2EX` is spliced to the new path (`anlz::write_path`). The
+row keeps its id, ANLZ directory (the path hash of the *old* name — the
+row's analyze_path is what players follow), artwork and playlist entries;
+only then is the original removed. A row whose page can't hold the longer
+name is refused and the converted file withdrawn. MP3 as a target was
+left out on purpose: the encoder delay (~26 ms) would put every cue and
+grid early, so a lossy target needs a cue/grid shift first.
+
 ## 10. Hardware incident log
 
 - **2026-09-21, CDJ-2000 (original):** an Ordnung export of the Stop126

@@ -1481,6 +1481,20 @@ pub(crate) fn usb_volume_menu(
             *action = Some(SidebarAction::UpdateUsb(v.path.clone()));
             ui.close_menu();
         }
+        // The stick's FLAC and hi-res files re-encoded in place for players
+        // that can't take them (see `App::usb_convert_for_players`).
+        if v.is_rekordbox_export
+            && ui
+                .button("Convert for older players…")
+                .on_hover_note(
+                    "Re-encode FLAC and audio above 48 kHz to AIFF on the device, \
+                     keeping cues, grids and playlists",
+                )
+                .clicked()
+        {
+            *action = Some(SidebarAction::ConvertUsb(v.path.clone()));
+            ui.close_menu();
+        }
     });
 }
 

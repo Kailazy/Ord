@@ -2016,6 +2016,9 @@ struct App {
     confirm_delete: Option<Vec<Id>>,
     /// Device track ids pending a "delete from device?" confirmation.
     confirm_usb_delete: Option<Vec<Id>>,
+    /// A stick and the paths (relative to its root) of the tracks pending a
+    /// "convert for older players?" confirmation.
+    confirm_usb_convert: Option<(PathBuf, Vec<String>)>,
     /// True while a bulk write-edits job is the active worker. Lets the job's
     /// completion handler drop cover textures, since that job may have embedded
     /// fetched art and the per-id texture cache would otherwise show stale covers.
@@ -2024,7 +2027,6 @@ struct App {
     /// finishes, its completion handler forces a re-scan of that stick (by
     /// clearing `usb_loaded_for`) so the freshly written playlists appear in
     /// the device view without the user having to rescan or restart the app.
-    #[cfg(feature = "usb-export")]
     export_running_to: Option<PathBuf>,
     /// Backstop for auto-write (`config.auto_write_tags`): the pending-edit count
     /// left over after an automatic write finished. Tracks whose files can't be
@@ -2449,6 +2451,9 @@ enum SidebarAction {
     EjectUsb(PathBuf),
     /// A volume's right-click menu: re-read the device's files.
     RescanUsb(PathBuf),
+    /// A rekordbox stick's right-click menu: re-encode, in place, every
+    /// file on it that CDJ-2000-era players can't play.
+    ConvertUsb(PathBuf),
     /// A volume's right-click menu on plain storage: write the rekordbox
     /// folder structure so it can receive exports (after confirmation).
     #[cfg(feature = "usb-export")]
@@ -2553,6 +2558,9 @@ enum TrackMenuAction {
     /// Delete the target device rows from the stick itself — files, rows,
     /// analysis, playlist entries. Gated behind a confirm.
     DeleteFromDevice(Vec<Id>),
+    /// Re-encode the target device rows' files in place for CDJ-2000-era
+    /// players, where needed (FLAC, above 48 kHz). Gated behind a confirm.
+    ConvertForPlayers(Vec<Id>),
     /// Open the record sheet for the track's matched Discogs release, in the
     /// app — the same sheet the inspector's "View release" opens. Only offered
     /// for a track that has a release on file.

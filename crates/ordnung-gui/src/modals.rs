@@ -2367,6 +2367,35 @@ files elsewhere on the device stay plain storage.",
         }
     }
 
+    /// "Convert N tracks on <device> for older players?" confirmation. The
+    /// originals are replaced by 16-bit AIFF in place, so it's an explicit
+    /// gate; confirming starts the conversion job.
+    pub(crate) fn draw_usb_convert_confirm(&mut self, ctx: &egui::Context) {
+        let Some((vol, rel_paths)) = self.confirm_usb_convert.clone() else {
+            return;
+        };
+        let n = rel_paths.len();
+        let name = vol
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        let answer = confirm(
+            ctx,
+            "Convert for older players?",
+            &format!("Convert {n} track{} on {name} to AIFF?", if n == 1 { "" } else { "s" }),
+            "FLAC and anything above 48 kHz is re-encoded in place for CDJ-2000-era \
+             players. Cues, grids, artwork and playlists stay with each track; the \
+             originals are replaced.",
+            Choice::primary("Convert"),
+        );
+        if answer.is_some() {
+            self.confirm_usb_convert = None;
+        }
+        if answer == Some(true) {
+            self.spawn_usb_convert(ctx.clone(), vol, rel_paths);
+        }
+    }
+
     /// "Remove this record from your Discogs collection?" confirmation. Gates the
     /// two vinyl-grid actions that destroy a collection copy on the user's actual
     /// Discogs account — an outright removal and a move to the wantlist. Both
