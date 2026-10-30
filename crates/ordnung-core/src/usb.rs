@@ -21,6 +21,28 @@ pub struct UsbVolume {
     /// metadata (PDB rows + ANLZ files) that goes stale if the audio files are
     /// modified directly — callers should surface that before editing.
     pub is_rekordbox_export: bool,
+    /// Free and total bytes on the volume, when the filesystem reports them.
+    pub space: Option<(u64, u64)>,
+}
+
+/// Free and total bytes of the filesystem holding `path`, or `None` when it
+/// can't be read (the exporter's space check then skips rather than blocks).
+#[cfg(unix)]
+pub fn volume_space(path: &Path) -> Option<(u64, u64)> {
+    use std::os::unix::ffi::OsStrExt;
+    let c = std::ffi::CString::new(path.as_os_str().as_bytes()).ok()?;
+    // SAFETY: statvfs reads into a zeroed struct we own; c is a valid C string.
+    let mut st: libc::statvfs = unsafe { std::mem::zeroed() };
+    if unsafe { libc::statvfs(c.as_ptr(), &mut st) } != 0 {
+        return None;
+    }
+    let frsize = st.f_frsize as u64;
+    Some((st.f_bavail as u64 * frsize, st.f_blocks as u64 * frsize))
+}
+
+#[cfg(not(unix))]
+pub fn volume_space(_path: &Path) -> Option<(u64, u64)> {
+    None
 }
 
 /// Does `root` hold a rekordbox/CDJ export? Players read track metadata from
@@ -62,6 +84,7 @@ pub fn detect_volumes() -> Vec<UsbVolume> {
                     .map(|n| n.to_string_lossy().into_owned())
                     .unwrap_or_else(|| "Fake USB".into()),
                 is_rekordbox_export: is_rekordbox_export(&path),
+                space: volume_space(&path),
                 path,
             });
         }
@@ -104,6 +127,7 @@ pub fn detect_volumes() -> Vec<UsbVolume> {
         out.push(UsbVolume {
             name,
             is_rekordbox_export: is_rekordbox_export(&path),
+            space: volume_space(&path),
             path,
         });
     }

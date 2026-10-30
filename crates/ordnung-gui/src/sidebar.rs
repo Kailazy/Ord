@@ -1111,6 +1111,34 @@ fn list_header_at(ui: &mut egui::Ui, caption: &str, tip: &str, open: Option<bool
     out
 }
 
+/// How full a volume is: a hairline across the tile width, filled to `used`
+/// of `total`, with an info mark at its end whose note gives the numbers.
+/// Quiet on purpose, it sits right under the stick's tile.
+pub(crate) fn capacity_line(ui: &mut egui::Ui, used: u64, total: u64) {
+    // A row of its own height: a bare right-to-left layout centres its
+    // content in all the space below it.
+    ui.horizontal(|ui| {
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            crate::ui::info_note(
+                ui,
+                format!(
+                    "{} / {} used",
+                    crate::util::fmt_bytes(used),
+                    crate::util::fmt_bytes(total)
+                ),
+            );
+            let (rect, _) = ui.allocate_exact_size(
+                egui::vec2(ui.available_width(), space::S1),
+                egui::Sense::hover(),
+            );
+            ui.painter().rect_filled(rect, radius::XS, color::separator_opaque());
+            let mut fill = rect;
+            fill.set_width(rect.width() * (used as f32 / total as f32).clamp(0.0, 1.0));
+            ui.painter().rect_filled(fill, radius::XS, color::LABEL_3);
+        });
+    });
+}
+
 /// A caption on its own, for a list that has no "+" (a plain volume's
 /// playlists).
 pub(crate) fn section_caption(ui: &mut egui::Ui, caption: &str) {

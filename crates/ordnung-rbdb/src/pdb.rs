@@ -123,6 +123,8 @@ pub struct RbTrack {
     /// e.g. `/PIONEER/USBANLZ/P016/0000B5/ANLZ0000.DAT`. Not parsed here yet;
     /// carried so a caller (or the Phase 5 round-trip) can find it.
     pub analyze_path: Option<String>,
+    /// The day the track was added, as rekordbox writes it (`YYYY-MM-DD`).
+    pub date_added: Option<String>,
 }
 
 impl RbTrack {
@@ -331,6 +333,7 @@ fn parse_export(data: &[u8]) -> Result<RbExport, ReadError> {
                                 composer: None,
                                 original_artist: None,
                                 analyze_path: string_at(14).filter(|s| !s.is_empty()),
+                                date_added: string_at(10).filter(|s| !s.is_empty()),
                             },
                         );
                     }

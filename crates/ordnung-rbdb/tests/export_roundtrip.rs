@@ -216,6 +216,11 @@ fn export_then_read_back_full_surface() {
     let stick = pdb::read_stick(&usb).unwrap();
     assert_eq!(stick.tracks.len(), 2);
     assert_eq!(stick.playlists.len(), 2);
+    // Each row carries the day it was added (the device view's Added column).
+    for t in stick.tracks.values() {
+        let d = t.date_added.as_deref().expect("date added");
+        assert!(d.len() == 10 && d.as_bytes()[4] == b'-', "{d}");
+    }
 
     // --- ANLZ files --------------------------------------------------------
     let anlz_path = alpha.analyze_path.as_deref().expect("analyze path set");

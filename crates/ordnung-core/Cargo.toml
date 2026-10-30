@@ -37,3 +37,6 @@ unicode-normalization = "0.1"
 walkdir = "2.5.0"
 flate2 = "1"
 quick-xml = "0.37"
+# statvfs: a volume's free and total bytes (usb.rs), shown in the device
+# view and checked before an export writes.
+libc = "0.2"

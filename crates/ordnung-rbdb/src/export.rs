@@ -195,21 +195,8 @@ fn estimated_bytes_needed(sources: &[(u64, String)], dest_contents: &Path) -> u6
 
 /// Free bytes on the filesystem holding `path`. `None` when it can't be
 /// determined (the precheck then skips rather than blocking a valid export).
-#[cfg(unix)]
 fn free_space(path: &Path) -> Option<u64> {
-    use std::os::unix::ffi::OsStrExt;
-    let c = std::ffi::CString::new(path.as_os_str().as_bytes()).ok()?;
-    // SAFETY: statvfs reads into a zeroed struct we own; c is a valid C string.
-    let mut st: libc::statvfs = unsafe { std::mem::zeroed() };
-    if unsafe { libc::statvfs(c.as_ptr(), &mut st) } != 0 {
-        return None;
-    }
-    Some(st.f_bavail as u64 * st.f_frsize as u64)
-}
-
-#[cfg(not(unix))]
-fn free_space(_path: &Path) -> Option<u64> {
-    None
+    ordnung_core::usb::volume_space(path).map(|(free, _)| free)
 }
 
 /// What the export is doing right now; `done`/`total` count within the stage.

@@ -2367,6 +2367,9 @@ struct UsbPdbInfo {
     /// The track's id in the stick's `export.pdb` — what a grid edit patches
     /// the row's tempo through.
     pdb_id: Option<u32>,
+    /// When the track was added, from the row's `YYYY-MM-DD`, as unix
+    /// seconds at that day's start.
+    added_at: Option<i64>,
 }
 
 /// One device file's BPM/key as analyzed by Ordnung's own engine — the

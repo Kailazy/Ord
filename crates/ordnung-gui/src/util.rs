@@ -147,6 +147,24 @@ pub(crate) fn roll(seed: &mut u64) -> u64 {
     x
 }
 
+/// Unix seconds at the start of a `YYYY-MM-DD` day (the form rekordbox
+/// stores dates in), without a date crate: Howard Hinnant's
+/// `days_from_civil`, the inverse of `tracklists::fmt_day`.
+pub(crate) fn ymd_to_unix(s: &str) -> Option<i64> {
+    let mut parts = s.splitn(3, '-').map(|p| p.parse::<i64>().ok());
+    let (y, m, d) = (parts.next()??, parts.next()??, parts.next()??);
+    if !(1..=12).contains(&m) || !(1..=31).contains(&d) {
+        return None;
+    }
+    let y = if m <= 2 { y - 1 } else { y };
+    let era = y.div_euclid(400);
+    let yoe = y - era * 400;
+    let mp = if m > 2 { m - 3 } else { m + 9 };
+    let doy = (153 * mp + 2) / 5 + d - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    Some((era * 146_097 + doe - 719_468) * 86_400)
+}
+
 /// Unix seconds now, or 0 when the clock reads before 1970.
 pub(crate) fn unix_now() -> i64 {
     std::time::SystemTime::now()
@@ -782,5 +800,20 @@ pub(crate) fn mark(stage: &str) {
     });
     if let Some(f) = log.lock().unwrap_or_else(|e| e.into_inner()).as_mut() {
         let _ = f.write_all(line.as_bytes());
+    }
+}
+
+#[cfg(test)]
+mod ymd_tests {
+    use super::*;
+
+    #[test]
+    fn ymd_to_unix_matches_fmt_day() {
+        assert_eq!(ymd_to_unix("1970-01-01"), Some(0));
+        assert_eq!(ymd_to_unix("2000-03-01"), Some(951_868_800));
+        let ts = ymd_to_unix("2026-10-30").unwrap();
+        assert_eq!(crate::tracklists::fmt_day(ts), "30 Oct 2026");
+        assert_eq!(ymd_to_unix("2026-13-01"), None);
+        assert_eq!(ymd_to_unix(""), None);
     }
 }

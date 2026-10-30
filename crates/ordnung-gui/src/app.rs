@@ -2178,6 +2178,7 @@ impl App {
             None => (0..self.usb_tracks.len()).collect(),
         };
         let filter = self.filter.trim().to_lowercase();
+        let now = crate::util::unix_now();
         indices
             .into_iter()
             .filter_map(|i| {
@@ -2197,6 +2198,7 @@ impl App {
                     }
                 }
                 let pdb = self.usb_pdb_info.get(&i);
+                let added_at = pdb.and_then(|p| p.added_at);
                 // Ordnung's own background analysis (see `spawn_usb_analysis`)
                 // fills whatever the stick's pdb and the file's tags left blank.
                 let analyzed = self.usb_analysis.get(&t.source_path);
@@ -2227,14 +2229,17 @@ impl App {
                     key,
                     // The song's tags, under the key the tag store uses
                     // (see `crates::track_song_key`): a device track is
-                    // matched to no record, so the song alone. No added
-                    // date: the stick keeps none.
+                    // matched to no record, so the song alone. The added
+                    // date is the pdb row's, when the stick carries one.
                     tags: self.tag_words(&crate::crates::track_song_key(
                         t.tags.artist.as_deref().unwrap_or(""),
                         t.tags.title.as_deref().unwrap_or(""),
                         None,
                     )),
-                    added: "—".into(),
+                    added: added_at
+                        .map(|ts| crate::table::fmt_added(ts, now))
+                        .unwrap_or_else(|| "—".into()),
+                    added_at: added_at.unwrap_or(0),
                     // The stick's own ANLZ waveform first (free, matches what
                     // the player draws); our analyzer's when the export never
                     // had one.
@@ -3820,6 +3825,13 @@ impl App {
                                 {
                                     *view = LibraryView::Usb(v.path.clone(), None);
                                 }
+                                // How full the stick is, as a hairline under
+                                // the tile; the mark at its end says the
+                                // numbers.
+                                if let Some((free, total)) = v.space.filter(|(_, t)| *t > 0) {
+                                    ui.add_space(space::S2);
+                                    crate::sidebar::capacity_line(ui, total.saturating_sub(free), total);
+                                }
                                 ui.add_space(space::S3);
                                 // Header for the stick's rekordbox tree (drawn
                                 // in the scrolling middle panel). On a
@@ -4917,6 +4929,7 @@ impl UsbPdbInfo {
             waveform_bands,
             anlz_path: t.analyze_path.as_ref().map(on_stick),
             pdb_id: Some(id),
+            added_at: t.date_added.as_deref().and_then(crate::util::ymd_to_unix),
         }
     }
 }
@@ -4953,6 +4966,7 @@ pub(crate) fn scan_usb_volume(vol: PathBuf) -> UsbScan {
                         || info.artwork_path.is_some()
                         || !info.waveform.is_empty()
                         || info.anlz_path.is_some()
+                        || info.added_at.is_some()
                     {
                         pdb_info.insert(i, info);
                     }
