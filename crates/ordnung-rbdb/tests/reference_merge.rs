@@ -41,11 +41,6 @@ fn track(id: u64, path: &Path, title: &str) -> Track {
     }
 }
 
-/// The parsed view of every row, keyed by id, with the stored bytes left out.
-fn rows(export: &pdb::RbExport) -> BTreeMap<u32, pdb::RbTrack> {
-    export.tracks.iter().map(|(id, t)| (*id, t.clone())).collect()
-}
-
 #[test]
 fn merge_onto_a_rekordbox_stick_keeps_its_rows_tags_and_cues() {
     let Some(reference) = reference() else {
@@ -69,7 +64,6 @@ fn merge_onto_a_rekordbox_stick_keeps_its_rows_tags_and_cues() {
     let dlp = rb.join("exportLibrary.db");
 
     let before = pdb::read_stick(&usb).unwrap();
-    let rows_before = rows(&before);
     let dlp_before = dlp_facts(&dlp);
     // One of the stick's own tracks, re-selected by file name from a
     // "library" copy of it, and one new track.
@@ -97,7 +91,7 @@ fn merge_onto_a_rekordbox_stick_keeps_its_rows_tags_and_cues() {
     assert!(after.playlists == before.playlists, "the stick's playlists stay");
     // Every row the stick had, except the one re-selected from the library,
     // reads back the same: rating, colour, dates, counters, paths.
-    for (id, was) in &rows_before {
+    for (id, was) in &before.tracks {
         if *id == nested_id {
             continue;
         }

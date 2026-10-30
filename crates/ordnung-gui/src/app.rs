@@ -2013,7 +2013,7 @@ impl App {
     /// matches on. Tags, key, grid, cues and cover follow the library;
     /// tracks only on the stick stay as they are.
     #[cfg(feature = "usb-export")]
-    pub(crate) fn update_stick_from_library(&mut self, ctx: &egui::Context, vol: PathBuf) {
+    pub(crate) fn update_stick_from_library(&mut self, vol: PathBuf) {
         let on_stick = match ordnung_rbdb::pdb::read_stick(&vol) {
             Ok(export) => export,
             Err(e) => {
@@ -2035,17 +2035,7 @@ impl App {
         }
         // Rewrites every shared track's cues and grid on the stick, so it
         // asks first (see `draw_usb_update_confirm`).
-        let _ = ctx;
         self.confirm_usb_update = Some((vol, ids));
-    }
-
-    /// The update itself, once confirmed: the ordinary merge export over the
-    /// shared tracks.
-    #[cfg(feature = "usb-export")]
-    pub(crate) fn run_stick_update(&mut self, ctx: &egui::Context, vol: PathBuf, ids: Vec<Id>) {
-        let scope = format!("{} tracks", ids.len());
-        let player = self.export_player();
-        self.spawn_export(ctx.clone(), vol, Vec::new(), ids, None, scope, false, true, player);
     }
 
     /// The library id this install stamps on sticks it writes (see
@@ -4217,7 +4207,7 @@ impl App {
             }
             #[cfg(feature = "usb-export")]
             Some(SidebarAction::UpdateUsb(vol)) => {
-                self.update_stick_from_library(ctx, vol);
+                self.update_stick_from_library(vol);
             }
             Some(SidebarAction::SavePlaylistText(id)) => {
                 self.save_playlist_text(id);

@@ -2440,7 +2440,9 @@ files elsewhere on the device stay plain storage.",
             self.confirm_usb_update = None;
         }
         if answer == Some(true) {
-            self.run_stick_update(ctx, vol, ids);
+            // The update itself: the ordinary merge export over the shared tracks.
+            let player = self.export_player();
+            self.spawn_export(ctx.clone(), vol, Vec::new(), ids, None, format!("{n} tracks"), false, true, player);
         }
     }
 

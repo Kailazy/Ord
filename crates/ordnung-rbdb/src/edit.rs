@@ -210,11 +210,11 @@ fn ids_by_path(export: &RbExport, rel_paths: &[String]) -> Vec<u32> {
     let by_path: HashMap<String, u32> = export
         .tracks
         .iter()
-        .map(|(tid, t)| (crate::export::path_key(t.file_path.trim_start_matches('/')), *tid))
+        .map(|(tid, t)| (key(&t.file_path), *tid))
         .collect();
     rel_paths
         .iter()
-        .filter_map(|rel| by_path.get(&crate::export::path_key(rel.trim_start_matches('/'))).copied())
+        .filter_map(|rel| by_path.get(&key(rel)).copied())
         .collect()
 }
 
@@ -263,14 +263,14 @@ pub fn delete_stick_tracks(volume_root: &Path, rel_paths: &[String]) -> Result<u
     if dlp_path.is_file() {
         let keys: Vec<String> = gone
             .iter()
-            .map(|t| crate::export::path_key(t.file_path.trim_start_matches('/')))
+            .map(|t| key(&t.file_path))
             .collect();
         with_local_dlp(&dlp_path, |conn| {
             let mut stmt = conn.prepare("SELECT content_id, path FROM content")?;
             let ids: Vec<i64> = stmt
                 .query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?)))?
                 .flatten()
-                .filter(|(_, p)| keys.contains(&crate::export::path_key(p.trim_start_matches('/'))))
+                .filter(|(_, p)| keys.contains(&key(p)))
                 .map(|(id, _)| id)
                 .collect();
             for id in ids {
@@ -479,12 +479,12 @@ fn bump_track_counter(
     let dlp_path = dir.join("exportLibrary.db");
     if dlp_path.is_file() {
         with_local_dlp(&dlp_path, |conn| {
-            let key = crate::export::path_key(file_path.trim_start_matches('/'));
+            let wanted = key(&file_path);
             let mut stmt = conn.prepare("SELECT content_id, path FROM content")?;
             let ids: Vec<i64> = stmt
                 .query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?)))?
                 .flatten()
-                .filter(|(_, p)| crate::export::path_key(p.trim_start_matches('/')) == key)
+                .filter(|(_, p)| key(p) == wanted)
                 .map(|(id, _)| id)
                 .collect();
             for id in ids {
@@ -683,12 +683,12 @@ pub fn relink_converted_track(
     let dlp_path = dir.join("exportLibrary.db");
     if dlp_path.is_file() {
         with_local_dlp(&dlp_path, |conn| {
-            let key = crate::export::path_key(old_path.trim_start_matches('/'));
+            let wanted = key(&old_path);
             let mut stmt = conn.prepare("SELECT content_id, path FROM content")?;
             let ids: Vec<i64> = stmt
                 .query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?)))?
                 .flatten()
-                .filter(|(_, p)| crate::export::path_key(p.trim_start_matches('/')) == key)
+                .filter(|(_, p)| key(p) == wanted)
                 .map(|(id, _)| id)
                 .collect();
             for id in ids {
@@ -775,6 +775,12 @@ fn backup_anlz(dat_path: &Path) {
 // The row codec (`TrackRowEdit`, `decode_track_row`, `encode_track_row`)
 // lives in `pdbw`, where the export's merge carries stick rows through it too.
 use crate::pdbw::{decode_track_row, encode_track_row, TrackRowEdit};
+
+/// The form a stick path is matched in, with or without its leading slash:
+/// the export's `path_key` (NFC, lowercase).
+fn key(path: &str) -> String {
+    crate::export::path_key(path.trim_start_matches('/'))
+}
 
 /// Every slot of a data page in order: whether it is live, and its row's
 /// absolute offset. Deleted slots (pages flagged 0x34) keep their place so
@@ -1091,7 +1097,7 @@ fn mirror_playlists(conn: &rusqlite::Connection, export: &RbExport) -> rusqlite:
         let mut stmt = conn.prepare("SELECT content_id, path FROM content")?;
         let rows = stmt.query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?)))?;
         for (id, path) in rows.flatten() {
-            content_by_path.insert(crate::export::path_key(path.trim_start_matches('/')), id);
+            content_by_path.insert(key(&path), id);
         }
     }
     conn.execute("DELETE FROM playlist", [])?;
@@ -1116,7 +1122,7 @@ fn mirror_playlists(conn: &rusqlite::Connection, export: &RbExport) -> rusqlite:
             let Some(track) = export.tracks.get(tid) else {
                 continue;
             };
-            let key = crate::export::path_key(track.file_path.trim_start_matches('/'));
+            let key = key(&track.file_path);
             let Some(content_id) = content_by_path.get(&key) else {
                 continue;
             };
