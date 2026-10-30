@@ -18,7 +18,7 @@
 //! Same defensive posture as the pdb reader: a corrupt or unreadable database
 //! returns an error; a malformed row is skipped, never a panic.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::Path;
 
 use crate::pdb::{RbPlaylist, ReadError};
@@ -54,6 +54,37 @@ pub(crate) fn open(
 /// Open an `exportLibrary.db` read-only with the Device Library Plus key.
 pub(crate) fn open_read_only(db_path: &Path) -> Result<rusqlite::Connection, ReadError> {
     open(db_path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+}
+
+/// What a `content` row says about which track it is, for checking the
+/// Device Library Plus against `export.pdb` before either lands: the two
+/// must agree on these or rekordbox refuses the stick.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ContentIdentity {
+    pub path: String,
+    pub master_db_id: u32,
+    pub master_content_id: u32,
+    pub track_number: u32,
+}
+
+/// Every `content` row of `db_path`, keyed by content id (the pdb track id).
+pub(crate) fn content_identity(db_path: &Path) -> Result<BTreeMap<u32, ContentIdentity>, ReadError> {
+    let conn = open_read_only(db_path)?;
+    let mut stmt =
+        conn.prepare("SELECT content_id, path, masterDbId, masterContentId, trackNo FROM content")?;
+    let rows = stmt.query_map([], |r| {
+        let int = |i: usize| r.get::<_, i64>(i).unwrap_or(0) as u32;
+        Ok((
+            int(0),
+            ContentIdentity {
+                path: r.get(1)?,
+                master_db_id: int(2),
+                master_content_id: int(3),
+                track_number: int(4),
+            },
+        ))
+    })?;
+    Ok(rows.flatten().collect())
 }
 
 /// Open `db_path` (an `exportLibrary.db`) read-only and pull the playlist
@@ -203,28 +234,6 @@ const SORTS: &[(i64, i64, i64, i64, i64)] = &[
 ];
 
 
-/// Write a complete `exportLibrary.db` beside an `export.pdb`, mirroring the
-/// same resolved library. Overwrites any existing database (and removes stale
-/// WAL sidecars). Written fully checkpointed in rollback-journal mode so
-/// read-only players never need to recover a WAL.
-///
-/// SQLite cannot write in place on macOS's msdos (FAT32) driver — the second
-/// transaction dies with "attempt to write a readonly database", leaving a
-/// one-table stub that players reject as a corrupted device library. So the
-/// database is built on local disk and the finished bytes are copied over.
-pub(crate) fn write_library(
-    db_path: &Path,
-    t: &crate::pdbw::PdbTables,
-    device_name: &str,
-) -> Result<(), ReadError> {
-    let err_io = |e: std::io::Error| ReadError::Dlp(e.to_string());
-    let tmp = scratch_db_path("ordnung-dlp-write");
-    let _ = std::fs::remove_file(&tmp);
-    build_library(&tmp, t, device_name)?;
-    place_library(&tmp, db_path).map_err(err_io)?;
-    let _ = std::fs::remove_file(&tmp);
-    Ok(())
-}
 
 /// Put a finished local database on the stick. Stale journal sidecars from
 /// a prior write go first — a leftover -wal/-shm beside a fresh database
@@ -238,9 +247,15 @@ pub(crate) fn place_library(tmp: &Path, db_path: &Path) -> std::io::Result<()> {
     crate::export::place_atomic(tmp, db_path).map(|_| ())
 }
 
-/// Create and populate a fresh Device Library Plus database at `db_path`
-/// (which must be on a filesystem SQLite can journal on — i.e. local disk).
-fn build_library(
+/// Create and populate a complete Device Library Plus database at `db_path`,
+/// mirroring the same resolved library as the `export.pdb`, fully
+/// checkpointed in rollback-journal mode so read-only players never need to
+/// recover a WAL. `db_path` must be on local disk ([`scratch_db_path`]):
+/// SQLite cannot write in place on macOS's msdos (FAT32) driver — the second
+/// transaction dies with "attempt to write a readonly database", leaving a
+/// one-table stub that players reject as a corrupted device library. The
+/// finished file lands on the stick through [`place_library`].
+pub(crate) fn build_library(
     db_path: &Path,
     t: &crate::pdbw::PdbTables,
     device_name: &str,
@@ -416,7 +431,7 @@ mod tests {
     /// and its rows — a partially written exportLibrary.db is exactly what a
     /// player rejects as "Device library is corrupted".
     #[test]
-    fn write_library_persists_every_table() {
+    fn library_persists_every_table() {
         let dir = std::env::temp_dir().join(format!("ordnung-dlpw-test-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
@@ -448,7 +463,7 @@ mod tests {
             created_date: "2026-09-04".into(),
             master_db_id: 1,
         };
-        write_library(&db, &tables, "TEST").expect("write");
+        build_library(&db, &tables, "TEST").expect("write");
 
         let conn = open_read_only(&db).unwrap();
         let n_tables: i64 = conn

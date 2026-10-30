@@ -608,12 +608,17 @@ fn split_anlz_path(p: &str) -> Option<(String, u32)> {
 /// loud failure before the database lands instead of a stick that looks
 /// exported but won't load on a player. Checks: the bytes re-parse; every
 /// track row's `analyze_path` names an ANLZ file that exists on the stick;
-/// every playlist entry points at a track the database actually contains; and
-/// the number of tracks/playlists read back matches what was written. Returns
-/// the offending detail on failure.
+/// every playlist entry points at a track the database actually contains; the
+/// number of tracks/playlists read back matches what was written; and the
+/// Device Library Plus at `dlp` (built, not yet placed) says the same as the
+/// pdb about every track's identity and every playlist: the 2026-10-21
+/// rejection followed exactly such a disagreement, rekordbox's own sticks
+/// never carry one, and the two writers had disagreed in their constants
+/// since the first export. Returns the offending detail on failure.
 fn validate_export(
     dest_root: &Path,
     pdb: &[u8],
+    dlp: &Path,
     expected_tracks: usize,
     expected_playlists: usize,
 ) -> std::result::Result<(), String> {
@@ -651,6 +656,61 @@ fn validate_export(
                     "playlist {playlist_id} references track id {tid}, which has no row"
                 ));
             }
+        }
+    }
+    // The Device Library Plus must agree with the pdb, row for row.
+    let content = crate::dlp::content_identity(dlp).map_err(|e| format!("exportLibrary.db: {e}"))?;
+    if content.len() != export.tracks.len() {
+        return Err(format!(
+            "export.pdb lists {} track(s), exportLibrary.db {}",
+            export.tracks.len(),
+            content.len()
+        ));
+    }
+    for (id, t) in &export.tracks {
+        let ours = crate::dlp::ContentIdentity {
+            path: t.file_path.clone(),
+            master_db_id: t.master_db_id,
+            master_content_id: t.master_content_id,
+            track_number: t.track_number,
+        };
+        if content.get(id) != Some(&ours) {
+            return Err(format!(
+                "track {id} {:?} differs between export.pdb {ours:?} and exportLibrary.db {:?}",
+                t.title,
+                content.get(id)
+            ));
+        }
+    }
+    let theirs = crate::dlp::read_playlists(dlp).map_err(|e| format!("exportLibrary.db: {e}"))?;
+    let by_id = |mut v: Vec<RbPlaylist>| {
+        v.sort_by_key(|p| p.id);
+        v
+    };
+    if by_id(export.playlists.clone()) != by_id(theirs.playlists) {
+        return Err("the playlist trees of export.pdb and exportLibrary.db differ".into());
+    }
+    for p in export.playlists.iter().filter(|p| !p.is_folder) {
+        let ours: Vec<&str> = export
+            .entries
+            .get(&p.id)
+            .into_iter()
+            .flatten()
+            .filter_map(|id| export.tracks.get(id))
+            .map(|t| t.file_path.as_str())
+            .collect();
+        let theirs: Vec<&str> = theirs
+            .entries_by_path
+            .get(&p.id)
+            .into_iter()
+            .flatten()
+            .map(String::as_str)
+            .collect();
+        if ours != theirs {
+            return Err(format!(
+                "playlist {} {:?} differs between export.pdb and exportLibrary.db",
+                p.id, p.name
+            ));
         }
     }
     Ok(())
@@ -1347,33 +1407,45 @@ fn export_impl(
         master_db_id,
     };
 
-    // ---- validate before placing ------------------------------------------
-    // Parse the database about to land and confirm the stick it describes is
-    // consistent, so a writer bug fails the export loudly while the stick
-    // still holds its previous, complete databases (or none) rather than a
-    // set no player will load.
-    let pdb_bytes = pdbw::build_export_pdb(&tables);
-    validate_export(dest_root, &pdb_bytes, tables.tracks.len(), tables.playlists.len())
-        .map_err(ExportError::Validation)?;
-
-    // ---- databases --------------------------------------------------------
-    // The DLP is built first (on local disk, then placed) and the pdbs after,
-    // so `export.pdb` — the file a player reads first and treats as the whole
-    // stick's manifest — is the LAST thing to land. Each placement is atomic
-    // (temp + rename): an interrupted write leaves the previous complete file,
-    // never a torn one.
+    // ---- build and validate before placing --------------------------------
+    // Both databases are built first — the pdb in memory, the DLP on local
+    // disk — and checked against the stick and each other, so a writer bug
+    // fails the export loudly while the stick still holds its previous,
+    // complete databases (or none) rather than a set no player will load.
     check(cancel)?;
-    // What the stick held before this export, kept as `.prev` siblings for
-    // "Restore previous library" (`edit::restore_previous`): the one way
-    // back when a player or rekordbox rejects what this export wrote.
-    keep_previous_set(&rb_dir);
+    let pdb_bytes = pdbw::build_export_pdb(&tables);
     let device_name = dest_root
         .file_name()
         .map(|s| s.to_string_lossy().into_owned())
         .unwrap_or_else(|| "ORDNUNG".into());
-    let dlp = rb_dir.join("exportLibrary.db");
-    crate::dlp::write_library(&dlp, &tables, &device_name)
+    let dlp_tmp = crate::dlp::scratch_db_path("ordnung-dlp-write");
+    let _ = std::fs::remove_file(&dlp_tmp);
+    crate::dlp::build_library(&dlp_tmp, &tables, &device_name)
         .map_err(|e| ExportError::Dlp(e.to_string()))?;
+    let checked = validate_export(
+        dest_root,
+        &pdb_bytes,
+        &dlp_tmp,
+        tables.tracks.len(),
+        tables.playlists.len(),
+    );
+    if let Err(why) = checked {
+        let _ = std::fs::remove_file(&dlp_tmp);
+        return Err(ExportError::Validation(why));
+    }
+
+    // ---- databases --------------------------------------------------------
+    // The DLP is placed first and the pdbs after, so `export.pdb` — the file
+    // a player reads first and treats as the whole stick's manifest — is the
+    // LAST thing to land. Each placement is atomic (temp + rename): an
+    // interrupted write leaves the previous complete file, never a torn one.
+    // What the stick held before this export is kept as `.prev` siblings for
+    // "Restore previous library" (`edit::restore_previous`): the one way
+    // back when a player or rekordbox rejects what this export wrote.
+    keep_previous_set(&rb_dir);
+    let placed = crate::dlp::place_library(&dlp_tmp, &rb_dir.join("exportLibrary.db"));
+    let _ = std::fs::remove_file(&dlp_tmp);
+    placed.map_err(|e| ExportError::Dlp(e.to_string()))?;
 
     // My Tags live in exportExt.pdb keyed by track id. A merge keeps every
     // id, so the stick's own tag database stays; a replace renumbers from 1
@@ -1574,9 +1646,26 @@ mod tests {
         std::fs::write(rb.join("export.pdb"), crate::pdbw::build_export_pdb(&tables)).unwrap();
         // Give the referenced ANLZ file so only the dangling entry is wrong.
         std::fs::write(anlz.join("ANLZ0000.DAT"), b"PMAI").unwrap();
+        let dlp = dir.join("lib.db");
+        crate::dlp::build_library(&dlp, &tables, "T").unwrap();
 
-        let err = validate_export(&dir, &crate::pdbw::build_export_pdb(&tables), 1, 1).unwrap_err();
+        let err = validate_export(&dir, &crate::pdbw::build_export_pdb(&tables), &dlp, 1, 1).unwrap_err();
         assert!(err.contains("track id 99"), "got: {err}");
+
+        // The same stick with a DLP written as another library: the two
+        // databases disagree on the one thing rekordbox checks first.
+        tables.playlist_entries.clear();
+        tables.master_db_id = 7;
+        let pdb_bytes = crate::pdbw::build_export_pdb(&tables);
+        tables.master_db_id = 8;
+        std::fs::remove_file(&dlp).unwrap();
+        crate::dlp::build_library(&dlp, &tables, "T").unwrap();
+        let err = validate_export(&dir, &pdb_bytes, &dlp, 1, 1).unwrap_err();
+        assert!(err.contains("master_db_id: 7") && err.contains("master_db_id: 8"), "got: {err}");
+        tables.master_db_id = 7;
+        std::fs::remove_file(&dlp).unwrap();
+        crate::dlp::build_library(&dlp, &tables, "T").unwrap();
+        validate_export(&dir, &pdb_bytes, &dlp, 1, 1).unwrap();
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
