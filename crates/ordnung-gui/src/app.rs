@@ -1462,7 +1462,7 @@ impl App {
                 out.new_id
             }
             Err(e) => {
-                self.status = format!("Device playlist edit failed: {e}");
+                self.fail(format!("Device playlist edit failed: {e}"));
                 None
             }
         }

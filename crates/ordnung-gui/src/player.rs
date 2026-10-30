@@ -1075,9 +1075,13 @@ impl App {
         if self.stick_write_blocked(&vol) {
             return;
         }
+        let name = vol.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
         match ordnung_rbdb::edit::write_stick_beatgrid(&vol, pdb_id, &dat, &beats) {
-            Ok(()) => self.set_row_bpm(id, g.bpm),
-            Err(e) => self.status = format!("Couldn't write the grid to the stick: {e}"),
+            Ok(()) => {
+                self.set_row_bpm(id, g.bpm);
+                self.status = format!("Wrote the grid to {name}.");
+            }
+            Err(e) => self.fail(format!("Couldn't write the grid to {name}: {e}")),
         }
     }
 

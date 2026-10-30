@@ -41,6 +41,13 @@ impl App {
             tags.year = year;
             tags.comment = non_empty(&self.tag_edit.comment);
             let path = PathBuf::from(&self.usb_tracks[i].source_path);
+            // A write to the stick like any other: not under rekordbox, not
+            // while an export to it runs.
+            if let Some(vol) = self.usb_loaded_for.clone() {
+                if self.stick_write_blocked(&vol) {
+                    return;
+                }
+            }
             match tag::write_to_file(&path, &tags, None) {
                 Ok(()) => {
                     match scan::scan_file(&path) {
@@ -50,7 +57,7 @@ impl App {
                     self.status = format!("Wrote tags into {}", path.display());
                 }
                 Err(e) => {
-                    self.status = format!("Couldn't write the file: {e}");
+                    self.fail(format!("Couldn't write the file: {e}"));
                     return;
                 }
             }
