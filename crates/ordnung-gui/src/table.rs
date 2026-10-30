@@ -786,27 +786,39 @@ impl App {
             if field.changed() {
                 self.reload();
             }
-            // The ✖ keeps its slot while hidden so nothing right of it shifts as
-            // a filter is typed or cleared — same as the vinyl toolbar's.
-            ui.allocate_ui_with_layout(
-                egui::vec2(22.0, field.rect.height()),
-                egui::Layout::centered_and_justified(egui::Direction::LeftToRight),
-                |ui| {
-                    if !self.filter.is_empty()
-                        && ui
-                            .small_button("✖")
-                            .on_hover_note("Clear the filter")
-                            .clicked()
-                    {
-                        self.filter.clear();
-                        self.reload();
-                    }
-                },
-            );
+            // The ✖ is the square glyph button, and the square is allocated
+            // empty while the field has no text, so nothing right of it shifts
+            // as a filter is typed or cleared (a 22 pt slot under a 31 pt
+            // small_button moved the Clear button 20 pt).
+            let side = ui.spacing().interact_size.y;
+            if self.filter.is_empty() {
+                ui.allocate_exact_size(egui::vec2(side, side), egui::Sense::hover());
+            } else if crate::ui::button::glyph(ui, "✖", true)
+                .on_hover_note("Clear the filter")
+                .clicked()
+            {
+                self.filter.clear();
+                self.reload();
+            }
             // What the filter is actually hiding. Only worth saying while
             // something is active — an unfiltered table already reads its
             // count off the toolbar.
             let active_cols = self.col_filters.values().filter(|v| !v.trim().is_empty()).count();
+            // Column filters have no field of their own to clear from (they
+            // live behind a header double-click), so a button beside the
+            // caption that names them undoes them all, text filter included.
+            // This rescues a forgotten column filter that leaves the table
+            // looking empty. It comes before the count, with one label, so it
+            // holds still while the count beside it changes under typing.
+            if active_cols > 0
+                && crate::ui::button::compact(ui, "⊘ Clear filters", false)
+                    .on_hover_note("Clear the filter and every column filter")
+                    .clicked()
+            {
+                self.filter.clear();
+                self.col_filters.clear();
+                self.reload();
+            }
             if !self.filter.trim().is_empty() || active_cols > 0 {
                 let mut note = format!("{} shown", self.rows.len());
                 if active_cols > 0 {
@@ -820,24 +832,6 @@ impl App {
                         .small()
                         .color(crate::ui::tokens::color::LABEL_3),
                 );
-            }
-            // Column filters have no field of their own to clear from (they
-            // live behind a header double-click), so a button beside the
-            // caption that names them undoes them all, text filter included.
-            // This rescues a forgotten column filter that leaves the table
-            // looking empty.
-            if active_cols > 0
-                && crate::ui::button::compact(
-                    ui,
-                    &format!("⊘ Clear filters ({active_cols})"),
-                    false,
-                )
-                .on_hover_note("Clear the filter and every column filter")
-                .clicked()
-            {
-                self.filter.clear();
-                self.col_filters.clear();
-                self.reload();
             }
         });
         // A little more air between the box and the header row it sits on.
@@ -1325,17 +1319,48 @@ impl App {
                                                 ui.id().with(("hdr", col)),
                                                 egui::Sense::click(),
                                             );
-                                            ui.add(
-                                                egui::Label::new(
-                                                    egui::RichText::new(format!(
-                                                        "{}{arrow}{filt}",
-                                                        col.label()
-                                                    ))
-                                                    .strong()
-                                                    .color(crate::ui::tokens::color::LABEL_2),
-                                                )
-                                                .selectable(false),
+                                            // Painted, not laid out: a label that grew
+                                            // by " ▲" widened the unclipped columns. The
+                                            // marks keep a slot at the cell's right edge
+                                            // whether or not they show, and the title
+                                            // truncates short of it.
+                                            let cell = ui.max_rect();
+                                            let font = crate::ui::tokens::font::strong(
+                                                crate::ui::tokens::font::body().size,
                                             );
+                                            let ink = crate::ui::tokens::color::LABEL_2;
+                                            let marks = format!("{arrow}{filt}");
+                                            let slot_w = ui
+                                                .painter()
+                                                .layout_no_wrap(" ▲ ⌕".into(), font.clone(), ink)
+                                                .size()
+                                                .x;
+                                            // The marks stop a column gap short of the
+                                            // divider, so they never touch the next title.
+                                            let inset = ui.spacing().item_spacing.x;
+                                            let title = crate::ui::text::truncated(
+                                                ui,
+                                                col.label(),
+                                                font.clone(),
+                                                ink,
+                                                cell.width() - slot_w - inset,
+                                                true,
+                                            );
+                                            let y = cell.center().y - title.size().y / 2.0;
+                                            ui.painter().galley(
+                                                egui::pos2(cell.left(), y),
+                                                title,
+                                                ink,
+                                            );
+                                            if !marks.is_empty() {
+                                                let marks =
+                                                    ui.painter().layout_no_wrap(marks, font, ink);
+                                                ui.painter().galley(
+                                                    egui::pos2(cell.right() - inset - marks.size().x, y),
+                                                    marks,
+                                                    ink,
+                                                );
+                                            }
                                             if resp.hovered() {
                                                 ui.ctx().set_cursor_icon(
                                                     egui::CursorIcon::PointingHand,
@@ -1416,10 +1441,10 @@ impl App {
                                 ) && playing != Some(r.id)
                             };
                             // Every member of the multi-selection gets the highlighted row
-                            // background; the primary row (drives the inspector) is also
-                            // bolded so it stands out within a multi-selection.
+                            // background. The primary row (the one the inspector shows)
+                            // is not set apart by weight: bold text ran wider and widened
+                            // the unclipped columns on every click.
                             let is_sel = self.selection.contains(&r.id);
-                            let is_primary = self.selected == Some(r.id);
                             row.set_selected(is_sel);
 
                             // Plain drag = in-app egui drag (drop onto a sidebar playlist);
@@ -1800,11 +1825,7 @@ impl App {
                                             );
                                         }
                                     } else {
-                                        ui.add(egui::Label::new(if is_primary {
-                                            egui::RichText::new(text).strong()
-                                        } else {
-                                            egui::RichText::new(text)
-                                        }));
+                                        ui.add(egui::Label::new(text));
                                     }
                                     // …then sense the *entire* cell rect, not just the
                                     // glyphs. Grabbing anywhere in the cell — including the
