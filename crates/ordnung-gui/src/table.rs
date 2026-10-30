@@ -128,6 +128,7 @@ impl App {
             || self.convert_modal.is_some()
             || self.batch_convert.is_some()
             || self.confirm_delete.is_some()
+            || self.confirm_usb_delete.is_some()
             || self.confirm_vinyl_edit.is_some()
             || self.collect_wanted.is_some()
             || self.settings_open
@@ -964,6 +965,11 @@ impl App {
         // works, it's path-based), and double-click plays instead of opening
         // the convert modal.
         let is_usb = matches!(self.view, LibraryView::Usb(..));
+        // The device playlist on view, for its rows' "Remove from playlist".
+        let menu_usb_playlist = match &self.view {
+            LibraryView::Usb(_, pid) => *pid,
+            _ => None,
+        };
         // Reordering ("Move to top/bottom") rewrites the whole playlist order, so
         // only offer it on an unfiltered view where the visible rows are the full
         // list — never on a filtered subset that would drop the hidden tracks. A
@@ -1931,6 +1937,43 @@ impl App {
                                                     ));
                                                 ui.close_menu();
                                             }
+                                            ui.separator();
+                                            if let Some(pid) = menu_usb_playlist {
+                                                if ui.button("Remove from playlist").clicked() {
+                                                    menu_action =
+                                                        Some(TrackMenuAction::RemoveFromUsbPlaylist(
+                                                            pid,
+                                                            drag_ids.clone(),
+                                                        ));
+                                                    ui.close_menu();
+                                                }
+                                            }
+                                            // Off the stick for good: files, rows,
+                                            // analysis and playlist entries. Red and
+                                            // gated behind a confirm, like the
+                                            // catalog's delete.
+                                            let n = drag_ids.len();
+                                            let label = if n == 1 {
+                                                "Delete from device".to_string()
+                                            } else {
+                                                format!("Delete {n} from device")
+                                            };
+                                            if ui
+                                                .button(
+                                                    egui::RichText::new(label)
+                                                        .color(egui::Color32::from_rgb(220, 90, 90)),
+                                                )
+                                                .on_hover_note(
+                                                    "Remove the file(s) from the device and \
+                                                     from every playlist on it",
+                                                )
+                                                .clicked()
+                                            {
+                                                menu_action = Some(TrackMenuAction::DeleteFromDevice(
+                                                    drag_ids.clone(),
+                                                ));
+                                                ui.close_menu();
+                                            }
                                             return;
                                         }
                                         // One Convert item: with several rows
@@ -2607,6 +2650,14 @@ impl App {
             }
             Some(TrackMenuAction::AddToLibrary(ids)) => {
                 self.usb_add_to_library(ctx_clone.clone(), ids);
+            }
+            Some(TrackMenuAction::RemoveFromUsbPlaylist(pid, ids)) => {
+                self.usb_playlist_tracks_op(pid, ids, |id, rel_paths| {
+                    ordnung_rbdb::edit::PlaylistOp::RemoveTracks { id, rel_paths }
+                });
+            }
+            Some(TrackMenuAction::DeleteFromDevice(ids)) => {
+                self.confirm_usb_delete = Some(ids);
             }
             Some(TrackMenuAction::RevealInFinder(path)) => reveal_in_finder(&path),
             Some(TrackMenuAction::CopyPath(path)) => {

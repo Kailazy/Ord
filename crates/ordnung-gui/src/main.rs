@@ -2014,6 +2014,8 @@ struct App {
     /// Track ids pending a "delete from catalog?" confirmation, if that dialog is
     /// open. `Some` shows the modal; confirming deletes them from the catalog.
     confirm_delete: Option<Vec<Id>>,
+    /// Device track ids pending a "delete from device?" confirmation.
+    confirm_usb_delete: Option<Vec<Id>>,
     /// True while a bulk write-edits job is the active worker. Lets the job's
     /// completion handler drop cover textures, since that job may have embedded
     /// fetched art and the per-id texture cache would otherwise show stale covers.
@@ -2109,6 +2111,9 @@ struct App {
     /// Which volume `usb_tracks` was scanned from, so switching volumes (or an
     /// explicit Rescan setting this to `None`) triggers a fresh scan.
     usb_loaded_for: Option<PathBuf>,
+    /// A device playlist was edited since the running scan of `usb_loaded_for`
+    /// started, so the scan's tree is stale: re-read the stick's when it lands.
+    usb_tree_edited: bool,
     /// Playlist tree read from the volume's rekordbox `export.pdb` (empty for
     /// plain sticks). Drives the sidebar tree under the active device.
     usb_playlists: Vec<ordnung_rbdb::pdb::RbPlaylist>,
@@ -2542,6 +2547,12 @@ enum TrackMenuAction {
     /// Copy the target device rows' files into the local library and import
     /// them (USB view only).
     AddToLibrary(Vec<Id>),
+    /// Take the target device rows out of the viewed playlist on the stick
+    /// (playlist id, track ids); the files stay on the device.
+    RemoveFromUsbPlaylist(u32, Vec<Id>),
+    /// Delete the target device rows from the stick itself — files, rows,
+    /// analysis, playlist entries. Gated behind a confirm.
+    DeleteFromDevice(Vec<Id>),
     /// Open the record sheet for the track's matched Discogs release, in the
     /// app — the same sheet the inspector's "View release" opens. Only offered
     /// for a track that has a release on file.

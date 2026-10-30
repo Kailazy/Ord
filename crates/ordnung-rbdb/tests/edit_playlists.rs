@@ -94,6 +94,21 @@ fn create_rename_add_delete_on_playlistless_export() {
     assert_eq!(ex.playlists[0].name, "peak time");
     assert_eq!(ex.entries[&id], vec![2, 1], "order and dedupe preserved");
 
+    // Taking a track out leaves the rest in order; an unknown path is nothing.
+    edit_stick_playlists(
+        &root,
+        &PlaylistOp::RemoveTracks {
+            id,
+            rel_paths: vec![
+                "contents/loopmasters/unknownalbum/DEMO TRACK 2.mp3".into(),
+                "Contents/Nope/missing.mp3".into(),
+            ],
+        },
+    )
+    .expect("remove tracks");
+    let ex = read_export(&pdb_path(&root)).expect("re-parse after remove");
+    assert_eq!(ex.entries[&id], vec![1]);
+
     // Everything outside the playlist tables is intact: same tracks, same
     // stamped analysis, same ANLZ paths.
     assert_eq!(ex.tracks.len(), 2);

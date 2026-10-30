@@ -147,6 +147,9 @@ const TYPE_KEYS: u32 = 5;
 pub(crate) const TYPE_PLAYLIST_TREE: u32 = 7;
 pub(crate) const TYPE_PLAYLIST_ENTRIES: u32 = 8;
 const TYPE_ARTWORK: u32 = 13;
+/// The one-row export summary (track count, created date — see §2.7 of the
+/// format notes).
+pub(crate) const TYPE_SUMMARY: u32 = 19;
 
 /// Byte size of a page header; the row heap starts right after it.
 pub(crate) const PAGE_HEADER: usize = 0x28;

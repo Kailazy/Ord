@@ -2335,6 +2335,38 @@ files elsewhere on the device stay plain storage.",
         }
     }
 
+    /// "Delete N tracks from <device>?" confirmation. The files leave the
+    /// stick for good, with their rekordbox rows, analysis and playlist
+    /// entries, so it's an explicit gate like the catalog's.
+    pub(crate) fn draw_usb_delete_confirm(&mut self, ctx: &egui::Context) {
+        let Some(ids) = self.confirm_usb_delete.clone() else {
+            return;
+        };
+        let LibraryView::Usb(vol, _) = &self.view else {
+            self.confirm_usb_delete = None;
+            return;
+        };
+        let n = ids.len();
+        let name = vol
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        let answer = danger_confirm(
+            ctx,
+            "Delete from device?",
+            &format!("Delete {n} track{} from {name}?", if n == 1 { "" } else { "s" }),
+            "The files are removed from the device, with their cues, grids and \
+             playlist entries. This can't be undone.",
+            "Delete",
+        );
+        if answer.is_some() {
+            self.confirm_usb_delete = None;
+        }
+        if answer == Some(true) {
+            self.usb_delete_tracks(ids);
+        }
+    }
+
     /// "Remove this record from your Discogs collection?" confirmation. Gates the
     /// two vinyl-grid actions that destroy a collection copy on the user's actual
     /// Discogs account — an outright removal and a move to the wantlist. Both

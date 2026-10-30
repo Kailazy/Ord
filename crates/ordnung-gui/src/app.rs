@@ -345,6 +345,7 @@ impl App {
             missing_rx: None,
             confirm_bulk_write: false,
             confirm_delete: None,
+            confirm_usb_delete: None,
             write_edits_running: false,
             #[cfg(feature = "usb-export")]
             export_running_to: None,
@@ -369,6 +370,7 @@ impl App {
             usb_tracks: Vec::new(),
             usb_pdb_info: HashMap::new(),
             usb_loaded_for: None,
+            usb_tree_edited: false,
             usb_playlists: Vec::new(),
             usb_playlist_tracks: HashMap::new(),
             usb_loading: false,
@@ -1177,6 +1179,15 @@ impl App {
                 self.usb_playlists = scan.playlists;
                 self.usb_playlist_tracks = scan.playlist_tracks;
                 self.usb_pdb_info = scan.pdb_info;
+                // A playlist edited while this scan ran (in the seconds
+                // between the instant pdb view and the file scan) is on the
+                // stick but not in the scan's tree: take the stick's as it
+                // is now, or the edit vanishes from the sidebar until a rescan.
+                if self.usb_tree_edited {
+                    if let Ok(export) = ordnung_rbdb::pdb::read_stick(&scan.vol) {
+                        self.apply_usb_export(&scan.vol, &export);
+                    }
+                }
                 if let Some(p) = selected_path {
                     self.selected = self
                         .usb_tracks
@@ -1301,6 +1312,7 @@ impl App {
         self.usb_analysis_cancel = None;
         self.usb_analysis_progress = (0, 0);
         self.usb_loading = true;
+        self.usb_tree_edited = false;
         let (tx, rx) = std::sync::mpsc::channel();
         self.usb_rx = Some(rx);
         let ctx = ctx.clone();
@@ -1419,28 +1431,85 @@ impl App {
         }
     }
 
-    /// Device tracks dropped on one of the device's own playlists: resolve
-    /// the synthetic ids to paths relative to the volume root and append them
-    /// on the stick.
-    pub(crate) fn usb_playlist_add_tracks(&mut self, pid: u32, ids: Vec<Id>) {
+    /// Device tracks dropped on one of the device's own playlists, or taken
+    /// out of it from the row menu: resolve the synthetic ids to paths
+    /// relative to the volume root and apply `op` (`AddTracks` or
+    /// `RemoveTracks`) on the stick. The files stay either way.
+    pub(crate) fn usb_playlist_tracks_op(
+        &mut self,
+        pid: u32,
+        ids: Vec<Id>,
+        op: fn(u32, Vec<String>) -> edit::PlaylistOp,
+    ) {
         let LibraryView::Usb(vol, _) = self.view.clone() else {
             return;
         };
-        let rel_paths: Vec<String> = ids
-            .iter()
+        let rel_paths = self.usb_rel_paths(&vol, &ids);
+        if rel_paths.is_empty() {
+            return;
+        }
+        self.usb_playlist_edit(op(pid, rel_paths));
+    }
+
+    /// Device rows' paths relative to the volume root — the key the stick's
+    /// databases match tracks on.
+    fn usb_rel_paths(&self, vol: &Path, ids: &[Id]) -> Vec<String> {
+        ids.iter()
             .filter_map(|id| usb_track_index(*id))
             .filter_map(|i| self.usb_tracks.get(i))
             .filter_map(|t| {
                 Path::new(&t.source_path)
-                    .strip_prefix(&vol)
+                    .strip_prefix(vol)
                     .ok()
                     .map(|r| r.to_string_lossy().into_owned())
             })
-            .collect();
-        if rel_paths.is_empty() {
+            .collect()
+    }
+
+    /// Delete device rows from the stick itself, after the confirm. A
+    /// rekordbox export sheds the tracks' rows, playlist entries, analysis
+    /// and artwork through [`edit::delete_stick_tracks`]; any file the
+    /// export never listed (a plain stick, a stray) is simply removed. The
+    /// device is then rescanned, so the view shows what the stick holds.
+    pub(crate) fn usb_delete_tracks(&mut self, ids: Vec<Id>) {
+        let LibraryView::Usb(vol, _) = self.view.clone() else {
             return;
+        };
+        let paths: Vec<PathBuf> = ids
+            .iter()
+            .filter_map(|id| usb_track_index(*id))
+            .filter_map(|i| self.usb_tracks.get(i))
+            .map(|t| PathBuf::from(&t.source_path))
+            .collect();
+        if ordnung_core::usb::is_rekordbox_export(&vol) {
+            let rel_paths = self.usb_rel_paths(&vol, &ids);
+            if let Err(e) = edit::delete_stick_tracks(&vol, &rel_paths) {
+                self.status = format!("Device delete failed: {e}");
+                return;
+            }
         }
-        self.usb_playlist_edit(edit::PlaylistOp::AddTracks { id: pid, rel_paths });
+        for p in &paths {
+            let _ = std::fs::remove_file(p);
+        }
+        let deleted = paths.iter().filter(|p| !p.exists()).count();
+        let failed = paths.len() - deleted;
+        let name = vol
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        self.status = if failed == 0 {
+            format!("Deleted {deleted} track{} from {name}.", if deleted == 1 { "" } else { "s" })
+        } else {
+            format!("Deleted {deleted} track(s) from {name}; {failed} file(s) couldn't be removed.")
+        };
+        self.rows.retain(|r| !ids.contains(&r.id));
+        self.selection.retain(|id| !ids.contains(id));
+        if self.selected.is_some_and(|id| ids.contains(&id)) {
+            self.selected = None;
+        }
+        // Drop the scan cache: poll_usb re-reads the stick (instantly from
+        // its pdb, then the file scan), the same path Rescan takes.
+        self.usb_loaded_for = None;
     }
 
     /// Mirror a freshly written device export into the sidebar state:
@@ -1451,6 +1520,7 @@ impl App {
         let by_rel = usb_rel_index(vol, &self.usb_tracks);
         self.usb_playlists = export.playlists.clone();
         self.usb_playlist_tracks = usb_playlist_tracks(export, &by_rel);
+        self.usb_tree_edited = true;
         // The visible table may be showing the playlist that just changed.
         self.reload();
     }
@@ -3942,7 +4012,9 @@ impl App {
                 }
             }
             Some(SidebarAction::AddUsbTracksToPlaylist(pid, ids)) => {
-                self.usb_playlist_add_tracks(pid, ids);
+                self.usb_playlist_tracks_op(pid, ids, |id, rel_paths| {
+                    edit::PlaylistOp::AddTracks { id, rel_paths }
+                });
             }
             Some(SidebarAction::NewPlaylist(parent)) => {
                 // A row you can't see can't be named: a folded list opens.
@@ -4422,6 +4494,7 @@ impl App {
         self.draw_look_editor(ctx);
         self.draw_bulk_write_confirm(ctx);
         self.draw_delete_confirm(ctx);
+        self.draw_usb_delete_confirm(ctx);
         self.draw_vinyl_edit_confirm(ctx);
         self.draw_collect_wanted(ctx);
         self.draw_dig_window(ctx);

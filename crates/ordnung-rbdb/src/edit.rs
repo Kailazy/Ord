@@ -18,17 +18,23 @@
 //!   `playlist_content` tables are replaced to mirror the same tree, joining
 //!   pdb track ids onto DLP content ids by file path (the only shared key).
 //!
-//! Audio files and every other table are never touched. Before the first
-//! edit ever made to a stick (or to a track's analysis), the pristine files
-//! are copied to `*.orig` alongside themselves, so the pre-Ordnung state is
-//! always recoverable.
+//! Deleting a track ([`delete_stick_tracks`]) is the one edit that touches
+//! audio: the row loses its presence bit the way rekordbox's own device view
+//! drops rows, both databases shed the track, and only then do its files go.
+//! Everything else on the stick is never touched. Before the first edit ever
+//! made to a stick (or to a track's analysis), the pristine files are copied
+//! to `*.orig` alongside themselves, so the pre-Ordnung state is always
+//! recoverable.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 use ordnung_core::model::{Beat, Cue};
 
-use crate::pdb::{rb_dir, u32_at, RbExport, RbPlaylist, ReadError, TYPE_PLAYLIST_ENTRIES, TYPE_PLAYLIST_TREE};
+use crate::pdb::{
+    rb_dir, u32_at, RbExport, RbPlaylist, RbTrack, ReadError, TYPE_PLAYLIST_ENTRIES,
+    TYPE_PLAYLIST_TREE, TYPE_SUMMARY, TYPE_TRACKS,
+};
 use crate::pdbw;
 
 /// One user-level playlist edit. Paths are relative to the volume root with
@@ -45,6 +51,8 @@ pub enum PlaylistOp {
     /// Append tracks (by path) to a playlist, skipping ones already in it and
     /// paths the export doesn't know.
     AddTracks { id: u32, rel_paths: Vec<String> },
+    /// Take tracks (by path) out of a playlist; the rest keep their order.
+    RemoveTracks { id: u32, rel_paths: Vec<String> },
 }
 
 /// What an edit produced: the id of a created playlist, and the stick's
@@ -145,21 +153,272 @@ fn apply_op(export: &mut RbExport, op: &PlaylistOp) -> Result<Option<u32>, ReadE
             if !export.playlists.iter().any(|p| p.id == *id && !p.is_folder) {
                 return Err(ReadError::Format("no such playlist"));
             }
-            let by_path: HashMap<String, u32> = export
-                .tracks
-                .iter()
-                .map(|(tid, t)| (t.file_path.trim_start_matches('/').to_lowercase(), *tid))
-                .collect();
+            let ids = ids_by_path(export, rel_paths);
             let list = export.entries.entry(*id).or_default();
-            for rel in rel_paths {
-                let Some(tid) = by_path.get(&rel.trim_start_matches('/').to_lowercase()) else {
-                    continue;
-                };
-                if !list.contains(tid) {
-                    list.push(*tid);
+            for tid in ids {
+                if !list.contains(&tid) {
+                    list.push(tid);
                 }
             }
             Ok(None)
+        }
+        PlaylistOp::RemoveTracks { id, rel_paths } => {
+            let ids = ids_by_path(export, rel_paths);
+            if let Some(list) = export.entries.get_mut(id) {
+                list.retain(|tid| !ids.contains(tid));
+            }
+            Ok(None)
+        }
+    }
+}
+
+/// The export's track ids behind `rel_paths` (relative to the volume root,
+/// matched case-insensitively — the volume is FAT32), in the paths' order;
+/// paths the export doesn't know are skipped.
+fn ids_by_path(export: &RbExport, rel_paths: &[String]) -> Vec<u32> {
+    let by_path: HashMap<String, u32> = export
+        .tracks
+        .iter()
+        .map(|(tid, t)| (t.file_path.trim_start_matches('/').to_lowercase(), *tid))
+        .collect();
+    rel_paths
+        .iter()
+        .filter_map(|rel| by_path.get(&rel.trim_start_matches('/').to_lowercase()).copied())
+        .collect()
+}
+
+// ---------------------------------------------------------------------------
+// Deleting tracks from the stick
+// ---------------------------------------------------------------------------
+
+/// Delete tracks (by path relative to the volume root) from the mounted
+/// stick at `volume_root`, the way rekordbox's own device view does: each
+/// track's `export.pdb` row keeps its slot but loses its presence bit (its
+/// page is flagged 0x34 and listed in the table's index page), its playlist
+/// entries leave both databases, its Device Library Plus rows and My Tag
+/// links go, and only then are its audio, ANLZ files and — when no other
+/// track shares it — artwork removed from the device. Paths the export
+/// doesn't know are skipped. Both databases are prepared before either is
+/// written, so a refusal leaves the stick as it was. Returns how many tracks
+/// were deleted. The pristine databases are kept as `*.orig` siblings from
+/// the first edit on.
+pub fn delete_stick_tracks(volume_root: &Path, rel_paths: &[String]) -> Result<usize, ReadError> {
+    let mut export = crate::pdb::read_stick(volume_root)?;
+    let mut doomed = ids_by_path(&export, rel_paths);
+    doomed.sort_unstable();
+    doomed.dedup();
+    if doomed.is_empty() {
+        return Ok(0);
+    }
+    let gone: Vec<RbTrack> = doomed.iter().filter_map(|id| export.tracks.remove(id)).collect();
+    for list in export.entries.values_mut() {
+        list.retain(|tid| !doomed.contains(tid));
+    }
+
+    let dir = rb_dir(volume_root);
+    let pdb_path = dir.join("export.pdb");
+    let mut data = std::fs::read(&pdb_path).map_err(ReadError::io(&pdb_path))?;
+    relink_playlist_tables(&mut data, &export.playlists, &export.entries)?;
+    let dropped = clear_rows(&mut data, TYPE_TRACKS, |data, row| {
+        u32_at(data, row + 0x48).is_some_and(|id| doomed.contains(&id))
+    })?;
+    if dropped != doomed.len() {
+        return Err(ReadError::Format("track row missing from export.pdb"));
+    }
+    set_summary_count(&mut data, export.tracks.len() as u32);
+
+    let dlp_path = dir.join("exportLibrary.db");
+    if dlp_path.is_file() {
+        backup_once(&dlp_path);
+        let keys: Vec<String> = gone
+            .iter()
+            .map(|t| t.file_path.trim_start_matches('/').to_lowercase())
+            .collect();
+        with_local_dlp(&dlp_path, |conn| {
+            let mut stmt = conn.prepare("SELECT content_id, path FROM content")?;
+            let ids: Vec<i64> = stmt
+                .query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?)))?
+                .flatten()
+                .filter(|(_, p)| keys.contains(&p.trim_start_matches('/').to_lowercase()))
+                .map(|(id, _)| id)
+                .collect();
+            for id in ids {
+                conn.execute(
+                    "DELETE FROM hotCueBankList_cue WHERE cue_id IN \
+                     (SELECT cue_id FROM cue WHERE content_id = ?1)",
+                    [id],
+                )?;
+                for table in ["cue", "history_content", "myTag_content", "playlist_content", "content"] {
+                    conn.execute(&format!("DELETE FROM {table} WHERE content_id = ?1"), [id])?;
+                }
+                conn.execute(
+                    "DELETE FROM recommendedLike WHERE content_id_1 = ?1 OR content_id_2 = ?1",
+                    [id],
+                )?;
+            }
+            conn.execute(
+                "UPDATE property SET numberOfContents = (SELECT COUNT(*) FROM content)",
+                [],
+            )?;
+            mirror_playlists(conn, &export)
+        })?;
+    }
+    backup_once(&pdb_path);
+    crate::export::write_atomic(&pdb_path, &data).map_err(ReadError::io(&pdb_path))?;
+
+    // My Tag links in exportExt.pdb — type 4 rows, `u32 0, u32 track id,
+    // u32 tag id`. A stick without the file, or one whose tag database
+    // doesn't parse, simply keeps none.
+    let ext_path = dir.join("exportExt.pdb");
+    if let Ok(mut ext) = std::fs::read(&ext_path) {
+        let cleared = clear_rows(&mut ext, 4, |data, row| {
+            u32_at(data, row + 4).is_some_and(|id| doomed.contains(&id))
+        });
+        if cleared.is_ok_and(|n| n > 0) {
+            backup_once(&ext_path);
+            crate::export::write_atomic(&ext_path, &ext).map_err(ReadError::io(&ext_path))?;
+        }
+    }
+
+    // Files last: a row that outlives its file is a missing track on the
+    // player; a file that outlives its row is only a stray on the stick.
+    let still_used: HashSet<u32> = export.tracks.values().map(|t| t.artwork_id).collect();
+    let on_stick = |p: &str| volume_root.join(p.trim_start_matches('/'));
+    for t in &gone {
+        let _ = std::fs::remove_file(on_stick(&t.file_path));
+        if let Some(anlz) = &t.analyze_path {
+            let dat = on_stick(anlz);
+            for kind in ["DAT", "EXT", "2EX", "DAT.orig", "EXT.orig"] {
+                let _ = std::fs::remove_file(dat.with_extension(kind));
+            }
+            if let Some(d) = dat.parent() {
+                let _ = std::fs::remove_dir(d); // only an emptied directory goes
+            }
+        }
+        // Artwork is shared by every track of an album: it goes with the
+        // last of them, all four files (`aN`, `aN_m`, `bN`, `bN_m`).
+        if t.artwork_id != 0 && !still_used.contains(&t.artwork_id) {
+            if let Some(art) = t.artwork_path.as_deref().map(on_stick) {
+                let _ = std::fs::remove_file(&art);
+                let n = art
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .and_then(|n| n.strip_prefix('a'))
+                    .and_then(|n| n.strip_suffix(".jpg"));
+                if let Some(n) = n {
+                    for name in [format!("a{n}_m.jpg"), format!("b{n}.jpg"), format!("b{n}_m.jpg")] {
+                        let _ = std::fs::remove_file(art.with_file_name(name));
+                    }
+                }
+                if let Some(d) = art.parent() {
+                    let _ = std::fs::remove_dir(d);
+                }
+            }
+        }
+    }
+    Ok(gone.len())
+}
+
+/// Drop every row of table `ty` that `doomed` picks, rekordbox's own way: the
+/// row keeps its slot (surviving rows' slot numbers, which their index_shift
+/// encodes, never move) and loses its presence bit; the page's present-row
+/// counter at 0x19 follows, its flags gain the has-deletes bit (0x24 → 0x34),
+/// its transaction id becomes the header's sequence, and the table's index
+/// page lists it as a collection candidate — the state a rekordbox export is
+/// in after its own in-place deletes. Returns how many rows were dropped.
+fn clear_rows(
+    data: &mut [u8],
+    ty: u32,
+    doomed: impl Fn(&[u8], usize) -> bool,
+) -> Result<usize, ReadError> {
+    use crate::pdb::{table_dir, table_pages, u16_at};
+    let tables = table_dir(data)?;
+    let tx = u32_at(data, 0x14).unwrap_or(0);
+    let page_size = tables.page_size;
+    if page_size != pdbw::PAGE {
+        return Err(ReadError::Format("unsupported page size"));
+    }
+    let Some((_, first, last)) = tables.find(ty) else {
+        return Ok(0);
+    };
+    let pages = table_pages(data, page_size, first, last);
+    let sentinel = pages.first().copied().filter(|&off| data[off + 0x1B] & 0x40 != 0);
+    let mut dropped = 0;
+    for page_off in pages {
+        if u32_at(data, page_off + 8) != Some(ty) || data[page_off + 0x1B] & 0x40 != 0 {
+            continue;
+        }
+        let mut hit = false;
+        for (slot, (present, row)) in page_slots(data, page_off).into_iter().enumerate() {
+            if !present || !doomed(data, row) {
+                continue;
+            }
+            let end = page_off + pdbw::PAGE - 36 * (slot / 16);
+            let bits = u16_at(data, end - 4).unwrap_or(0) & !(1u16 << (slot % 16));
+            data[end - 4..end - 2].copy_from_slice(&bits.to_le_bytes());
+            let live = u16_at(data, page_off + 0x19).unwrap_or(0).saturating_sub(32);
+            data[page_off + 0x19..page_off + 0x1B].copy_from_slice(&live.to_le_bytes());
+            dropped += 1;
+            hit = true;
+        }
+        if hit {
+            data[page_off + 0x1B] |= 0x10;
+            data[page_off + 0x10..page_off + 0x14].copy_from_slice(&tx.to_le_bytes());
+            if let Some(s) = sentinel {
+                index_list_page(data, s, (page_off / page_size) as u32);
+            }
+        }
+    }
+    Ok(dropped)
+}
+
+/// List `page` in a table's index (sentinel) page as one holding deleted
+/// rows, as rekordbox does: into the first empty slot below the high-water
+/// mark (the word at 0x3A, 0x1FFF when there is none), else into a new slot
+/// at the mark (0x26); the entry count at 0x38 follows. A page already
+/// listed, or an index with no room, is left as it is — readers resolve
+/// rows through the presence bits, not this list.
+fn index_list_page(data: &mut [u8], sentinel: usize, page: u32) {
+    use crate::pdb::u16_at;
+    const EMPTY: u32 = 0x1FFF_FFF8;
+    let entry = page * 8;
+    let mark = u16_at(data, sentinel + 0x26).unwrap_or(0) as usize;
+    let at = |i: usize| sentinel + 0x3C + 4 * i;
+    if (0..mark).any(|i| u32_at(data, at(i)) == Some(entry)) {
+        return;
+    }
+    let first_empty = u16_at(data, sentinel + 0x3A).unwrap_or(0x1FFF) as usize;
+    let slot = if first_empty < mark { first_empty } else { mark };
+    if at(slot) + 4 > sentinel + pdbw::PAGE - 20 {
+        return;
+    }
+    data[at(slot)..at(slot) + 4].copy_from_slice(&entry.to_le_bytes());
+    let mark = mark.max(slot + 1);
+    data[sentinel + 0x26..sentinel + 0x28].copy_from_slice(&(mark as u16).to_le_bytes());
+    let count = u16_at(data, sentinel + 0x38).unwrap_or(0) + 1;
+    data[sentinel + 0x38..sentinel + 0x3A].copy_from_slice(&count.to_le_bytes());
+    let next_empty = (0..mark)
+        .find(|&i| u32_at(data, at(i)) == Some(EMPTY))
+        .map_or(0x1FFFu16, |i| i as u16);
+    data[sentinel + 0x3A..sentinel + 0x3C].copy_from_slice(&next_empty.to_le_bytes());
+}
+
+/// Patch the track count in the type-19 export-summary row (`u16 0x0280,
+/// u16 index_shift, u32 numberOfContents`, mirroring the DLP's
+/// `property.numberOfContents`). A database without the row is left alone.
+fn set_summary_count(data: &mut [u8], count: u32) {
+    use crate::pdb::{page_rows, table_dir, table_pages, u16_at};
+    let Ok(tables) = table_dir(data) else {
+        return;
+    };
+    let Some((_, first, last)) = tables.find(TYPE_SUMMARY) else {
+        return;
+    };
+    for page_off in table_pages(data, tables.page_size, first, last) {
+        for row in page_rows(data, tables.page_size, page_off, TYPE_SUMMARY) {
+            if u16_at(data, row) == Some(0x0280) {
+                data[row + 4..row + 8].copy_from_slice(&count.to_le_bytes());
+            }
         }
     }
 }
@@ -501,8 +760,21 @@ fn rewrite_pdb_playlist_tables(
     entries: &HashMap<u32, Vec<u32>>,
 ) -> Result<(), ReadError> {
     let mut data = std::fs::read(pdb_path).map_err(ReadError::io(pdb_path))?;
+    relink_playlist_tables(&mut data, playlists, entries)?;
+    // Atomic replace: a yanked stick mid-write leaves either the old database
+    // or the new one, never a torn page.
+    crate::export::write_atomic(pdb_path, &data).map_err(ReadError::io(pdb_path))
+}
 
-    let tables = crate::pdb::table_dir(&data)?;
+/// The in-memory half of [`rewrite_pdb_playlist_tables`]: `data` is the
+/// whole database, and comes back with its playlist tables replaced and its
+/// header bumped, ready to write.
+fn relink_playlist_tables(
+    data: &mut Vec<u8>,
+    playlists: &[RbPlaylist],
+    entries: &HashMap<u32, Vec<u32>>,
+) -> Result<(), ReadError> {
+    let tables = crate::pdb::table_dir(data)?;
     let page_size = tables.page_size;
     if page_size != pdbw::PAGE {
         // Never seen in the wild (rekordbox always writes 4096); refuse
@@ -639,13 +911,9 @@ fn rewrite_pdb_playlist_tables(
 
     // Header: next_unused_page covers the appended pages; the sequence number
     // records that the database changed, as rekordbox does on every write.
-    let seq = u32_at(&data, 0x14).unwrap_or(0).wrapping_add(1);
+    let seq = u32_at(data, 0x14).unwrap_or(0).wrapping_add(1);
     data[0x0C..0x10].copy_from_slice(&total.to_le_bytes());
     data[0x14..0x18].copy_from_slice(&seq.to_le_bytes());
-
-    // Atomic replace: a yanked stick mid-write leaves either the old database
-    // or the new one, never a torn page.
-    crate::export::write_atomic(pdb_path, &data).map_err(ReadError::io(pdb_path))?;
     Ok(())
 }
 
@@ -658,56 +926,59 @@ fn rewrite_pdb_playlist_tables(
 /// path, the only key shared with the pdb; entries whose path the DLP doesn't
 /// know are skipped rather than failing the edit.
 fn sync_dlp_playlists(db_path: &Path, export: &RbExport) -> Result<(), ReadError> {
-    with_local_dlp(db_path, |conn| {
-        let mut content_by_path: HashMap<String, i64> = HashMap::new();
-        {
-            let mut stmt = conn.prepare("SELECT content_id, path FROM content")?;
-            let rows = stmt.query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?)))?;
-            for (id, path) in rows.flatten() {
-                content_by_path.insert(path.trim_start_matches('/').to_lowercase(), id);
-            }
+    with_local_dlp(db_path, |conn| mirror_playlists(conn, export))
+}
+
+/// The SQL behind [`sync_dlp_playlists`], on an open (local) copy.
+fn mirror_playlists(conn: &rusqlite::Connection, export: &RbExport) -> rusqlite::Result<()> {
+    let mut content_by_path: HashMap<String, i64> = HashMap::new();
+    {
+        let mut stmt = conn.prepare("SELECT content_id, path FROM content")?;
+        let rows = stmt.query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?)))?;
+        for (id, path) in rows.flatten() {
+            content_by_path.insert(path.trim_start_matches('/').to_lowercase(), id);
         }
-        conn.execute("DELETE FROM playlist", [])?;
-        conn.execute("DELETE FROM playlist_content", [])?;
-        for p in &export.playlists {
-            conn.execute(
-                "INSERT INTO playlist VALUES (?1, ?2, ?3, NULL, ?4, ?5)",
-                rusqlite::params![
-                    p.id as i64,
-                    p.sort_order as i64,
-                    p.name,
-                    p.is_folder as i64,
-                    p.parent_id as i64,
-                ],
-            )?;
-        }
-        for p in export.playlists.iter().filter(|p| !p.is_folder) {
-            let Some(tracks) = export.entries.get(&p.id) else {
+    }
+    conn.execute("DELETE FROM playlist", [])?;
+    conn.execute("DELETE FROM playlist_content", [])?;
+    for p in &export.playlists {
+        conn.execute(
+            "INSERT INTO playlist VALUES (?1, ?2, ?3, NULL, ?4, ?5)",
+            rusqlite::params![
+                p.id as i64,
+                p.sort_order as i64,
+                p.name,
+                p.is_folder as i64,
+                p.parent_id as i64,
+            ],
+        )?;
+    }
+    for p in export.playlists.iter().filter(|p| !p.is_folder) {
+        let Some(tracks) = export.entries.get(&p.id) else {
+            continue;
+        };
+        for (i, tid) in tracks.iter().enumerate() {
+            let Some(track) = export.tracks.get(tid) else {
                 continue;
             };
-            for (i, tid) in tracks.iter().enumerate() {
-                let Some(track) = export.tracks.get(tid) else {
-                    continue;
-                };
-                let key = track.file_path.trim_start_matches('/').to_lowercase();
-                let Some(content_id) = content_by_path.get(&key) else {
-                    continue;
-                };
-                conn.execute(
-                    "INSERT INTO playlist_content VALUES (?1, ?2, ?3)",
-                    rusqlite::params![p.id as i64, content_id, i as i64],
-                )?;
-            }
+            let key = track.file_path.trim_start_matches('/').to_lowercase();
+            let Some(content_id) = content_by_path.get(&key) else {
+                continue;
+            };
+            conn.execute(
+                "INSERT INTO playlist_content VALUES (?1, ?2, ?3)",
+                rusqlite::params![p.id as i64, content_id, i as i64],
+            )?;
         }
-        Ok(())
-    })
+    }
+    Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::anlz::AnlzInput;
-    use crate::pdb::read_export;
+    use crate::pdb::{read_export, read_stick};
 
     fn temp_root(tag: &str) -> std::path::PathBuf {
         let root = std::env::temp_dir().join(format!("ordnung-edit-{tag}-{}", std::process::id()));
@@ -902,5 +1173,191 @@ mod tests {
         assert_eq!(s[4], "2");
         assert_eq!(s[3], (strings_before[3].parse::<u32>().unwrap_or(0) + 1).to_string());
         assert_eq!(read_export(&pdb).unwrap().tracks[&id].tempo_centi_bpm, 12800);
+    }
+
+    /// The page holding track `id`'s live row, by byte offset.
+    fn page_of(data: &[u8], id: u32) -> usize {
+        use crate::pdb::{table_dir, table_pages};
+        let (_, first, last) = table_dir(data).unwrap().find(TYPE_TRACKS).unwrap();
+        table_pages(data, pdbw::PAGE, first, last)
+            .into_iter()
+            .find(|&p| {
+                data[p + 0x1B] & 0x40 == 0
+                    && page_slots(data, p)
+                        .iter()
+                        .any(|&(live, row)| live && u32_at(data, row + 0x48) == Some(id))
+            })
+            .expect("row page")
+    }
+
+    /// The export summary's track count (type 19: `u16 0x0280, u16, u32 n`).
+    fn summary_count(data: &[u8]) -> Option<u32> {
+        use crate::pdb::{page_rows, table_dir, table_pages, u16_at};
+        let (_, first, last) = table_dir(data).unwrap().find(TYPE_SUMMARY)?;
+        table_pages(data, pdbw::PAGE, first, last)
+            .into_iter()
+            .flat_map(|p| page_rows(data, pdbw::PAGE, p, TYPE_SUMMARY))
+            .find(|&row| u16_at(data, row) == Some(0x0280))
+            .and_then(|row| u32_at(data, row + 4))
+    }
+
+    #[test]
+    fn delete_drops_rows_entries_files_and_counts() {
+        use crate::pdb::u16_at;
+        let root = temp_root("delete");
+        let pdb = root.join("PIONEER/rekordbox/export.pdb");
+        std::fs::copy(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/num_rows_export.pdb"),
+            &pdb,
+        )
+        .unwrap();
+        let before = read_export(&pdb).unwrap();
+        // A track with artwork of its own takes the files along (no two
+        // tracks of this fixture share an artwork id); one without has none.
+        let lone = *before
+            .tracks
+            .iter()
+            .find(|(_, t)| t.artwork_id != 0 && t.artwork_path.is_some())
+            .map(|(id, _)| id)
+            .expect("a track with artwork");
+        let plain = *before
+            .tracks
+            .iter()
+            .find(|(_, t)| t.artwork_id == 0)
+            .map(|(id, _)| id)
+            .expect("a track without artwork");
+        let keep = *before.tracks.keys().find(|id| **id != lone && **id != plain).unwrap();
+        let on_stick = |p: &str| root.join(p.trim_start_matches('/'));
+        let rel = |id: u32| before.tracks[&id].file_path.trim_start_matches('/').to_string();
+        for id in [lone, plain, keep] {
+            let t = &before.tracks[&id];
+            let audio = on_stick(&t.file_path);
+            std::fs::create_dir_all(audio.parent().unwrap()).unwrap();
+            std::fs::write(&audio, b"audio").unwrap();
+            let dat = on_stick(t.analyze_path.as_deref().unwrap());
+            std::fs::create_dir_all(dat.parent().unwrap()).unwrap();
+            std::fs::write(&dat, b"dat").unwrap();
+            std::fs::write(dat.with_extension("EXT"), b"ext").unwrap();
+            if let Some(art) = t.artwork_path.as_deref().map(on_stick) {
+                std::fs::create_dir_all(art.parent().unwrap()).unwrap();
+                let n = art.file_name().unwrap().to_str().unwrap()[1..]
+                    .trim_end_matches(".jpg")
+                    .to_string();
+                for name in [format!("a{n}.jpg"), format!("a{n}_m.jpg"), format!("b{n}.jpg"), format!("b{n}_m.jpg")] {
+                    std::fs::write(art.with_file_name(name), b"jpg").unwrap();
+                }
+            }
+        }
+        // A Device Library Plus beside the pdb, every table a delete touches
+        // holding a row for the doomed track.
+        let db = root.join("PIONEER/rekordbox/exportLibrary.db");
+        {
+            let conn = crate::dlp::open(&db, rusqlite::OpenFlags::default()).unwrap();
+            conn.execute_batch(
+                "CREATE TABLE content(content_id INTEGER PRIMARY KEY, path varchar);
+                 CREATE TABLE playlist(playlist_id INTEGER PRIMARY KEY, sequenceNo INTEGER, \
+                     name varchar, image_id INTEGER, attribute INTEGER, playlist_id_parent INTEGER);
+                 CREATE TABLE playlist_content(playlist_id INTEGER, content_id INTEGER, sequenceNo INTEGER);
+                 CREATE TABLE property(deviceName varchar, dbVersion varchar, numberOfContents INTEGER);
+                 CREATE TABLE cue(cue_id INTEGER PRIMARY KEY, content_id INTEGER);
+                 CREATE TABLE hotCueBankList_cue(hotCueBankList_id INTEGER, cue_id INTEGER, sequenceNo INTEGER);
+                 CREATE TABLE history_content(history_id INTEGER, content_id INTEGER, sequenceNo INTEGER);
+                 CREATE TABLE myTag_content(myTag_id INTEGER, content_id INTEGER);
+                 CREATE TABLE recommendedLike(content_id_1 INTEGER, content_id_2 INTEGER, rating INTEGER);
+                 INSERT INTO property VALUES ('X', '1000', 3);
+                 INSERT INTO cue VALUES (1, 902);
+                 INSERT INTO hotCueBankList_cue VALUES (1, 1, 0);
+                 INSERT INTO history_content VALUES (1, 902, 0);
+                 INSERT INTO myTag_content VALUES (1, 902);
+                 INSERT INTO recommendedLike VALUES (902, 903, 1);",
+            )
+            .unwrap();
+            for (cid, id) in [(901, plain), (902, lone), (903, keep)] {
+                conn.execute(
+                    "INSERT INTO content VALUES (?1, ?2)",
+                    rusqlite::params![cid, before.tracks[&id].file_path],
+                )
+                .unwrap();
+            }
+        }
+        let pid = edit_stick_playlists(
+            &root,
+            &PlaylistOp::Create {
+                name: "set".into(),
+                parent_id: 0,
+            },
+        )
+        .unwrap()
+        .new_id
+        .unwrap();
+        edit_stick_playlists(
+            &root,
+            &PlaylistOp::AddTracks {
+                id: pid,
+                rel_paths: vec![rel(lone), rel(plain), rel(keep)],
+            },
+        )
+        .unwrap();
+        let pristine = std::fs::read(&pdb).unwrap();
+        // A My Tag database with no links has nothing to shed: left byte for byte.
+        let ext = root.join("PIONEER/rekordbox/exportExt.pdb");
+        std::fs::write(&ext, pdbw::build_export_ext_pdb()).unwrap();
+
+        let n = delete_stick_tracks(&root, &[rel(lone), rel(plain), "Contents/nope.mp3".into()]).unwrap();
+        assert_eq!(n, 2);
+        assert_eq!(std::fs::read(&ext).unwrap(), pdbw::build_export_ext_pdb());
+        assert!(!ext.with_extension("pdb.orig").exists());
+
+        let after = read_stick(&root).unwrap();
+        assert_eq!(after.tracks.len(), before.tracks.len() - 2);
+        assert!(!after.tracks.contains_key(&lone) && !after.tracks.contains_key(&plain));
+        for (id, t) in &after.tracks {
+            assert_eq!(t, &before.tracks[id], "surviving rows must not change");
+        }
+        assert_eq!(after.entries[&pid], vec![keep]);
+        let data = std::fs::read(&pdb).unwrap();
+        assert_eq!(summary_count(&data), Some(before.tracks.len() as u32 - 2));
+        // The row's page carries the has-deletes flag, counts only live rows,
+        // and is listed in the tracks table's index page.
+        let page = page_of(&pristine, lone);
+        assert_eq!(data[page + 0x1B], 0x34);
+        let live = page_slots(&data, page).iter().filter(|(p, _)| *p).count();
+        assert_eq!(u16_at(&data, page + 0x19), Some(32 * live as u16));
+        let sentinel = crate::pdb::table_dir(&data).unwrap().find(TYPE_TRACKS).unwrap().1 as usize * pdbw::PAGE;
+        let listed: Vec<u32> = (0..u16_at(&data, sentinel + 0x26).unwrap() as usize)
+            .filter_map(|i| u32_at(&data, sentinel + 0x3C + 4 * i))
+            .collect();
+        assert!(listed.contains(&((page / pdbw::PAGE) as u32 * 8)), "index lists {listed:?}");
+        let entries = listed.iter().filter(|e| **e != 0x1FFF_FFF8).count() as u16;
+        assert_eq!(u16_at(&data, sentinel + 0x38), Some(entries));
+
+        // Files: the deleted tracks' audio, analysis and artwork are gone;
+        // the kept track stays.
+        let t = &before.tracks[&lone];
+        assert!(!on_stick(&t.file_path).exists());
+        let dat = on_stick(t.analyze_path.as_deref().unwrap());
+        assert!(!dat.exists() && !dat.with_extension("EXT").exists() && !dat.parent().unwrap().exists());
+        let art = on_stick(t.artwork_path.as_deref().unwrap());
+        assert!(!art.exists());
+        let b = format!("b{}", &art.file_name().unwrap().to_str().unwrap()[1..]);
+        assert!(!art.with_file_name(b).exists());
+        assert!(!on_stick(&before.tracks[&plain].file_path).exists());
+        assert!(on_stick(&before.tracks[&keep].file_path).exists());
+
+        // The DLP shed the rows, counts what is left, and mirrors the playlist.
+        let conn = crate::dlp::open_read_only(&db).unwrap();
+        let count = |sql: &str| conn.query_row(sql, [], |r| r.get::<_, i64>(0)).unwrap();
+        assert_eq!(count("SELECT COUNT(*) FROM content"), 1);
+        assert_eq!(count("SELECT numberOfContents FROM property"), 1);
+        for table in ["cue", "hotCueBankList_cue", "history_content", "myTag_content", "recommendedLike"] {
+            assert_eq!(count(&format!("SELECT COUNT(*) FROM {table}")), 0, "{table}");
+        }
+        assert_eq!(count("SELECT content_id FROM playlist_content"), 903);
+        drop(conn);
+
+        assert!(pdb.with_extension("pdb.orig").is_file());
+        assert!(db.with_extension("db.orig").is_file());
+        assert_eq!(delete_stick_tracks(&root, &["Contents/nope.mp3".into()]).unwrap(), 0);
+        let _ = std::fs::remove_dir_all(&root);
     }
 }

@@ -566,6 +566,23 @@ exportLibrary.db `image.path` references `bN.jpg`. (377 ids referenced here.)
   the ANLZ `PCOB`/`PCO2` lists — the DLP `cue` table stays empty — and its
   `PCPT`/`PCP2` entries are byte-for-byte the layout Ordnung writes.
 
+**Deleting a track** (`edit::delete_stick_tracks`, 2026-10-30) mirrors
+what rekordbox's own device view leaves behind (verified on the stop126 and
+EYEBAGS goldens, which carry seven and thirteen such pages): the row keeps
+its slot and loses its presence bit, the page's 0x19 word drops by 32 (it
+is 32 × *present* rows, not slots), its flags go 0x24 → 0x34, its tx id
+takes the header sequence, and the table's index page lists the page —
+`u16 @0x26` is the slot high-water mark, `u16 @0x3a` the lowest empty slot
+below it (0x1fff when none), `u16 @0x38` the entry count, entries
+`8 × page` from 0x3c. Playlist tables are relinked without the track, the
+type-19 summary row's count is patched in place, the DLP sheds its
+`content` row and everything keyed on it (`playlist_content`, `cue` and
+`hotCueBankList_cue`, `history_content`, `myTag_content`,
+`recommendedLike`) and recounts `property.numberOfContents`, exportExt's
+type-4 My Tag links drop the same way, and only then do the audio, the
+ANLZ trio (plus `.orig` siblings, the directory if emptied) and — when no
+surviving row shares the artwork id — the four artwork files go.
+
 ## 10. Hardware incident log
 
 - **2026-09-21, CDJ-2000 (original):** an Ordnung export of the Stop126
