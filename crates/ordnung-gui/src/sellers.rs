@@ -1068,7 +1068,7 @@ impl App {
                         egui::Align2::RIGHT_BOTTOM,
                         &terms,
                         crate::ui::tokens::font::footnote(),
-                        egui::Color32::from_rgb(120, 200, 140),
+                        crate::ui::tokens::color::POSITIVE,
                     );
                     let right_w = seller_rect.width().max(terms_rect.width()) + 16.0;
                     // Left column: artist over title · year, truncated so
@@ -1254,7 +1254,7 @@ impl App {
                 let mut dig_clicked = false;
                 if card_hovered {
                     let bg = if dig_hovered {
-                        egui::Color32::from_rgb(120, 220, 150)
+                        crate::ui::tokens::color::PLAY_HOVER
                     } else {
                         egui::Color32::from_black_alpha(190)
                     };
@@ -1288,7 +1288,7 @@ impl App {
                 let mut cart_clicked = false;
                 if card_hovered {
                     let bg = if cart_hovered {
-                        egui::Color32::from_rgb(110, 160, 235)
+                        crate::ui::tokens::color::accent()
                     } else {
                         egui::Color32::from_black_alpha(190)
                     };
@@ -1377,7 +1377,7 @@ impl App {
                         egui::Label::new(
                             egui::RichText::new(&price_line)
                                 .small()
-                                .color(egui::Color32::from_rgb(120, 200, 140)),
+                                .color(crate::ui::tokens::color::POSITIVE),
                         )
                         .truncate(),
                     );
@@ -1482,7 +1482,7 @@ impl App {
             egui::Align2::RIGHT_CENTER,
             &price_line,
             crate::ui::tokens::font::callout(),
-            egui::Color32::from_rgb(120, 200, 140),
+            crate::ui::tokens::color::POSITIVE,
         );
         let mut right_edge = terms.left() - 10.0;
         for (show, list) in [
@@ -1523,7 +1523,7 @@ impl App {
         let mut cart_clicked = false;
         if resp.hovered() || cart_hovered {
             let bg = if cart_hovered {
-                egui::Color32::from_rgb(110, 160, 235)
+                crate::ui::tokens::color::accent()
             } else {
                 egui::Color32::from_black_alpha(190)
             };

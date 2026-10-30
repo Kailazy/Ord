@@ -4513,7 +4513,7 @@ impl App {
                             named(icons::WARNING),
                             "Original file removed, catalog repointed",
                             font::body(),
-                            egui::Color32::LIGHT_YELLOW,
+                            color::CAUTION,
                         ));
                     }
 

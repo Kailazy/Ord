@@ -489,7 +489,7 @@ impl App {
                     painter.rect_stroke(
                         rect.expand(1.0),
                         3.0,
-                        egui::Stroke::new(2.0, egui::Color32::from_rgb(120, 170, 240)),
+                        egui::Stroke::new(2.0, crate::ui::tokens::color::accent()),
                     );
                     // A right-aligned hint inside the row so the gesture reads as
                     // "set this track's cover" rather than a catalog import.
@@ -498,7 +498,7 @@ impl App {
                         egui::Align2::RIGHT_CENTER,
                         "Set as cover",
                         crate::ui::tokens::font::callout(),
-                        egui::Color32::from_rgb(120, 170, 240),
+                        crate::ui::tokens::color::accent(),
                     );
                 }
             } else if let Some((_, rect)) = playlist_under_cursor.and_then(|pid| {

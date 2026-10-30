@@ -1591,7 +1591,7 @@ pub(crate) fn draw_crate_rows(
                 ui.painter().rect_stroke(
                     resp.rect.shrink(1.0),
                     egui::Rounding::same(6.0),
-                    egui::Stroke::new(1.5, egui::Color32::from_rgb(90, 150, 220)),
+                    egui::Stroke::new(1.5, crate::ui::tokens::color::accent()),
                 );
             }
             if let Some(payload) = resp.dnd_release_payload::<DraggedTracks>() {

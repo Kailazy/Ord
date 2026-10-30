@@ -310,7 +310,7 @@ impl App {
                                             ui.label(
                                                 egui::RichText::new(mark)
                                                     .small()
-                                                    .color(egui::Color32::from_rgb(120, 200, 140)),
+                                                    .color(crate::ui::tokens::color::POSITIVE),
                                             );
                                         } else if r.owned {
                                             ui.label(

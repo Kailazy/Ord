@@ -830,7 +830,7 @@ fn search_hit_row(
                     egui::Color32::WHITE,
                 ),
                 PlayState::Loading => (170, "…", egui::Color32::WHITE),
-                PlayState::Playing => (170, "■", egui::Color32::from_rgb(130, 210, 130)),
+                PlayState::Playing => (170, "■", crate::ui::tokens::color::PLAY),
             };
             // Darken the whole square, not just behind the disc: a bright cover
             // otherwise swallows a small glyph sitting on it.

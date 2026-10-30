@@ -145,7 +145,7 @@ fn draw_row(ui: &mut egui::Ui, r: &Row, show_seller: bool) -> Option<Act> {
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     ui.label(
                         egui::RichText::new(&r.terms)
-                            .color(egui::Color32::from_rgb(120, 200, 140)),
+                            .color(crate::ui::tokens::color::POSITIVE),
                     );
                 });
                 if show_seller {
@@ -302,7 +302,7 @@ impl App {
                         ))
                         .weak()
                         .small()
-                        .color(egui::Color32::from_rgb(225, 180, 90)),
+                        .color(crate::ui::tokens::color::CAUTION),
                     );
                 }
                 ui.add_space(6.0);

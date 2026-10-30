@@ -498,7 +498,7 @@ impl App {
                      releases show. Turn at least one back on to filter.",
                 )
                 .small()
-                .color(egui::Color32::from_rgb(190, 145, 60)),
+                .color(crate::ui::tokens::color::CAUTION),
             );
         }
         if mediums_dirty {

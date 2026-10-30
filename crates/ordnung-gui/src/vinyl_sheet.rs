@@ -1872,7 +1872,7 @@ impl App {
                                 ui.text_style_height(&egui::TextStyle::Button)
                                     + 2.0 * ui.spacing().button_padding.y,
                             );
-                            let price_ink = egui::Color32::from_rgb(120, 200, 140);
+                            let price_ink = crate::ui::tokens::color::POSITIVE;
                             ui.label(egui::RichText::new("Discogs").weak());
                             if crate::ui::button::name_link(
                                 ui,
@@ -2012,7 +2012,7 @@ impl App {
                                 ui.label(
                                     egui::RichText::new(offer_line)
                                         .small()
-                                        .color(egui::Color32::from_rgb(120, 200, 140)),
+                                        .color(crate::ui::tokens::color::POSITIVE),
                                 );
                                 if crate::ui::button::button(ui, "Buy ↗")
                                     .on_hover_note("Open this listing on discogs.com")
@@ -2040,7 +2040,7 @@ impl App {
                                 ui.label(
                                     egui::RichText::new(format!("from {alt_price}"))
                                         .small()
-                                        .color(egui::Color32::from_rgb(120, 200, 140)),
+                                        .color(crate::ui::tokens::color::POSITIVE),
                                 );
                                 if crate::ui::button::button(ui, "View")
                                     .on_hover_note("Show that pressing in this window")
@@ -2249,7 +2249,7 @@ impl App {
                 }
                 if let Some(e) = &error {
                     ui.add_space(10.0);
-                    ui.label(egui::RichText::new(e).color(egui::Color32::from_rgb(220, 140, 120)));
+                    ui.label(egui::RichText::new(e).color(crate::ui::tokens::color::NEGATIVE));
                     ui.add_space(10.0);
                     return;
                 }
@@ -2960,7 +2960,7 @@ fn video_transport_ui(
 ) -> Option<VideoAct> {
     use crate::ui::tokens::space;
 
-    const ACCENT: egui::Color32 = egui::Color32::from_rgb(90, 200, 120);
+    const ACCENT: egui::Color32 = crate::ui::tokens::color::PLAY;
     /// Breathing room inside the bar's ends, so the pause button and the
     /// total clock aren't flush against its rounded corners.
     const EDGE: f32 = space::S4;
@@ -3189,7 +3189,7 @@ fn sheet_row_ui(
     tagged: &[Id],
     db: &Path,
 ) -> Option<RowHit> {
-    const ACCENT: egui::Color32 = egui::Color32::from_rgb(90, 200, 120);
+    const ACCENT: egui::Color32 = crate::ui::tokens::color::PLAY;
     /// The like mark's square: the row's height.
     const LIKE_W: f32 = 22.0;
     let playable = !matches!(row.source, SheetSource::None);
@@ -3391,7 +3391,7 @@ fn sheet_row_ui(
                             let chip = ui.label(
                                 egui::RichText::new(text)
                                     .small()
-                                    .color(egui::Color32::from_rgb(190, 130, 130)),
+                                    .color(crate::ui::tokens::color::NEGATIVE),
                             );
                             if let Some(c) = row.guess {
                                 let title = sheet
@@ -3543,7 +3543,7 @@ fn extra_video_ui(
     playing: bool,
     running: bool,
 ) -> bool {
-    const ACCENT: egui::Color32 = egui::Color32::from_rgb(90, 200, 120);
+    const ACCENT: egui::Color32 = crate::ui::tokens::color::PLAY;
     let bg = ui.painter().add(egui::Shape::Noop);
     let resp = ui
         .scope(|ui| {

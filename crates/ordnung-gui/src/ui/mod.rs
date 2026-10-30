@@ -122,7 +122,7 @@ pub fn drag_chip(ctx: &egui::Context, text: String) {
     painter.rect_filled(
         rect,
         egui::Rounding::same(4.0),
-        egui::Color32::from_rgb(60, 110, 170),
+        tokens::color::nav_accent(),
     );
     painter.galley(at + pad, galley, egui::Color32::WHITE);
 }

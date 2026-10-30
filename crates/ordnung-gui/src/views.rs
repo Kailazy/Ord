@@ -406,9 +406,9 @@ fn catalog_badge(
     n: usize,
 ) -> bool {
     let bg = if hovered {
-        egui::Color32::from_rgb(120, 220, 150)
+        crate::ui::tokens::color::PLAY_HOVER
     } else {
-        egui::Color32::from_rgb(90, 200, 120)
+        crate::ui::tokens::color::PLAY
     };
     ui.painter().rect_filled(rect, egui::Rounding::same(5.0), bg);
     ui.painter().text(
@@ -1122,14 +1122,14 @@ impl App {
                                 egui::RichText::new("· deletes the whole track")
                                     .small()
                                     .strong()
-                                    .color(egui::Color32::from_rgb(0xE0, 0x6C, 0x6C)),
+                                    .color(crate::ui::tokens::color::NEGATIVE),
                             )
                             .on_hover_note("No copy is kept. All copies move to the Trash");
                         } else {
                             ui.label(
                                 egui::RichText::new(format!("· {marked} to delete"))
                                     .small()
-                                    .color(egui::Color32::from_rgb(0xC0, 0x6C, 0x6C)),
+                                    .color(crate::ui::tokens::color::NEGATIVE),
                             );
                         }
                     }
@@ -1323,7 +1323,7 @@ impl App {
                                     "{whole_track} of these are in groups with no copy kept — \
                                  those tracks leave the catalog entirely."
                                 )
-                            }, crate::ui::tokens::font::body(), egui::Color32::from_rgb(0xE0, 0x6C, 0x6C)),
+                            }, crate::ui::tokens::font::body(), crate::ui::tokens::color::NEGATIVE),
                         );
                     }
                     egui::ScrollArea::vertical()
@@ -2632,7 +2632,7 @@ impl App {
                             ui.painter().rect_stroke(
                                 rect,
                                 egui::Rounding::same(6.0),
-                                egui::Stroke::new(2.0, egui::Color32::from_rgb(90, 200, 120)),
+                                egui::Stroke::new(2.0, crate::ui::tokens::color::PLAY),
                             );
                         }
                         // "In your catalog" badge: a small chip pinned to the
@@ -2662,7 +2662,7 @@ impl App {
                         let playing_this = playing_key == Some(c.key);
                         if card_hovered || playing_this {
                             let bg = if play_hovered {
-                                egui::Color32::from_rgb(120, 220, 150)
+                                crate::ui::tokens::color::PLAY_HOVER
                             } else {
                                 egui::Color32::from_black_alpha(190)
                             };
@@ -2693,7 +2693,7 @@ impl App {
                         let mut dig_clicked = false;
                         if card_hovered {
                             let bg = if dig_hovered {
-                                egui::Color32::from_rgb(120, 220, 150)
+                                crate::ui::tokens::color::PLAY_HOVER
                             } else {
                                 egui::Color32::from_black_alpha(190)
                             };
@@ -2936,7 +2936,7 @@ impl App {
                         egui::Align2::RIGHT_CENTER,
                         format_price(p, c.price_currency.as_deref(), false),
                         crate::ui::tokens::font::callout(),
-                        egui::Color32::from_rgb(120, 200, 140),
+                        crate::ui::tokens::color::POSITIVE,
                     );
                 }
                 // Title over artist · year · format, truncated to the space

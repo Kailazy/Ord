@@ -1677,7 +1677,7 @@ impl App {
                                                 PlayState::Playing => (
                                                     220,
                                                     "■",
-                                                    egui::Color32::from_rgb(130, 210, 130),
+                                                    crate::ui::tokens::color::PLAY,
                                                 ),
                                             };
                                             ui.painter().circle_filled(
@@ -1987,7 +1987,7 @@ impl App {
                                             if ui
                                                 .button(
                                                     egui::RichText::new(label)
-                                                        .color(egui::Color32::from_rgb(220, 90, 90)),
+                                                        .color(crate::ui::tokens::color::NEGATIVE),
                                                 )
                                                 .on_hover_note(
                                                     "Remove the file(s) from the device and \
@@ -2381,7 +2381,7 @@ impl App {
                                         if ui
                                             .button(
                                                 egui::RichText::new(label)
-                                                    .color(egui::Color32::from_rgb(220, 90, 90)),
+                                                    .color(crate::ui::tokens::color::NEGATIVE),
                                             )
                                             .on_hover_note(
                                                 "Remove from the catalog and all playlists. \

@@ -212,6 +212,22 @@ pub mod color {
     pub const MINT: Color32 = Color32::from_rgb(102, 212, 207);
     pub const BROWN: Color32 = Color32::from_rgb(172, 142, 104);
 
+    // --- Meaning inks ---
+    // Status as text, toned to sit inside the palette; the full system
+    // hues above are for marks and fills.
+    /// Good news: a price, a record in stock, a copy you own, terms met.
+    pub const POSITIVE: Color32 = Color32::from_rgb(120, 200, 140);
+    /// Bad news: a failed fetch, a deletion, a lossy copy.
+    pub const NEGATIVE: Color32 = Color32::from_rgb(224, 108, 108);
+    /// A caution: a suspect transcode, a check that could not run.
+    pub const CAUTION: Color32 = Color32::from_rgb(225, 180, 90);
+    /// Playback: the played part of a track, the transport bar, the playing
+    /// mark, the in-catalog chip. Fixed, unlike the accent, so a playing
+    /// thing reads the same in every look.
+    pub const PLAY: Color32 = Color32::from_rgb(90, 200, 120);
+    /// [`PLAY`] under the pointer.
+    pub const PLAY_HOVER: Color32 = Color32::from_rgb(120, 220, 150);
+
     /// The colours a user can give a playlist, in picker order. A fixed set
     /// rather than a free wheel: the sidebar reads as one palette, and every
     /// hue here is checked against the dark surfaces it sits on.

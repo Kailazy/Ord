@@ -307,7 +307,7 @@ impl App {
         let cues = np.cues.clone();
         let wave_style = WaveformStyle::from_config(&self.config);
 
-        const ACCENT: egui::Color32 = egui::Color32::from_rgb(90, 200, 120);
+        const ACCENT: egui::Color32 = crate::ui::tokens::color::PLAY;
         let mut toggle = false;
         let mut close = false;
         let mut shuffle = false;
@@ -3491,7 +3491,7 @@ pub(crate) fn play_disc(ui: &mut egui::Ui, playing: bool, loading: bool) -> egui
 /// A scrubber's flat progress line, for a bar with no waveform to paint
 /// under the playhead: the played part in the accent, the rest in grey.
 pub(crate) fn flat_track(painter: &egui::Painter, rect: egui::Rect, frac: f32) {
-    const ACCENT: egui::Color32 = egui::Color32::from_rgb(90, 200, 120);
+    const ACCENT: egui::Color32 = crate::ui::tokens::color::PLAY;
     let y = rect.center().y;
     let (x0, x1) = (rect.left(), rect.right());
     let knob_x = x0 + frac * (x1 - x0);
