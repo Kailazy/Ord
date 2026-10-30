@@ -551,13 +551,30 @@ impl App {
                     // plain view switch.
                     // Set like the header's "View release": one size and
                     // weight for every action on a caption row.
+                    // Both words share one width, so the button's left
+                    // edge holds when it toggles.
                     let label = if editing { "Done" } else { "✏ Edit" };
+                    let w = ["Done", "✏ Edit"]
+                        .iter()
+                        .map(|s| {
+                            ui.painter()
+                                .layout_no_wrap(
+                                    s.to_string(),
+                                    crate::ui::tokens::font::caption(),
+                                    color::LABEL_2,
+                                )
+                                .size()
+                                .x
+                        })
+                        .fold(0.0, f32::max)
+                        + 2.0 * ui.spacing().button_padding.x;
                     let btn = ui.add(
                         egui::Button::new(
                             egui::RichText::new(label)
                                 .font(crate::ui::tokens::font::caption())
                                 .color(color::LABEL_2),
                         )
+                        .min_size(egui::vec2(w, 0.0))
                         .stroke(egui::Stroke::NONE),
                     );
                     let btn = if editing && dirty {
