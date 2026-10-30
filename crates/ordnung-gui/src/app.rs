@@ -1773,7 +1773,8 @@ impl App {
 
     /// Everything exporting playlist `id` would put on a stick, computed from
     /// the loaded sidebar tree: (ids to pass to the exporter, human label,
-    /// unique track count, playlist-node count). Folders count descendants.
+    /// unique track count, playlist count). Folders count their descendant
+    /// playlists, not themselves.
     #[cfg(feature = "usb-export")]
     pub(crate) fn playlist_export_scope(&self, id: Id) -> (Vec<Id>, String, usize, usize) {
         let mut nodes = vec![id];
@@ -1790,10 +1791,12 @@ impl App {
         }
         let mut seen = std::collections::HashSet::new();
         let mut n_tracks = 0usize;
+        let mut n_playlists = 0usize;
         for p in self.playlists.iter().filter(|p| nodes.contains(&p.id)) {
             if p.is_folder {
                 continue;
             }
+            n_playlists += 1;
             for t in &p.track_ids {
                 if seen.insert(*t) {
                     n_tracks += 1;
@@ -1807,7 +1810,7 @@ impl App {
         } else {
             format!("playlist \u{201C}{name}\u{201D}")
         };
-        (vec![id], label, n_tracks, nodes.len())
+        (vec![id], label, n_tracks, n_playlists)
     }
 
     /// Raise the export confirmation for a playlist (and, for a folder, its

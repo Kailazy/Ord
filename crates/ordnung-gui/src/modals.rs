@@ -1761,11 +1761,15 @@ impl App {
     /// Report popup listing every item a background job skipped or errored on,
     /// with the reason. Auto-opens after a job that had any failures (scan, write
     /// edits, analyze, relocate) so the user knows exactly what didn't go through.
-    /// "Export the library to this stick?" confirmation. The export rewrites
+    /// "Export this playlist to the stick?" confirmation. The export rewrites
     /// the destination's `PIONEER/rekordbox` databases (a rekordbox-made
-    /// export there is replaced by Ordnung's), so it never runs un-confirmed.
+    /// export there is replaced by Ord's), so it never runs un-confirmed.
+    /// One headline says what goes; the Add/Replace segments carry the how
+    /// in their hover notes, and only Replace, the destructive one, keeps a
+    /// visible line on its scope.
     #[cfg(feature = "usb-export")]
     pub(crate) fn draw_export_confirm(&mut self, ctx: &egui::Context) {
+        use crate::ui::button::{self, Segment};
         let Some(confirm) = self.export_confirm.clone() else {
             return;
         };
@@ -1785,61 +1789,56 @@ impl App {
             .open(&mut open)
             .show(ctx, |ui| {
                 ui.set_max_width(440.0);
-                ui.label(format!(
-                    "Writes {} as a native rekordbox/CDJ export: {} track(s), {} playlist \
-node(s), with beatgrids, keys and waveforms.",
-                    confirm.scope, confirm.n_tracks, confirm.n_playlists
-                ));
-                ui.add_space(6.0);
-                ui.label(
-                    egui::RichText::new(
-                        "Audio is copied into /Contents (files already there are kept). \
-Library files on this Mac are only read.",
-                    )
-                    .weak(),
-                );
-                ui.add_space(6.0);
-                // The mode is editable only when it's a live choice: an existing
-                // export on the stick. On an empty stick merge and replace do
-                // the same thing, so there's nothing to toggle.
+                ui.horizontal(|ui| {
+                    let mut what = format!(
+                        "{} track{}",
+                        confirm.n_tracks,
+                        if confirm.n_tracks == 1 { "" } else { "s" }
+                    );
+                    if confirm.n_playlists > 1 {
+                        what += &format!(" in {} playlists", confirm.n_playlists);
+                    }
+                    ui.label(egui::RichText::new(format!("{what} from {}", confirm.scope)).strong());
+                    crate::ui::info_note(
+                        ui,
+                        "Beatgrids, keys and waveforms go along. Audio is copied into \
+/Contents; files already there are kept. Library files on this Mac are only read.",
+                    );
+                });
+                // The mode is a live choice only over an existing export. On
+                // an empty stick merge and replace do the same thing, so
+                // there's nothing to toggle.
                 let mut replace = confirm.replace;
                 if has_export {
-                    ui.horizontal(|ui| {
-                        ui.selectable_value(&mut replace, false, "Add to stick");
-                        ui.selectable_value(&mut replace, true, "Replace stick");
-                    });
-                    ui.add_space(4.0);
+                    ui.add_space(8.0);
+                    let segs = [
+                        Segment {
+                            label: "Add to stick",
+                            tip: "Tracks already on the stick are kept; a playlist of the \
+same name is updated, others are left alone",
+                        },
+                        Segment {
+                            label: "Replace stick",
+                            tip: "Afterwards the stick holds exactly this selection",
+                        },
+                    ];
+                    if let Some(i) = button::segmented(ui, Some(replace as usize), &segs) {
+                        replace = i == 1;
+                    }
                     if replace {
+                        ui.add_space(4.0);
                         ui.label(
                             egui::RichText::new(format!(
-                                "⚠ {name} already carries an export — it will be replaced: \
-afterwards the stick lists exactly this selection, and anything else on it (other playlists, \
-cues/grids made in rekordbox) is gone from the database.",
+                                "⚠ Everything else on {name} goes: other playlists, and \
+cues or grids made in rekordbox."
                             ))
                             .color(ui.visuals().warn_fg_color),
-                        );
-                    } else {
-                        ui.label(
-                            egui::RichText::new(
-                                "This selection is added to what's already on the stick. \
-Tracks already there are kept; a playlist with the same name is updated, others are left \
-alone.",
-                            )
-                            .weak(),
                         );
                     }
                     // Reflect the edited choice back so the button uses it.
                     if let Some(c) = self.export_confirm.as_mut() {
                         c.replace = replace;
                     }
-                } else {
-                    ui.label(
-                        egui::RichText::new(
-                            "The stick has no export yet — this creates one listing this \
-selection.",
-                        )
-                        .weak(),
-                    );
                 }
                 ui.add_space(8.0);
                 let player = self.export_options(ui);
@@ -1848,15 +1847,14 @@ selection.",
                 if busy {
                     ui.label(egui::RichText::new("another job is running").weak());
                 }
-                let label = if has_export && !replace {
-                    "⇪ Add to stick"
+                let action = if !has_export {
+                    Choice::primary("⇪ Export")
+                } else if replace {
+                    Choice::danger("Replace stick")
                 } else {
-                    "⇪ Export"
+                    Choice::primary("⇪ Add to stick")
                 };
-                match choices(
-                    ui,
-                    &[Choice::cancel("Cancel"), Choice::primary(label).enabled(!busy)],
-                ) {
+                match choices(ui, &[Choice::cancel("Cancel"), action.enabled(!busy)]) {
                     Some(0) => self.export_confirm = None,
                     Some(_) => {
                         self.export_confirm = None;
