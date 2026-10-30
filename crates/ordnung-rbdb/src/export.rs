@@ -1556,6 +1556,7 @@ fn export_impl(
         let live_paths: HashSet<String> = tables.tracks.iter().map(|r| path_key(&r.file_path)).collect();
         let live_anlz: HashSet<&str> = tables.tracks.iter().map(|r| r.analyze_path.as_str()).collect();
         let live_art: HashSet<u32> = tables.artwork.iter().map(|(id, _)| *id).collect();
+        let mut files_gone = false;
         for t in &swept {
             if !live_paths.contains(&path_key(&t.file_path)) {
                 // Two tracks can share an analysis directory (its name is a
@@ -1566,9 +1567,15 @@ fn export_impl(
                     gone.analyze_path = None;
                 }
                 remove_track_files(dest_root, &gone, &live_art);
+                files_gone = true;
             } else if let Some(old) = t.analyze_path.as_deref().filter(|a| !live_anlz.contains(a)) {
                 remove_anlz_files(dest_root, old);
             }
+        }
+        // The previous library listed the files just removed: restored, it
+        // would be a stick of tracks that fail to load. No way back from it.
+        if files_gone {
+            drop_previous_set(&rb_dir);
         }
     }
 

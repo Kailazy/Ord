@@ -433,6 +433,9 @@ fn replace_sweeps_files_the_new_databases_no_longer_name() {
     names.sort();
     assert_eq!(names, ["alpha.mp3", "gamma.mp3"]);
     assert!(!beta_dat.exists(), "beta's analysis files are swept");
+    // The previous library named beta's file: no way back to a stick of
+    // tracks that fail to load.
+    assert!(!ordnung_rbdb::edit::has_previous(&usb), "no .prev after a sweep");
     let _ = std::fs::remove_dir_all(&root);
 }
 
