@@ -416,11 +416,10 @@ impl App {
             }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 use crate::ui::button::{segmented, Segment};
-                // With the inspector along (a tag's tracks), its pull tab
-                // overlays this corner: keep the control clear of it.
-                if self.tag_table_view() {
-                    ui.add_space(crate::app::INSPECTOR_TAB_W + 8.0);
-                }
+                // The inspector's pull tab overlays this corner when a
+                // tag's tracks are showing: keep the control clear of it
+                // in every layout, so picking Tracks doesn't move it.
+                ui.add_space(crate::app::INSPECTOR_TAB_W + 8.0);
                 let offered = CrateLayout::offered(set.kind);
                 let segments: Vec<Segment> = offered
                     .iter()
