@@ -1852,8 +1852,8 @@ same name is updated, others are left alone",
                         ui.add_space(4.0);
                         ui.label(
                             egui::RichText::new(format!(
-                                "⚠ Everything else on {name} goes: other playlists, and \
-cues or grids made in rekordbox."
+                                "⚠ Everything else on {name} goes: other playlists, cues or \
+grids made in rekordbox, and the files of tracks not in this selection."
                             ))
                             .color(ui.visuals().warn_fg_color),
                         );
