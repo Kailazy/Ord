@@ -318,6 +318,9 @@ impl App {
         update: bool,
         player: ordnung_rbdb::export::PlayerTarget,
     ) {
+        if self.stick_write_blocked(&dest) {
+            return;
+        }
         let name = dest
             .file_name()
             .map(|n| n.to_string_lossy().into_owned())
@@ -366,6 +369,9 @@ impl App {
     /// untouched (the empty merge only creates folders and databases).
     #[cfg(feature = "usb-export")]
     pub(crate) fn spawn_usb_setup(&mut self, ctx: egui::Context, dest: PathBuf) {
+        if self.stick_write_blocked(&dest) {
+            return;
+        }
         let name = dest
             .file_name()
             .map(|n| n.to_string_lossy().into_owned())
@@ -385,6 +391,9 @@ impl App {
     /// the confirm (see [`App::usb_convert_for_players`]). The device view
     /// re-scans when the job lands, through the export-completion hook.
     pub(crate) fn spawn_usb_convert(&mut self, ctx: egui::Context, vol: PathBuf, rel_paths: Vec<String>) {
+        if self.stick_write_blocked(&vol) {
+            return;
+        }
         let name = vol
             .file_name()
             .map(|n| n.to_string_lossy().into_owned())

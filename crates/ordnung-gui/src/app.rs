@@ -1407,6 +1407,23 @@ impl App {
         });
     }
 
+    /// Whether a write to the device at `vol` has to wait, with the reason
+    /// put in the status bar: rekordbox is open (it rewrites or deletes a
+    /// device library it sees change, which then reads as corrupted), or an
+    /// export to that same device is still running and would race the edit.
+    /// Every path that writes to a stick asks this first.
+    pub(crate) fn stick_write_blocked(&mut self, vol: &Path) -> bool {
+        if ordnung_core::usb::rekordbox_running() {
+            self.fail("Quit rekordbox first: it rewrites device libraries it sees change.".into());
+            return true;
+        }
+        if self.export_running_to.as_deref() == Some(vol) {
+            self.status = "Still writing to this device. Try again when it finishes.".into();
+            return true;
+        }
+        false
+    }
+
     /// Apply one playlist edit to the stick backing the current USB view,
     /// writing it straight to the device's export databases, and mirror the
     /// result into the sidebar state. Returns the created id for a `Create`.
@@ -1418,6 +1435,9 @@ impl App {
         let LibraryView::Usb(vol, _) = self.view.clone() else {
             return None;
         };
+        if self.stick_write_blocked(&vol) {
+            return None;
+        }
         match edit::edit_stick_playlists(&vol, &op) {
             Ok(out) => {
                 self.apply_usb_export(&vol, &out.export);
@@ -1475,6 +1495,9 @@ impl App {
         let LibraryView::Usb(vol, _) = self.view.clone() else {
             return;
         };
+        if self.stick_write_blocked(&vol) {
+            return;
+        }
         let paths: Vec<PathBuf> = ids
             .iter()
             .filter_map(|id| usb_track_index(*id))

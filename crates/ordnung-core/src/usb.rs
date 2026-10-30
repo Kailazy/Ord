@@ -30,6 +30,18 @@ pub fn is_rekordbox_export(root: &Path) -> bool {
     root.join("PIONEER").join("rekordbox").join("export.pdb").is_file()
 }
 
+/// Whether the rekordbox desktop app is open. It rewrites, and has deleted,
+/// the databases of a device library it sees change under it, after which
+/// players report the device as corrupted, so nothing writes to a stick
+/// while it runs. Its background agent (`rekordboxAgent`) touches no stick;
+/// the exact process-name match leaves it out.
+pub fn rekordbox_running() -> bool {
+    std::process::Command::new("pgrep")
+        .args(["-xq", "rekordbox"])
+        .status()
+        .is_ok_and(|s| s.success())
+}
+
 /// Enumerate mounted USB / SD / external-drive volumes, sorted by name.
 /// Errors (no `/Volumes`, unreadable entries) yield an empty/partial list
 /// rather than failing — the caller polls this, and a transient stat error

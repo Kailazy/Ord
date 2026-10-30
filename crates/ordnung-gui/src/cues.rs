@@ -272,6 +272,9 @@ impl App {
             ) else {
                 return;
             };
+            if self.stick_write_blocked(&vol) {
+                return;
+            }
             if let Err(e) = ordnung_rbdb::edit::write_stick_cues(&vol, pdb_id, &dat, &cues) {
                 self.status = format!("Couldn't write cues to the stick: {e}");
             }

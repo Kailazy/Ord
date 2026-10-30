@@ -1072,6 +1072,9 @@ impl App {
             }],
         };
         let beats = anchor.expand_to(duration_ms);
+        if self.stick_write_blocked(&vol) {
+            return;
+        }
         match ordnung_rbdb::edit::write_stick_beatgrid(&vol, pdb_id, &dat, &beats) {
             Ok(()) => self.set_row_bpm(id, g.bpm),
             Err(e) => self.status = format!("Couldn't write the grid to the stick: {e}"),
