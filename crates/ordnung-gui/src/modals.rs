@@ -358,8 +358,28 @@ impl App {
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         let busy = self.discogs_auth == DiscogsAuth::Checking;
                         let has_token = !self.discogs_token().trim().is_empty();
+                        // One slot for both words, and Remove and Retry
+                        // always take their room, so the card's text column
+                        // and height hold whatever the account's state.
                         let label = if has_token { "Replace…" } else { "Add token…" };
-                        let btn = ui.add_enabled(!busy, egui::Button::new(label));
+                        let w = ["Replace…", "Add token…"]
+                            .iter()
+                            .map(|s| {
+                                ui.painter()
+                                    .layout_no_wrap(
+                                        s.to_string(),
+                                        egui::TextStyle::Button.resolve(ui.style()),
+                                        egui::Color32::PLACEHOLDER,
+                                    )
+                                    .size()
+                                    .x
+                            })
+                            .fold(0.0, f32::max)
+                            + 2.0 * ui.spacing().button_padding.x;
+                        let btn = ui.add_enabled(
+                            !busy,
+                            egui::Button::new(label).min_size(egui::vec2(w, 0.0)),
+                        );
                         let opened = btn.clicked();
                         if opened {
                             // The popup takes a new token; the saved one
@@ -403,17 +423,18 @@ impl App {
                                 m.close();
                             }
                         });
-                        if has_token
-                            && ui.add_enabled(!busy, egui::Button::new("Remove")).clicked()
+                        if ui
+                            .add_enabled(has_token && !busy, egui::Button::new("Remove"))
+                            .clicked()
                         {
                             self.token_input.clear();
                             save = true;
                         }
-                        if let DiscogsAuth::Unreachable { .. } = self.discogs_auth {
-                            if ui.button("Retry").clicked() {
-                                let ctx = ui.ctx().clone();
-                                self.spawn_discogs_identity_check(ctx);
-                            }
+                        let unreachable =
+                            matches!(self.discogs_auth, DiscogsAuth::Unreachable { .. });
+                        if ui.add_visible(unreachable, egui::Button::new("Retry")).clicked() {
+                            let ctx = ui.ctx().clone();
+                            self.spawn_discogs_identity_check(ctx);
                         }
                         ui.with_layout(egui::Layout::top_down(egui::Align::Min), |ui| {
                             ui.label(egui::RichText::new(&heading).font(
