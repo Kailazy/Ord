@@ -781,7 +781,11 @@ pub(crate) fn dig_controls(
         "Looking this record up on Discogs…".to_string()
     };
     crate::ui::control_row(ui, |ui| ui.horizontal(|ui| {
-        let label = egui::RichText::new("🔀  Dig on").color(if accent && can_walk {
+        let label = crate::ui::icon_text_in(
+            crate::ui::phosphor_icons::named(crate::ui::phosphor_icons::app::SHUFFLE),
+            "Dig on",
+            crate::ui::tokens::font::body(),
+            if accent && can_walk {
             egui::Color32::WHITE
         } else if can_walk {
             crate::ui::tokens::color::LABEL

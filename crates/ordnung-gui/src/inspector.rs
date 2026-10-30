@@ -286,8 +286,8 @@ impl App {
             ui.vertical_centered(|ui| {
                 ui.add_space(space::S7 * 2.0);
                 ui.label(
-                    egui::RichText::new("♪")
-                        .font(crate::ui::tokens::font::large_title())
+                    egui::RichText::new(crate::ui::phosphor_icons::named(crate::ui::phosphor_icons::app::MUSIC_NOTE))
+                        .font(crate::ui::tokens::font::icon(crate::ui::tokens::font::large_title().size))
                         .color(color::LABEL_4),
                 );
                 ui.add_space(space::S4);
@@ -540,29 +540,21 @@ impl App {
                     // weight for every action on a caption row.
                     // Both words share one width, so the button's left
                     // edge holds when it toggles.
-                    let label = if editing { "Done" } else { "✏ Edit" };
-                    let w = ["Done", "✏ Edit"]
-                        .iter()
-                        .map(|s| {
-                            ui.painter()
-                                .layout_no_wrap(
-                                    s.to_string(),
-                                    crate::ui::tokens::font::caption(),
-                                    color::LABEL_2,
-                                )
-                                .size()
-                                .x
-                        })
-                        .fold(0.0, f32::max)
-                        + 2.0 * ui.spacing().button_padding.x;
+                    let done: egui::WidgetText = egui::RichText::new("Done")
+                        .font(crate::ui::tokens::font::caption())
+                        .color(color::LABEL_2)
+                        .into();
+                    let edit = crate::ui::icon_text_in(
+                        crate::ui::phosphor_icons::named(crate::ui::phosphor_icons::app::PENCIL_SIMPLE),
+                        "Edit",
+                        crate::ui::tokens::font::caption(),
+                        color::LABEL_2,
+                    );
+                    let w = crate::ui::button::widest(ui, &[done.clone(), edit.clone()]);
                     let btn = ui.add(
-                        egui::Button::new(
-                            egui::RichText::new(label)
-                                .font(crate::ui::tokens::font::caption())
-                                .color(color::LABEL_2),
-                        )
-                        .min_size(egui::vec2(w, 0.0))
-                        .stroke(egui::Stroke::NONE),
+                        egui::Button::new(if editing { done } else { edit })
+                            .min_size(egui::vec2(w, 0.0))
+                            .stroke(egui::Stroke::NONE),
                     );
                     let btn = if editing && dirty {
                         btn.on_hover_note("Unsaved edits stay in the form until you save")

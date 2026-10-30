@@ -11,6 +11,7 @@
 //! The tracklist and videos come from `GET /releases/{id}`, cached in the
 //! catalog's `release_cache` — so a record opened once needs no network again.
 
+use crate::ui::phosphor_icons::{app as icons, named};
 use super::*;
 use ordnung_core::bandcamp;
 
@@ -2168,7 +2169,7 @@ impl App {
                             // way to do the same thing.
                             if can_dig
                                 && branch.is_none()
-                                && crate::ui::button::button(ui, "🔍  Dig")
+                                && crate::ui::button::button(ui, crate::ui::icon_label(icons::MAGNIFYING_GLASS, "Dig"))
                                     .on_hover_note(
                                         "Find records like this one on Discogs that aren't \
                                          in your collection (E)",
@@ -2736,8 +2737,8 @@ impl App {
                             ui.painter().text(
                                 art_rect.center(),
                                 egui::Align2::CENTER_CENTER,
-                                "♪",
-                                egui::FontId::proportional(22.0),
+                                named(icons::MUSIC_NOTE),
+                                crate::ui::tokens::font::icon(22.0),
                                 egui::Color32::from_gray(110),
                             );
                         }
@@ -3372,7 +3373,7 @@ fn sheet_row_ui(
                                 );
                                 ui.add_space(8.0);
                             }
-                            ui.label(egui::RichText::new("♪ your copy").small().color(ACCENT));
+                            ui.label(crate::ui::icon_text_in(named(icons::MUSIC_NOTE), "your copy", crate::ui::tokens::font::caption(), ACCENT));
                         }
                         SheetSource::Video(v) => {
                             // A guessed video reads like a matched one

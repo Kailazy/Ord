@@ -1,4 +1,5 @@
 //! Split out of `main.rs`; part of the GUI `App`.
+use crate::ui::phosphor_icons::{app as icons, named};
 use super::*;
 use crate::ui::choices::{choices, Choice};
 
@@ -30,27 +31,26 @@ fn health_tabs(
     missing_count: u64,
 ) -> Option<LibraryView> {
     let mut switch = None;
-    let tab = |ui: &mut egui::Ui, label: String, active: bool| {
-        ui.selectable_label(
-            active,
-            egui::RichText::new(label).font(crate::ui::tokens::font::strong(
-                crate::ui::tokens::font::headline().size,
-            )),
-        )
-        .clicked()
+    let font = crate::ui::tokens::font::strong(crate::ui::tokens::font::headline().size);
+    let tab = |ui: &mut egui::Ui, label: egui::WidgetText, active: bool| {
+        ui.selectable_label(active, label).clicked()
     };
-    let dup_label = match dup_count {
-        Some(n) if n > 0 => format!("⧉  Duplicates ({n})"),
-        _ => "⧉  Duplicates".to_string(),
-    };
+    let dup_label = crate::ui::icon_text(
+        named(icons::COPY),
+        &match dup_count {
+            Some(n) if n > 0 => format!("Duplicates ({n})"),
+            _ => "Duplicates".to_string(),
+        },
+        font.clone(),
+    );
     if tab(ui, dup_label, *current == LibraryView::Duplicates) {
         switch = Some(LibraryView::Duplicates);
     }
-    let missing_label = if missing_count > 0 {
-        format!("⚠  Missing ({missing_count})")
-    } else {
-        "⚠  Missing".to_string()
-    };
+    let missing_label = crate::ui::icon_text(
+        named(icons::WARNING),
+        &if missing_count > 0 { format!("Missing ({missing_count})") } else { "Missing".to_string() },
+        font,
+    );
     if tab(ui, missing_label, *current == LibraryView::Missing) {
         switch = Some(LibraryView::Missing);
     }
@@ -414,8 +414,8 @@ fn catalog_badge(
     ui.painter().text(
         rect.center(),
         egui::Align2::CENTER_CENTER,
-        "♪",
-        egui::FontId::proportional(14.0),
+        named(icons::MUSIC_NOTE),
+        crate::ui::tokens::font::icon(14.0),
         egui::Color32::from_gray(20),
     );
     let tip = if n > 1 {
@@ -528,7 +528,7 @@ fn vinyl_cell_menu(
         ui.close_menu();
     }
     if ui
-        .button("🔍  Dig from here")
+        .button(crate::ui::icon_label(icons::MAGNIFYING_GLASS, "Dig from here"))
         .on_hover_note("Walk the collection from this record, by artist or label")
         .clicked()
     {
@@ -546,7 +546,7 @@ fn vinyl_cell_menu(
         ui.close_menu();
     }
     if ui
-        .button("⌂  Browse the label")
+        .button(crate::ui::icon_label(icons::HOUSE, "Browse the label"))
         .on_hover_note("The label's whole run as a list, your shelves marked")
         .clicked()
     {
@@ -571,11 +571,11 @@ fn vinyl_cell_menu(
     let (move_label, move_tip) = if c.also_in_other {
         match list {
             VinylList::Collection => (
-                "✓  Already in your wantlist",
+                "Already in your wantlist",
                 "This record is in both lists on Discogs",
             ),
             VinylList::Wantlist => (
-                "✓  Already in your collection",
+                "Already in your collection",
                 "You already own this on Discogs",
             ),
         }
@@ -878,15 +878,18 @@ impl App {
                 // The one mutating action: commit every marked copy at once. It
                 // runs in the background, so it never blocks reviewing the rest.
                 let enabled = marked_total > 0 && !self.is_busy();
-                let resp = ui.add_enabled(
-                    enabled,
-                    egui::Button::new(
-                        egui::RichText::new("🗑 Delete marked")
-                            .strong()
-                            .color(egui::Color32::WHITE),
-                    )
-                    .fill(egui::Color32::from_rgb(0xB0, 0x30, 0x30)),
-                );
+                let resp = ui
+                    .add_enabled_ui(enabled, |ui| {
+                        crate::ui::button::danger(
+                            ui,
+                            crate::ui::icon_text(
+                                named(icons::TRASH),
+                                "Delete marked",
+                                crate::ui::tokens::font::strong(crate::ui::tokens::font::body().size),
+                            ),
+                        )
+                    })
+                    .inner;
                 if resp
                     .on_hover_note(format!(
                         "Move {marked_total} marked copies to the Trash. Kept copies inherit \
@@ -915,7 +918,7 @@ impl App {
                         ui.label("Scanning the catalog for duplicates…");
                     });
                 } else {
-                    ui.heading("No duplicates found ✓");
+                    ui.heading("No duplicates found");
                     ui.label("Every track is unique by audio content and by artist + title.");
                 }
             });
@@ -1000,9 +1003,9 @@ impl App {
             // Row 1: keep/reject state pill · ★ best · format + bitrate (right).
             ui.horizontal(|ui| {
                 let (pill, pill_bg) = if kept {
-                    ("✓ KEEP", green)
+                    ("Keep", green)
                 } else {
-                    ("🗑 REJECT", red)
+                    ("Reject", red)
                 };
                 let pill_text = |s: &str, bg| {
                     egui::RichText::new(s)
@@ -1013,7 +1016,7 @@ impl App {
                 };
                 // The pill's slot is the wider label's, so flipping it
                 // leaves the ★ and everything after it in place.
-                let slot = egui::WidgetText::from(pill_text("🗑 REJECT", red))
+                let slot = egui::WidgetText::from(pill_text("Reject", red))
                     .into_galley(ui, Some(egui::TextWrapMode::Extend), f32::INFINITY, egui::TextStyle::Small)
                     .size();
                 ui.allocate_ui_with_layout(slot, egui::Layout::left_to_right(egui::Align::Center), |ui| {
@@ -1021,7 +1024,9 @@ impl App {
                 });
                 if c.is_best {
                     ui.label(
-                        egui::RichText::new("★").color(egui::Color32::from_rgb(0xD8, 0xB0, 0x4A)),
+                        egui::RichText::new(named(icons::STAR))
+                            .font(crate::ui::tokens::font::icon(crate::ui::tokens::font::body().size + 2.0))
+                            .color(crate::ui::tokens::color::accent()),
                     )
                     .on_hover_note("Best copy: lossless, else highest bitrate");
                 }
@@ -1149,7 +1154,7 @@ impl App {
                         }
                         if let Some(best) = g.copies.iter().find(|c| c.is_best).map(|c| c.id) {
                             if ui
-                                .button("★ Suggest")
+                                .button(crate::ui::icon_label(icons::STAR, "Suggest"))
                                 .on_hover_note("Keep the best copy, mark the rest for deletion")
                                 .clicked()
                             {
@@ -1309,17 +1314,16 @@ impl App {
                     ));
                     if whole_track > 0 {
                         ui.label(
-                            egui::RichText::new(if whole_track == 1 {
-                                "⚠ One of these is in a group with no copy kept — \
+                            crate::ui::icon_text_in(named(icons::WARNING), &if whole_track == 1 {
+                                "One of these is in a group with no copy kept — \
                              that track leaves the catalog entirely."
                                     .to_string()
                             } else {
                                 format!(
-                                    "⚠ {whole_track} of these are in groups with no copy kept — \
+                                    "{whole_track} of these are in groups with no copy kept — \
                                  those tracks leave the catalog entirely."
                                 )
-                            })
-                            .color(egui::Color32::from_rgb(0xE0, 0x6C, 0x6C)),
+                            }, crate::ui::tokens::font::body(), egui::Color32::from_rgb(0xE0, 0x6C, 0x6C)),
                         );
                     }
                     egui::ScrollArea::vertical()
@@ -1431,7 +1435,7 @@ impl App {
         m.ui().horizontal(|ui| {
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 let clear = ui
-                    .add_enabled_ui(active, |ui| crate::ui::button::compact(ui, "✖ Clear", false))
+                    .add_enabled_ui(active, |ui| crate::ui::button::compact(ui, "Clear", false))
                     .inner
                     .on_hover_note("Clear every filter")
                     .clicked();
@@ -1764,11 +1768,11 @@ impl App {
             // narrow the same search, so they sit in its field rather than
             // beside it. The button wears the active-constraint count.
             let active = flt.active(seller_mode);
-            let flt_label = if active == 0 {
-                "⚟ Filters".to_string()
-            } else {
-                format!("⚟ Filters ({active})")
-            };
+            let flt_label = crate::ui::icon_text(
+                named(icons::FUNNEL),
+                &if active == 0 { "Filters".to_string() } else { format!("Filters ({active})") },
+                crate::ui::tokens::font::callout(),
+            );
             let mut field = crate::ui::field::Field::singleline(&mut self.vinyl_filter)
                 .width(200.0)
                 .hint(hint);
@@ -1831,7 +1835,7 @@ impl App {
                 let hidden_n = graph::Status::hidden(&self.config.graph_hide).len();
                 // The label holds still; the hidden count lives in the note
                 // and in the menu's own rows.
-                let show_btn = ui.button("⚟ Show").on_hover_note(if hidden_n == 0 {
+                let show_btn = ui.button(crate::ui::icon_label(icons::FUNNEL, "Show")).on_hover_note(if hidden_n == 0 {
                     "Choose which records are on the map: your collection, your wantlist, and the records dug to".to_string()
                 } else {
                     format!("Choose which records are on the map. {hidden_n} kinds hidden")
@@ -1846,7 +1850,7 @@ impl App {
                                 egui::Layout::right_to_left(egui::Align::Center),
                                 |ui| {
                                     if ui
-                                        .small_button("✖ Clear")
+                                        .small_button("Clear")
                                         .on_hover_note("Show every kind of record")
                                         .clicked()
                                     {
@@ -1934,6 +1938,7 @@ impl App {
             // count), so all three tabs flip at one width and a button
             // shared between tabs keeps its place across a switch.
             use crate::ui::button::widest;
+            let stock_label = |s: &str| crate::ui::icon_text(named(icons::PACKAGE), s, crate::ui::tokens::font::body());
             let sort_labels: Vec<String> = [VinylSort::Added, VinylSort::Price, VinylSort::Artist]
                 .iter()
                 .flat_map(|o| ["↑", "↓"].map(|a| format!("⇅ {} {a}", o.label())))
@@ -1946,14 +1951,14 @@ impl App {
                 + sort_full_w
                 + widest(ui, &["⊞"])
                 + widest(ui, &["☰"])
-                + widest(ui, &["⛃ In stock (999)"])
+                + widest(ui, &[stock_label("In stock (999)")])
                 + 3.0 * gap;
             let compact = need > ui.available_width();
             // The sort button is as wide as its widest option, so picking
             // another field moves nothing beside it.
             let sort_w = if compact { widest(ui, &["⇅ ↑", "⇅ ↓"]) } else { sort_full_w };
             // Sized for a three-digit count, so the count changing moves nothing.
-            let stock_w = widest(ui, &[if compact { "⛃ 999" } else { "⛃ In stock (999)" }]);
+            let stock_w = widest(ui, &[stock_label(if compact { "999" } else { "In stock (999)" })]);
             // Grid vs list: one layout choice for all three tabs. A wall of
             // covers browses; rows compare — price, year and format line up.
             // It sits at the right, beside the sort: both say how the records
@@ -2027,12 +2032,12 @@ impl App {
                 // shelf — and wears the count of records in stock.
                 if self.vinyl_tab == VinylTab::Shelf(VinylList::Wantlist) {
                     let n = self.watch_record_count();
-                    let label = match (compact, n > 0) {
-                        (true, true) => format!("⛃ {n}"),
-                        (true, false) => "⛃".to_string(),
-                        (false, true) => format!("⛃ In stock ({n})"),
-                        (false, false) => "⛃ In stock".to_string(),
-                    };
+                    let label = stock_label(&match (compact, n > 0) {
+                        (true, true) => format!("{n}"),
+                        (true, false) => String::new(),
+                        (false, true) => format!("In stock ({n})"),
+                        (false, false) => "In stock".to_string(),
+                    });
                     let h = ui.spacing().interact_size.y;
                     if ui
                         .add_sized([stock_w, h], egui::SelectableLabel::new(self.show_watch, label))
@@ -3045,10 +3050,11 @@ impl App {
                 if !items.is_empty()
                     && ui
                         .add(
-                            egui::Button::new(
-                                egui::RichText::new("🔗 Find moved files…")
-                                    .color(egui::Color32::WHITE),
-                            )
+                            egui::Button::new(crate::ui::icon_text(
+                                named(icons::LINK),
+                                "Find moved files…",
+                                crate::ui::tokens::font::body(),
+                            ))
                             .fill(egui::Color32::from_rgb(150, 90, 40)),
                         )
                         .on_hover_note(
@@ -3071,7 +3077,7 @@ impl App {
         if items.is_empty() {
             ui.add_space(24.0);
             ui.vertical_centered(|ui| {
-                ui.heading("Nothing missing ✓");
+                ui.heading("Nothing missing");
                 ui.label("Every track's source file is present on disk.");
             });
             if recompute {

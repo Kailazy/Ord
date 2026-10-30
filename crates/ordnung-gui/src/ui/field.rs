@@ -17,7 +17,7 @@
 //!
 //! The builder forwards the `TextEdit` settings a call site needs.
 
-use super::tokens::{color, font, radius, space};
+use super::tokens::{font, radius, space};
 use eframe::egui::{self, Margin, Stroke, TextBuffer, Widget};
 
 /// The standard inset of the text from the frame: 12 × 8.
@@ -43,7 +43,7 @@ pub struct Field<'t> {
     outline: bool,
     /// No frame stroke at rest or under the pointer either (see [`Field::quiet`]).
     quiet: bool,
-    trailing: Option<String>,
+    trailing: Option<egui::WidgetText>,
     margin: Margin,
     /// The text width asked for, kept so a trailing button can be taken
     /// out of it rather than added to the frame.
@@ -124,7 +124,7 @@ impl<'t> Field<'t> {
     /// reads as part of the box, and the text keeps clear of it. Its click
     /// comes back through [`Field::show_with_trailing`]; `show` and `ui.add`
     /// draw it but only hand back the field.
-    pub fn trailing(mut self, label: impl Into<String>) -> Self {
+    pub fn trailing(mut self, label: impl Into<egui::WidgetText>) -> Self {
         self.trailing = Some(label.into());
         self
     }
@@ -166,9 +166,8 @@ impl<'t> Field<'t> {
         // text's room, so the frame (and everything laid out after it)
         // stays put as the label changes ("Filters" to "Filters (2)").
         let trailing = trailing.map(|label| {
-            let galley = ui
-                .painter()
-                .layout_no_wrap(label, font::callout(), color::LABEL);
+            let galley =
+                label.into_galley(ui, Some(egui::TextWrapMode::Extend), f32::INFINITY, font::callout());
             let h = super::control_h(ui) - 2.0 * TRAILING_INSET;
             let size = egui::vec2(galley.size().x + 2.0 * TRAILING_PAD, h);
             (galley, size)

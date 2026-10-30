@@ -9,6 +9,7 @@
 //! A row can be dragged: the drag carries a [`DraggedSongs`] payload that a
 //! crate in the sidebar (or the open crate view) takes.
 
+use crate::ui::phosphor_icons::app as icons;
 use super::*;
 use crate::ui::hover::HoverNoteExt;
 use crate::ui::tokens::{color, font};
@@ -237,7 +238,7 @@ impl App {
                             act = Some(SongAct::Open(i));
                             ui.close_menu();
                         }
-                        if local.is_some() && ui.button("▶ Play my file").clicked() {
+                        if local.is_some() && ui.button(crate::ui::icon_label(icons::PLAY, "Play my file")).clicked() {
                             act = Some(SongAct::PlayLocal(i));
                             ui.close_menu();
                         }
@@ -258,7 +259,7 @@ impl App {
                             act = Some(SongAct::SetTag(i, tag, on));
                         }
                         let liked = self.is_liked(&s.artist, &s.title, s.release_id, s.position.as_deref());
-                        if ui.button(if liked { "Unlike" } else { "♥ Like" }).clicked() {
+                        if ui.button(if liked { egui::WidgetText::from("Unlike") } else { crate::ui::icon_label(icons::HEART, "Like") }).clicked() {
                             act = Some(SongAct::ToggleLike(i));
                             ui.close_menu();
                         }

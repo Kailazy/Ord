@@ -60,12 +60,25 @@ pub mod app {
     pub const WAVE_SINE: &str = "wave-sine";
     pub const INFO: &str = "info";
     pub const CHAT_TEARDROP_TEXT: &str = "chat-teardrop-text";
+    pub const MAGNIFYING_GLASS: &str = "magnifying-glass";
+    pub const SHUFFLE: &str = "shuffle";
+    pub const HOUSE: &str = "house";
+    pub const PLAY: &str = "play";
+    pub const PENCIL_SIMPLE: &str = "pencil-simple";
+    pub const TRASH: &str = "trash";
+    pub const LINK: &str = "link";
+    pub const GEAR: &str = "gear";
+    pub const STAR: &str = "star";
+    pub const FUNNEL: &str = "funnel";
+    pub const CHECK: &str = "check";
+    pub const COPY: &str = "copy";
 
     #[cfg(test)]
     pub const ALL: &[&str] = &[
         MUSIC_NOTE, VINYL, HEART, SPARKLE, WARNING, EJECT, LIGHTNING, PLUS, PACKAGE, TAG, FOLDER,
         FILE_AUDIO, CARET_UP, CARET_DOWN, CLIPBOARD_TEXT, LOCK_KEY, WAVE_SINE, INFO,
-        CHAT_TEARDROP_TEXT,
+        CHAT_TEARDROP_TEXT, MAGNIFYING_GLASS, SHUFFLE, HOUSE, PLAY, PENCIL_SIMPLE, TRASH, LINK,
+        GEAR, STAR, FUNNEL, CHECK, COPY,
     ];
 }
 

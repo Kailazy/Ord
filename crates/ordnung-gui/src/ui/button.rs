@@ -62,18 +62,15 @@ pub fn icon_toggle(ui: &mut egui::Ui, glyph: &str, selected: bool) -> egui::Resp
 /// A push button for the one action a dialog is for (write, convert, set
 /// cover): white on the accent, so the row says which button is the
 /// answer. Goes on a [`super::choices`] row.
-pub fn primary(ui: &mut egui::Ui, label: &str) -> egui::Response {
-    ui.add(
-        egui::Button::new(egui::RichText::new(label).color(egui::Color32::WHITE))
-            .fill(color::accent()),
-    )
+pub fn primary(ui: &mut egui::Ui, label: impl Into<egui::WidgetText>) -> egui::Response {
+    ui.add(egui::Button::new(label.into().color(egui::Color32::WHITE)).fill(color::accent()))
 }
 
 /// A push button for an action that destroys something (clear, delete,
 /// remove): white on red, so it never reads as the safe default.
-pub fn danger(ui: &mut egui::Ui, label: &str) -> egui::Response {
+pub fn danger(ui: &mut egui::Ui, label: impl Into<egui::WidgetText>) -> egui::Response {
     ui.add(
-        egui::Button::new(egui::RichText::new(label).color(egui::Color32::WHITE))
+        egui::Button::new(label.into().color(egui::Color32::WHITE))
             .fill(egui::Color32::from_rgb(150, 40, 40)),
     )
 }
@@ -122,13 +119,13 @@ pub fn square(ui: &mut egui::Ui, glyph: &str) -> egui::Response {
 /// The width a [`button`] takes for the widest of `labels`: what a button
 /// whose label changes with state reserves, so the swap moves nothing
 /// beside it (a Play/Pause key, a sort menu naming its field).
-pub fn widest(ui: &egui::Ui, labels: &[&str]) -> f32 {
-    let font_id = egui::TextStyle::Button.resolve(ui.style());
+pub fn widest<L: Into<egui::WidgetText> + Clone>(ui: &egui::Ui, labels: &[L]) -> f32 {
     labels
         .iter()
-        .map(|s| {
-            ui.painter()
-                .layout_no_wrap(s.to_string(), font_id.clone(), egui::Color32::PLACEHOLDER)
+        .map(|l| {
+            l.clone()
+                .into()
+                .into_galley(ui, Some(egui::TextWrapMode::Extend), f32::INFINITY, egui::TextStyle::Button)
                 .size()
                 .x
         })

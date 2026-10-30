@@ -2885,10 +2885,11 @@ impl App {
                             // by name (and content fingerprint) are repointed in the
                             // catalog. Catalog-only — never moves or modifies files.
                             if self.missing_count > 0 {
-                                let btn = egui::Button::new(
-                                    egui::RichText::new("🔗 Relocate missing")
-                                        .color(egui::Color32::WHITE),
-                                )
+                                let btn = egui::Button::new(crate::ui::icon_text(
+                                    named(icons::LINK),
+                                    "Relocate missing",
+                                    font::body(),
+                                ))
                                 .fill(egui::Color32::from_rgb(150, 90, 40));
                                 let labels = &self.missing_labels;
                                 let count = self.missing_count;
@@ -3042,7 +3043,7 @@ impl App {
                             ui.separator();
                         }
                         // Settings stays reachable even while a job runs.
-                        if ui.button("⚙ Settings").clicked() {
+                        if ui.button(crate::ui::icon_label(icons::GEAR, "Settings")).clicked() {
                             self.token_input = self.config.discogs_token.clone();
                             self.settings_open = true;
                         }
@@ -3249,7 +3250,7 @@ impl App {
                     // Cancel beside the job's: stopping one never stops the other.
                     if let Some((done, total)) = self.analysis_progress().filter(|&(_, t)| t > 0) {
                         if ui
-                            .button("✖ Cancel")
+                            .button("Cancel")
                             .on_hover_note("Stop analyzing after the tracks already running")
                             .clicked()
                         {
@@ -3259,7 +3260,7 @@ impl App {
                     }
                     if self.job_cancel.is_some()
                         && ui
-                            .button("✖ Cancel")
+                            .button("Cancel")
                             .on_hover_note("Stop after the items already running")
                             .clicked()
                     {
@@ -4508,10 +4509,12 @@ impl App {
 
                     if modal.in_place {
                         ui.add_space(2.0);
-                        ui.colored_label(
+                        ui.label(crate::ui::icon_text_in(
+                            named(icons::WARNING),
+                            "Original file removed, catalog repointed",
+                            font::body(),
                             egui::Color32::LIGHT_YELLOW,
-                            "⚠ Original file removed, catalog repointed.",
-                        );
+                        ));
                     }
 
                     if let Some(err) = &modal.error {

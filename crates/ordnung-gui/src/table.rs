@@ -1,4 +1,5 @@
 //! Split out of `main.rs`; part of the GUI `App`.
+use crate::ui::phosphor_icons::{app as icons, named};
 use super::*;
 
 /// The header row's height.
@@ -646,7 +647,7 @@ impl App {
                     ui.add_space(4.0);
                     ui.horizontal(|ui| {
                         if ui
-                            .button("⚠ Likely transcoded")
+                            .button(crate::ui::icon_label(icons::WARNING, "Likely transcoded"))
                             .on_hover_note("Show only ~320? and lossy copies")
                             .clicked()
                         {
@@ -813,7 +814,7 @@ impl App {
             // looking empty. It comes before the count, with one label, so it
             // holds still while the count beside it changes under typing.
             if active_cols > 0
-                && crate::ui::button::compact(ui, "⊘ Clear filters", false)
+                && crate::ui::button::compact(ui, "Clear filters", false)
                     .on_hover_note("Clear the filter and every column filter")
                     .clicked()
             {
@@ -1889,7 +1890,7 @@ impl App {
                                         };
                                         crate::ui::menu::text(ui, egui::RichText::new(title).strong());
                                         ui.separator();
-                                        if audio_enabled && ui.button("▶  Preview").clicked() {
+                                        if audio_enabled && ui.button(crate::ui::icon_label(icons::PLAY, "Preview")).clicked() {
                                             menu_action = Some(TrackMenuAction::Preview(
                                                 r.id,
                                                 r.source_path.clone(),
@@ -2301,15 +2302,15 @@ impl App {
                                         } else if want.is_empty() {
                                             let (label, tip) = match (owned, wanted) {
                                                 (0, _) => (
-                                                    "✓  In your wantlist",
+                                                    "In your wantlist",
                                                     "Already on your Discogs wantlist",
                                                 ),
                                                 (_, 0) => (
-                                                    "✓  In your collection",
+                                                    "In your collection",
                                                     "You already own this on Discogs",
                                                 ),
                                                 _ => (
-                                                    "✓  Already in your collection and wantlist",
+                                                    "Already in your collection and wantlist",
                                                     "Every record here is already yours",
                                                 ),
                                             };
@@ -2869,11 +2870,13 @@ fn discogs_release_item(ui: &mut egui::Ui, total: usize, matched: usize) -> bool
 
     // Fully matched. Lay the row out by hand so the ↻ can sit in the right
     // edge as its own hit target while the status text fills the rest.
-    let label = if total > 1 {
-        format!("✓  Discogs release ({total})")
-    } else {
-        "✓  Discogs release".to_string()
-    };
+    let label = crate::ui::icon_text_in(
+        named(icons::CHECK),
+        &if total > 1 { format!("Discogs release ({total})") } else { "Discogs release".to_string() },
+        egui::TextStyle::Button.resolve(ui.style()),
+        ui.visuals().weak_text_color(),
+    )
+    .into_galley(ui, Some(egui::TextWrapMode::Extend), f32::INFINITY, egui::TextStyle::Button);
     let height = ui.spacing().interact_size.y;
     let (rect, _) = ui.allocate_exact_size(
         egui::vec2(ui.available_width(), height),
@@ -2899,11 +2902,9 @@ fn discogs_release_item(ui: &mut egui::Ui, total: usize, matched: usize) -> bool
     }
     // Checked-and-done reads as settled chrome, the same weak tone the
     // already-in-your-wantlist entry uses.
-    painter.text(
-        egui::pos2(rect.left() + ui.spacing().button_padding.x, rect.center().y),
-        egui::Align2::LEFT_CENTER,
+    painter.galley(
+        egui::pos2(rect.left() + ui.spacing().button_padding.x, rect.center().y - label.size().y / 2.0),
         label,
-        egui::TextStyle::Button.resolve(ui.style()),
         ui.visuals().weak_text_color(),
     );
     painter.text(

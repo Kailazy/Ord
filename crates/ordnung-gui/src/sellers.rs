@@ -484,7 +484,7 @@ impl App {
                         open_url(&format!("https://www.discogs.com/seller/{cur}/profile"));
                     }
                     if ui
-                        .button("✖ Remove")
+                        .button("Remove")
                         .on_hover_note("Forget this seller and their cached crates")
                         .clicked()
                     {
@@ -1313,7 +1313,7 @@ impl App {
                 }
                 crate::ui::menu::context(&resp, |ui| {
                     if ui
-                        .button("💰 Add to cart on Discogs ↗")
+                        .button(crate::ui::icon_label(icons::SHOPPING_CART, "Add to cart on Discogs ↗"))
                         .on_hover_note("Opens the listing; cart and checkout live on discogs.com")
                         .clicked()
                     {
@@ -1321,7 +1321,7 @@ impl App {
                         ui.close_menu();
                     }
                     if ui
-                        .button("🔍  Dig from here")
+                        .button(crate::ui::icon_label(icons::MAGNIFYING_GLASS, "Dig from here"))
                         .on_hover_note("Walk Discogs outward from this record, by artist or label")
                         .clicked()
                     {
@@ -1342,7 +1342,7 @@ impl App {
                         ui.close_menu();
                     }
                     if ui
-                        .button("⌂  Browse the label")
+                        .button(crate::ui::icon_label(icons::HOUSE, "Browse the label"))
                         .on_hover_note("The label's whole run as a list, your shelves marked")
                         .clicked()
                     {
@@ -1572,7 +1572,7 @@ impl App {
         }
         crate::ui::menu::context(&resp, |ui| {
             if ui
-                .button("💰 Add to cart on Discogs ↗")
+                .button(crate::ui::icon_label(icons::SHOPPING_CART, "Add to cart on Discogs ↗"))
                 .on_hover_note("Opens the listing; cart and checkout live on discogs.com")
                 .clicked()
             {
@@ -1580,7 +1580,7 @@ impl App {
                 ui.close_menu();
             }
             if ui
-                .button("🔍  Dig from here")
+                .button(crate::ui::icon_label(icons::MAGNIFYING_GLASS, "Dig from here"))
                 .on_hover_note("Walk Discogs outward from this record, by artist or label")
                 .clicked()
             {

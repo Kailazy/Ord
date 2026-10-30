@@ -52,13 +52,25 @@ pub fn control_h(ui: &egui::Ui) -> f32 {
 /// where Inter's private-use glyphs would claim some of the codepoints.
 /// Colours are left to the widget, so the label still answers hover.
 pub fn icon_text(glyph: &str, text: &str, font: egui::FontId) -> egui::WidgetText {
+    icon_text_in(glyph, text, font, egui::Color32::PLACEHOLDER)
+}
+
+/// [`icon_text`] for the common case: a button or menu label at body
+/// size, the icon named as in [`phosphor_icons::app`].
+pub fn icon_label(name: &str, text: &str) -> egui::WidgetText {
+    icon_text(phosphor_icons::named(name), text, tokens::font::body())
+}
+
+/// [`icon_text`] in one fixed colour, for a label whose ink is its meaning
+/// (a warning, a price) rather than the widget's.
+pub fn icon_text_in(glyph: &str, text: &str, font: egui::FontId, color: egui::Color32) -> egui::WidgetText {
     let mut job = egui::text::LayoutJob::default();
     job.append(
         glyph,
         0.0,
         egui::TextFormat {
             font_id: tokens::font::icon(font.size + 2.0),
-            color: egui::Color32::PLACEHOLDER,
+            color,
             valign: egui::Align::Center,
             ..Default::default()
         },
@@ -68,7 +80,7 @@ pub fn icon_text(glyph: &str, text: &str, font: egui::FontId) -> egui::WidgetTex
         tokens::space::S3,
         egui::TextFormat {
             font_id: font,
-            color: egui::Color32::PLACEHOLDER,
+            color,
             valign: egui::Align::Center,
             ..Default::default()
         },

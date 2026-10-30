@@ -20,6 +20,7 @@
 //! digs, re-picks or rejects. Matched records join the record map. Parsing and scoring live
 //! in `ordnung_core::tracklist`; see `docs/design/tracklist-match.md`.
 
+use crate::ui::phosphor_icons::app as icons;
 use super::*;
 use crate::jobs::MatchScope;
 use crate::song_rows::{badge, center_two, two_line};
@@ -837,12 +838,12 @@ impl App {
                                 ui.close_menu();
                             }
                             if !self.vinyl_owned.contains(&r) && !self.vinyl_wanted.contains(&r) {
-                                if ui.add_enabled(!busy, egui::Button::new("♥ Want")).clicked() {
+                                if ui.add_enabled(!busy, egui::Button::new(crate::ui::icon_label(icons::HEART, "Want"))).clicked() {
                                     line_act = Some(LineAct::Want(i));
                                     ui.close_menu();
                                 }
                             }
-                            if ui.button("◈ Dig from it").clicked() {
+                            if ui.button(crate::ui::icon_label(icons::MAGNIFYING_GLASS, "Dig from it")).clicked() {
                                 line_act = Some(LineAct::Dig(i));
                                 ui.close_menu();
                             }
@@ -853,7 +854,7 @@ impl App {
                             ui.separator();
                         }
                         if self.local_track(&e.song(), e.local_track_id).is_some()
-                            && ui.button("▶ Play my file").clicked()
+                            && ui.button(crate::ui::icon_label(icons::PLAY, "Play my file")).clicked()
                         {
                             line_act = Some(LineAct::PlayLocal(i));
                             ui.close_menu();
@@ -885,7 +886,7 @@ impl App {
                                     line_act = Some(LineAct::SetTag(i, tag, on));
                                 }
                             }
-                            if e.release_id.is_some() && ui.button("✖ Not this record").on_hover_note("Clear the match. A re-match won't touch this line").clicked() {
+                            if e.release_id.is_some() && ui.button("Not this record").on_hover_note("Clear the match. A re-match won't touch this line").clicked() {
                                 line_act = Some(LineAct::NotThis(i));
                                 ui.close_menu();
                             }
