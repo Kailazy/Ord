@@ -26,6 +26,8 @@ pub enum ReadError {
     Format(&'static str),
     #[error("device library plus: {0}")]
     Dlp(String),
+    #[error("export.pdb is not in the shape rekordbox writes: {0}")]
+    Lint(String),
     /// Converting a stick's file in place failed (see `edit::convert_stick_track`).
     #[error("couldn't convert {path}: {msg}")]
     Convert { path: std::path::PathBuf, msg: String },
@@ -519,6 +521,76 @@ pub(crate) fn table_dir(data: &[u8]) -> Result<TableDir, ReadError> {
         })
         .collect::<Result<_, _>>()?;
     Ok(TableDir { page_size, dir })
+}
+
+/// The shape a player and rekordbox check before reading a row, as rekordbox
+/// writes it: twenty tables in order; every table's first page an index page
+/// in the documented form (a zero body alone made a CDJ say "Device library
+/// is corrupted", 2026-09-04); every page a table links carrying the table's
+/// type and a transaction id no newer than the header's; every chain ending
+/// at the directory's blank empty-candidate page. Run on every pdb Ord
+/// writes, before it lands. Names the first rule broken.
+pub fn lint(data: &[u8]) -> Result<(), String> {
+    let tables = table_dir(data).map_err(|e| e.to_string())?;
+    let ps = tables.page_size;
+    let pages = (data.len() / ps) as u32;
+    let sequence = u32_at(data, 0x14).unwrap_or(0);
+    if tables.dir.len() != 20 || tables.dir.iter().enumerate().any(|(i, d)| d.0 != i as u32) {
+        return Err("tables 0..19 are not all present in order".into());
+    }
+    for (slot, &(ty, first, last)) in tables.dir.iter().enumerate() {
+        let candidate = u32_at(data, 0x1C + slot * 16 + 4).unwrap_or(0);
+        let chain = table_pages(data, ps, first, last);
+        let Some(&head) = chain.first() else {
+            return Err(format!("table {ty}: first page {first} is outside the file"));
+        };
+        // The two words at 0x20/0x22 are 0x1fff on a fresh index page but
+        // rewritten by rekordbox once the page lists deletes, so they are
+        // not checked.
+        let first_data = chain.get(1).map_or(0x03FF_FFFF, |&o| (o / ps) as u32);
+        let index_words_ok = data.get(head + 0x1B) == Some(&0x64)
+            && u16_at(data, head + 0x24) == Some(0x03EC)
+            && u32_at(data, head + 0x28) == Some(first)
+            && u32_at(data, head + 0x2C) == Some(first_data)
+            && u32_at(data, head + 0x30) == Some(0x03FF_FFFF);
+        if !index_words_ok {
+            return Err(format!("table {ty}: page {first} is not an index page"));
+        }
+        // Slots above the high-water mark at 0x26 carry the empty fill; the
+        // entries below it are rekordbox's own business (not every one is
+        // 8 × a page, as one of its exports shows).
+        let mark = u16_at(data, head + 0x26).unwrap_or(0) as usize;
+        if !(head + 0x3C + 4 * mark..head + ps - 20)
+            .step_by(4)
+            .all(|o| u32_at(data, o) == Some(0x1FFF_FFF8))
+        {
+            return Err(format!("table {ty}: index page {first} lacks the empty fill"));
+        }
+        if chain.last() != Some(&(last as usize * ps)) {
+            return Err(format!("table {ty}: the page chain breaks before page {last}"));
+        }
+        for &off in &chain[1..] {
+            let idx = u32_at(data, off + 4).unwrap_or(0);
+            if u32_at(data, off + 8) != Some(ty) {
+                return Err(format!("table {ty}: page {idx} belongs to another table"));
+            }
+            if data.get(off + 0x1B).is_some_and(|f| f & 0x40 != 0) {
+                return Err(format!("table {ty}: page {idx} is a second index page"));
+            }
+            if u32_at(data, off + 0x10).unwrap_or(0) > sequence {
+                return Err(format!("table {ty}: page {idx} is newer than the file's sequence {sequence}"));
+            }
+        }
+        let tail_next = u32_at(data, chain[chain.len() - 1] + 0x0C).unwrap_or(0);
+        if tail_next != candidate {
+            return Err(format!("table {ty}: the last page links to {tail_next}, not the empty candidate {candidate}"));
+        }
+        let c = candidate as usize;
+        if candidate < pages && data[c * ps..(c + 1) * ps].iter().any(|&b| b != 0) {
+            return Err(format!("table {ty}: empty candidate page {candidate} is not blank"));
+        }
+    }
+    Ok(())
 }
 
 /// Follow one table's linked list of pages, returning each page's byte offset.

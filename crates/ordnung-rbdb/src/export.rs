@@ -622,6 +622,7 @@ fn validate_export(
     expected_tracks: usize,
     expected_playlists: usize,
 ) -> std::result::Result<(), String> {
+    crate::pdb::lint(pdb).map_err(|e| format!("export.pdb: {e}"))?;
     let export = crate::pdb::read_export_bytes(pdb).map_err(|e| format!("export.pdb: {e}"))?;
 
     if export.tracks.len() != expected_tracks {

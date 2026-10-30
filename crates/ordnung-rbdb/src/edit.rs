@@ -105,6 +105,15 @@ fn backup_once(path: &Path) {
 /// stick yanked mid-write holds the old database or the new one, never a
 /// torn page. Callers write the Device Library Plus first and this last.
 fn write_pdb(pdb_path: &Path, data: &[u8]) -> Result<(), ReadError> {
+    // The lint judges Ord's writers, not rekordbox's files: a stick whose
+    // current pdb already breaks a rule keeps its shape and stays editable;
+    // only an edit that introduces the break is refused.
+    if let Err(why) = crate::pdb::lint(data) {
+        let live = std::fs::read(pdb_path).map_err(ReadError::io(pdb_path))?;
+        if crate::pdb::lint(&live).is_ok() {
+            return Err(ReadError::Lint(why));
+        }
+    }
     backup_once(pdb_path);
     crate::export::write_atomic(pdb_path, data).map_err(ReadError::io(pdb_path))
 }
@@ -1070,31 +1079,33 @@ fn relink_playlist_tables(
             let o = idx as usize * page_size;
             data[o..o + page_size].copy_from_slice(&page);
         }
-        // Pages the shrunken table no longer needs: blank them (zero rows) so
-        // a reader that overruns the chain finds nothing, not stale rows.
+        // Pages the shrunken table no longer needs are zeroed whole, the form
+        // of rekordbox's empty-candidate pages: a reader that overruns the
+        // chain finds nothing, and the first of them can end the chain.
         for &idx in t.reusable.iter().skip(need) {
-            let page = pdbw::data_page(idx, t.ty, total, &[]);
             let o = idx as usize * page_size;
-            data[o..o + page_size].copy_from_slice(&page);
+            data[o..o + page_size].fill(0);
         }
-        // Relink the kept sentinel to the first data page (or a blanked one,
-        // mirroring how rekordbox leaves an empty table).
-        let first_data = used.first().copied().or_else(|| t.reusable.first().copied());
-        if let (Some(sentinel), Some(first_data)) = (t.keep_first, first_data) {
-            let o = sentinel as usize * page_size + 0x0C;
-            data[o..o + 4].copy_from_slice(&first_data.to_le_bytes());
+        // The chain ends at the directory's empty candidate: one past the end
+        // like the full writer, or, for a table that emptied, its first freed
+        // page. The kept sentinel links to the first data page (else straight
+        // to the candidate) and its index body names the first data page
+        // (else none), the way rekordbox leaves an empty table.
+        let first_data = used.first().copied();
+        let candidate = match first_data {
+            Some(_) => total,
+            None => t.reusable.first().copied().unwrap_or(total),
+        };
+        if let Some(sentinel) = t.keep_first {
+            let s = sentinel as usize * page_size;
+            data[s + 0x0C..s + 0x10].copy_from_slice(&first_data.unwrap_or(candidate).to_le_bytes());
+            data[s + 0x2C..s + 0x30].copy_from_slice(&first_data.unwrap_or(0x03FF_FFFF).to_le_bytes());
         }
         // Directory: `first` is unchanged; `last` is the final live page (the
-        // sentinel again when the table emptied); `empty_candidate` may point
-        // at any allocatable page — one past the end, like the full writer.
+        // sentinel again when the table emptied).
         let base = 0x1C + t.slot * 16;
-        let last = used
-            .last()
-            .copied()
-            .or(t.keep_first)
-            .or_else(|| t.reusable.first().copied())
-            .unwrap_or(total);
-        data[base + 4..base + 8].copy_from_slice(&total.to_le_bytes());
+        let last = used.last().copied().or(t.keep_first).unwrap_or(candidate);
+        data[base + 4..base + 8].copy_from_slice(&candidate.to_le_bytes());
         data[base + 12..base + 16].copy_from_slice(&last.to_le_bytes());
     }
 

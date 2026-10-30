@@ -136,6 +136,22 @@ fn large_export_matches_rekordcrate() {
 }
 
 #[test]
+fn rekordbox_written_files_pass_the_lint_and_a_blanked_index_page_fails_it() {
+    for name in ["demo_tracks_export.pdb", "num_rows_export.pdb"] {
+        let data = std::fs::read(fixture(name)).unwrap();
+        ordnung_rbdb::pdb::lint(&data).unwrap_or_else(|e| panic!("{name}: {e}"));
+        // The 2026-09-04 failure: a first page with the right flag and a zero body.
+        let mut zeroed = data.clone();
+        zeroed[4096 + 0x28..2 * 4096].fill(0);
+        assert!(ordnung_rbdb::pdb::lint(&zeroed).unwrap_err().contains("table 0"), "{name}");
+        // A data page where the index page belongs.
+        let mut unflagged = data;
+        unflagged[4096 + 0x1B] = 0x24;
+        assert!(ordnung_rbdb::pdb::lint(&unflagged).unwrap_err().contains("not an index page"), "{name}");
+    }
+}
+
+#[test]
 fn garbage_input_is_rejected_not_panicking() {
     // Truncated / corrupt data must error out or yield partial data, never panic.
     let dir = std::env::temp_dir().join("ordnung-pdb-read-test");
