@@ -80,6 +80,7 @@ pub fn edit_stick_playlists(
     let pdb_path = dir.join("export.pdb");
     let mut data = std::fs::read(&pdb_path).map_err(ReadError::io(&pdb_path))?;
     relink_playlist_tables(&mut data, &export.playlists, &export.entries)?;
+    check_pdb(&pdb_path, &data)?;
     let dlp_path = dir.join("exportLibrary.db");
     if dlp_path.is_file() {
         sync_dlp_playlists(&dlp_path, &export)?;
@@ -100,20 +101,29 @@ fn backup_once(path: &Path) {
     }
 }
 
-/// Every `export.pdb` rewrite lands through here: the pristine copy is kept
-/// on the first edit, then the new bytes replace the file atomically, so a
-/// stick yanked mid-write holds the old database or the new one, never a
-/// torn page. Callers write the Device Library Plus first and this last.
-fn write_pdb(pdb_path: &Path, data: &[u8]) -> Result<(), ReadError> {
-    // The lint judges Ord's writers, not rekordbox's files: a stick whose
-    // current pdb already breaks a rule keeps its shape and stays editable;
-    // only an edit that introduces the break is refused.
+/// Judge an edited `export.pdb` before anything of the edit lands on the
+/// stick: every editor calls this on its new bytes first, then writes the
+/// Device Library Plus, then the pdb through [`write_pdb`], so a refusal
+/// leaves both databases as they were instead of a DLP that is ahead of its
+/// pdb. The lint judges Ord's writers, not rekordbox's files: a stick whose
+/// current pdb already breaks a rule keeps its shape and stays editable;
+/// only an edit that introduces the break is refused.
+fn check_pdb(pdb_path: &Path, data: &[u8]) -> Result<(), ReadError> {
     if let Err(why) = crate::pdb::lint(data) {
         let live = std::fs::read(pdb_path).map_err(ReadError::io(pdb_path))?;
         if crate::pdb::lint(&live).is_ok() {
             return Err(ReadError::Lint(why));
         }
     }
+    Ok(())
+}
+
+/// Every `export.pdb` rewrite lands through here: the pristine copy is kept
+/// on the first edit, then the new bytes replace the file atomically, so a
+/// stick yanked mid-write holds the old database or the new one, never a
+/// torn page. Callers write the Device Library Plus first and this last.
+fn write_pdb(pdb_path: &Path, data: &[u8]) -> Result<(), ReadError> {
+    check_pdb(pdb_path, data)?;
     backup_once(pdb_path);
     crate::export::write_atomic(pdb_path, data).map_err(ReadError::io(pdb_path))
 }
@@ -246,6 +256,7 @@ pub fn delete_stick_tracks(volume_root: &Path, rel_paths: &[String]) -> Result<u
         return Err(ReadError::Format("track row missing from export.pdb"));
     }
     set_summary_count(&mut data, export.tracks.len() as u32);
+    check_pdb(&pdb_path, &data)?;
 
     let dlp_path = dir.join("exportLibrary.db");
     if dlp_path.is_file() {
@@ -463,6 +474,7 @@ fn bump_track_counter(
         let n: u32 = row.strings[slot].trim().parse().unwrap_or(0);
         row.strings[slot] = (n + 1).to_string();
     })?;
+    check_pdb(&pdb_path, &data)?;
     let dlp_path = dir.join("exportLibrary.db");
     if dlp_path.is_file() {
         with_local_dlp(&dlp_path, |conn| {
@@ -553,11 +565,19 @@ pub fn convert_stick_track(
         .unwrap_or_default();
     let ext = ordnung_core::convert::target_extension(spec.target);
     let dest = src.with_file_name(format!("{stem}.{ext}"));
-    if dest == src || dest.exists() {
+    // A row that names the converted path is another track's audio, not
+    // ours to replace. A file of that name no row names is a conversion that
+    // failed before its row was repointed (kept, see below): redone.
+    let dest_key = crate::export::path_key(&format!(
+        "/{}",
+        dest.strip_prefix(volume_root).unwrap_or(&dest).to_string_lossy()
+    ));
+    if dest == src || export.tracks.values().any(|t| crate::export::path_key(&t.file_path) == dest_key) {
         return Err(convert_err(
             "a file of the converted name is already on the device".into(),
         ));
     }
+    let _ = std::fs::remove_file(&dest);
     // The source's own tags and cover ride along: ffmpeg carries only some
     // of them into an AIFF, and while the player reads the row, the file
     // should stay a complete file.
@@ -592,10 +612,11 @@ pub fn convert_stick_track(
             .into_owned();
         relink_converted_track(volume_root, track_id, &new_rel, spec.target, &props, size)
     })();
-    if let Err(e) = relinked {
-        let _ = std::fs::remove_file(&dest);
-        return Err(e);
-    }
+    // A relink that fails part-way may already have pointed the Device
+    // Library Plus at the converted file, so it stays beside the original: a
+    // stray on the stick beats a row whose audio is gone. The next attempt
+    // starts over from it.
+    relinked?;
     // Only now is the original expendable.
     let _ = std::fs::remove_file(&src);
     Ok(dest)
@@ -643,6 +664,7 @@ pub fn relink_converted_track(
         row.strings[19] = new_name.clone();
         row.strings[20] = new_path.clone();
     })?;
+    check_pdb(&pdb_path, &data)?;
     let dlp_path = dir.join("exportLibrary.db");
     if dlp_path.is_file() {
         with_local_dlp(&dlp_path, |conn| {

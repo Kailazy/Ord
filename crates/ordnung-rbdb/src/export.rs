@@ -604,7 +604,9 @@ fn read_existing(
 
 /// The key a stick path is matched on: NFC (the macOS FAT driver lists names
 /// in NFD, sources may be either) and lowercase (FAT is case-insensitive).
-fn path_key(path: &str) -> String {
+/// The form a stick path is compared in: NFC (the export writes NFC, macOS
+/// hands FAT names back NFD) and lowercase (FAT32 is case-insensitive).
+pub(crate) fn path_key(path: &str) -> String {
     path.nfc().collect::<String>().to_lowercase()
 }
 
