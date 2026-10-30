@@ -203,17 +203,18 @@ fn apply_op(export: &mut RbExport, op: &PlaylistOp) -> Result<Option<u32>, ReadE
 }
 
 /// The export's track ids behind `rel_paths` (relative to the volume root,
-/// matched case-insensitively — the volume is FAT32), in the paths' order;
+/// matched through `path_key`: case-insensitively, the volume is FAT32, and
+/// in NFC, macOS hands FAT names back decomposed), in the paths' order;
 /// paths the export doesn't know are skipped.
 fn ids_by_path(export: &RbExport, rel_paths: &[String]) -> Vec<u32> {
     let by_path: HashMap<String, u32> = export
         .tracks
         .iter()
-        .map(|(tid, t)| (t.file_path.trim_start_matches('/').to_lowercase(), *tid))
+        .map(|(tid, t)| (crate::export::path_key(t.file_path.trim_start_matches('/')), *tid))
         .collect();
     rel_paths
         .iter()
-        .filter_map(|rel| by_path.get(&rel.trim_start_matches('/').to_lowercase()).copied())
+        .filter_map(|rel| by_path.get(&crate::export::path_key(rel.trim_start_matches('/'))).copied())
         .collect()
 }
 
@@ -262,14 +263,14 @@ pub fn delete_stick_tracks(volume_root: &Path, rel_paths: &[String]) -> Result<u
     if dlp_path.is_file() {
         let keys: Vec<String> = gone
             .iter()
-            .map(|t| t.file_path.trim_start_matches('/').to_lowercase())
+            .map(|t| crate::export::path_key(t.file_path.trim_start_matches('/')))
             .collect();
         with_local_dlp(&dlp_path, |conn| {
             let mut stmt = conn.prepare("SELECT content_id, path FROM content")?;
             let ids: Vec<i64> = stmt
                 .query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?)))?
                 .flatten()
-                .filter(|(_, p)| keys.contains(&p.trim_start_matches('/').to_lowercase()))
+                .filter(|(_, p)| keys.contains(&crate::export::path_key(p.trim_start_matches('/'))))
                 .map(|(id, _)| id)
                 .collect();
             for id in ids {
@@ -478,12 +479,12 @@ fn bump_track_counter(
     let dlp_path = dir.join("exportLibrary.db");
     if dlp_path.is_file() {
         with_local_dlp(&dlp_path, |conn| {
-            let key = file_path.trim_start_matches('/').to_lowercase();
+            let key = crate::export::path_key(file_path.trim_start_matches('/'));
             let mut stmt = conn.prepare("SELECT content_id, path FROM content")?;
             let ids: Vec<i64> = stmt
                 .query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?)))?
                 .flatten()
-                .filter(|(_, p)| p.trim_start_matches('/').to_lowercase() == key)
+                .filter(|(_, p)| crate::export::path_key(p.trim_start_matches('/')) == key)
                 .map(|(id, _)| id)
                 .collect();
             for id in ids {
@@ -668,12 +669,12 @@ pub fn relink_converted_track(
     let dlp_path = dir.join("exportLibrary.db");
     if dlp_path.is_file() {
         with_local_dlp(&dlp_path, |conn| {
-            let key = old_path.trim_start_matches('/').to_lowercase();
+            let key = crate::export::path_key(old_path.trim_start_matches('/'));
             let mut stmt = conn.prepare("SELECT content_id, path FROM content")?;
             let ids: Vec<i64> = stmt
                 .query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?)))?
                 .flatten()
-                .filter(|(_, p)| p.trim_start_matches('/').to_lowercase() == key)
+                .filter(|(_, p)| crate::export::path_key(p.trim_start_matches('/')) == key)
                 .map(|(id, _)| id)
                 .collect();
             for id in ids {
@@ -1076,7 +1077,7 @@ fn mirror_playlists(conn: &rusqlite::Connection, export: &RbExport) -> rusqlite:
         let mut stmt = conn.prepare("SELECT content_id, path FROM content")?;
         let rows = stmt.query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?)))?;
         for (id, path) in rows.flatten() {
-            content_by_path.insert(path.trim_start_matches('/').to_lowercase(), id);
+            content_by_path.insert(crate::export::path_key(path.trim_start_matches('/')), id);
         }
     }
     conn.execute("DELETE FROM playlist", [])?;
@@ -1101,7 +1102,7 @@ fn mirror_playlists(conn: &rusqlite::Connection, export: &RbExport) -> rusqlite:
             let Some(track) = export.tracks.get(tid) else {
                 continue;
             };
-            let key = track.file_path.trim_start_matches('/').to_lowercase();
+            let key = crate::export::path_key(track.file_path.trim_start_matches('/'));
             let Some(content_id) = content_by_path.get(&key) else {
                 continue;
             };

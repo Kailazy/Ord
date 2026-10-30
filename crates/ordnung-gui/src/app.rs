@@ -1523,9 +1523,24 @@ impl App {
             .collect();
         if ordnung_core::usb::is_rekordbox_export(&vol) {
             let rel_paths = self.usb_rel_paths(&vol, &ids);
-            if let Err(e) = edit::delete_stick_tracks(&vol, &rel_paths) {
-                self.status = format!("Device delete failed: {e}");
-                return;
+            match edit::delete_stick_tracks(&vol, &rel_paths) {
+                Err(e) => {
+                    self.fail(format!("Device delete failed: {e}"));
+                    return;
+                }
+                // A file whose row was not found would outlive its row as a
+                // track the player lists but cannot load; nothing is removed
+                // until the view and the stick agree.
+                Ok(n) if n < rel_paths.len() => {
+                    self.fail(format!(
+                        "Device delete stopped: {} of {} tracks are not in the device library as shown. Rescan the device and try again.",
+                        rel_paths.len() - n,
+                        rel_paths.len()
+                    ));
+                    self.usb_loaded_for = None;
+                    return;
+                }
+                Ok(_) => {}
             }
         }
         for p in &paths {
@@ -4873,19 +4888,17 @@ fn shared_track_ids<'a>(
     ids
 }
 
-/// Each scanned file on a stick by its path under `vol`, lowercased: FAT32
-/// is case-insensitive, and this is how pdb rows find their files.
+/// Each scanned file on a stick by its path under `vol`, in the export's
+/// own key form (lowercase, FAT32 is case-insensitive; NFC, macOS hands the
+/// names back decomposed while rekordbox stores them composed): this is how
+/// pdb rows find their files.
 fn usb_rel_index(vol: &Path, tracks: &[ScannedTrack]) -> HashMap<String, usize> {
     tracks
         .iter()
         .enumerate()
         .filter_map(|(i, t)| {
-            let rel = Path::new(&t.source_path)
-                .strip_prefix(vol)
-                .ok()?
-                .to_string_lossy()
-                .to_lowercase();
-            Some((rel, i))
+            let rel = Path::new(&t.source_path).strip_prefix(vol).ok()?.to_string_lossy();
+            Some((ordnung_rbdb::export::path_key(&rel), i))
         })
         .collect()
 }
