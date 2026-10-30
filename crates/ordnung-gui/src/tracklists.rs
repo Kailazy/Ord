@@ -881,7 +881,7 @@ impl App {
                                     spec.release_id,
                                     spec.position.as_deref(),
                                 ));
-                                if let Some((tag, on)) = crate::crates::tag_menu(ui, &self.crate_sets, tagged) {
+                                if let Some((tag, on)) = crate::crates::tag_menu(ui, &self.crate_sets, tagged, &self.db_path) {
                                     line_act = Some(LineAct::SetTag(i, tag, on));
                                 }
                             }

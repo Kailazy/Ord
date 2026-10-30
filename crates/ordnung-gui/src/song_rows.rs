@@ -254,7 +254,7 @@ impl App {
                             act = Some(SongAct::AddToCrate(i, cid));
                         }
                         let tagged = self.song_tag_ids(&s.song().key()).to_vec();
-                        if let Some((tag, on)) = crate::crates::tag_menu(ui, &crates, &tagged) {
+                        if let Some((tag, on)) = crate::crates::tag_menu(ui, &crates, &tagged, &self.db_path) {
                             act = Some(SongAct::SetTag(i, tag, on));
                         }
                         let liked = self.is_liked(&s.artist, &s.title, s.release_id, s.position.as_deref());

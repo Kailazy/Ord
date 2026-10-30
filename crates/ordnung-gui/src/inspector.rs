@@ -340,12 +340,8 @@ impl App {
         let song_key = crate::crates::track_song_key(&song.artist, &song.title, release);
         let tagged: Vec<Id> = self.song_tag_ids(&song_key).to_vec();
         let tag_words = crate::crates::tag_words(&self.crate_sets, &tagged);
-        let tag_sets: Vec<(Id, String)> = self
-            .crate_sets
-            .iter()
-            .filter(|c| c.kind == CrateKind::Tag)
-            .map(|c| (c.id, c.name.clone()))
-            .collect();
+        let crate_sets = self.crate_sets.clone();
+        let db_path = self.db_path.clone();
 
         // --- Editable Core tags ------------------------------------------
         // The fields a user most often fixes or fills (e.g. from Discogs), plus
@@ -486,18 +482,9 @@ impl App {
                     // and the menu stays up for the next one.
                     let btn = crate::ui::button::menu_button(ui, "Tags")
                         .on_hover_note("Mark this song with your tags");
-                    crate::ui::menu::dropdown(&btn, 200.0, |m| {
-                        let mut any = false;
-                        for (tid, name) in &tag_sets {
-                            any = true;
-                            let on = tagged.contains(tid);
-                            if m.selectable(on, name) {
-                                action = Some(InspectorAction::SetTag(*tid, !on, like_spec.clone()));
-                            }
-                        }
-                        if !any {
-                            m.note("No tags yet");
-                            m.note("Make one with the + beside TAGS in the sidebar");
+                    crate::ui::menu::dropdown(&btn, crate::crates::TAG_MENU_W, |m| {
+                        if let Some((tid, on)) = crate::crates::tag_rows(m, &crate_sets, &tagged, &db_path) {
+                            action = Some(InspectorAction::SetTag(tid, on, like_spec.clone()));
                         }
                     });
                     ui.add(

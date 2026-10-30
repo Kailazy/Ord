@@ -2305,7 +2305,7 @@ impl App {
                                     .to_vec()
                                 })
                                 .unwrap_or_default();
-                            let hit = sheet_row_ui(ui, sheet, row, i, playing, running, lit, liked, &self.crate_sets, &tagged);
+                            let hit = sheet_row_ui(ui, sheet, row, i, playing, running, lit, liked, &self.crate_sets, &tagged, &self.db_path);
                             // A step off the visible part of the list brings
                             // the row it landed on into view.
                             if cursor_moved && cursor == Some(i) {
@@ -3186,6 +3186,7 @@ fn sheet_row_ui(
     liked: bool,
     crates: &[CrateSet],
     tagged: &[Id],
+    db: &Path,
 ) -> Option<RowHit> {
     const ACCENT: egui::Color32 = egui::Color32::from_rgb(90, 200, 120);
     /// The like mark's square: the row's height.
@@ -3502,7 +3503,7 @@ fn sheet_row_ui(
         if let Some(cid) = crate::crates::add_to_crate_menu(ui, crates, None) {
             hit_what = Some(RowHit::AddToCrate(cid));
         }
-        if let Some((tag, on)) = crate::crates::tag_menu(ui, crates, tagged) {
+        if let Some((tag, on)) = crate::crates::tag_menu(ui, crates, tagged, db) {
             hit_what = Some(RowHit::SetTag(tag, on));
         }
     });

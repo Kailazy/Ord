@@ -34,6 +34,7 @@ use crate::ui::hover::HoverNoteExt;
 use crate::ui::tokens::{color, font, space};
 use ordnung_core::catalog::song_key;
 use ordnung_core::model::{CrateKind, CrateSet, SongPin};
+use std::path::Path;
 
 /// Which layout the crate view shows. Remembered per kind (see
 /// [`App::crate_layout`]): a crate opens on the records to bring, a tag on
@@ -111,30 +112,73 @@ pub(crate) fn add_to_crate_menu(
     pick
 }
 
-/// The "Tags" submenu of a song's context menu: one ✓ row per tag
-/// (`ui::menu` rows, the whole row toggles), checked for the tags in `on`
-/// (the song's, or with several songs the tags every one of them
-/// carries). Returns the tag toggled and its new state. The menu stays up
-/// so several tags can be set in one visit. Shown even with no tags,
-/// saying so, so the way in is found.
-pub(crate) fn tag_menu(ui: &mut egui::Ui, sets: &[CrateSet], on: &[Id]) -> Option<(Id, bool)> {
+/// Rows per column of the Tags menu: past this many the list runs on in
+/// a column to the right rather than down the screen.
+const TAG_MENU_ROWS: usize = 12;
+/// Width of one column of the Tags menu, and of the inspector's dropdown
+/// that holds the same rows.
+pub(crate) const TAG_MENU_W: f32 = 200.0;
+
+/// The "Tags" submenu of a song's context menu: [`tag_rows`] in egui's
+/// submenu chrome.
+pub(crate) fn tag_menu(ui: &mut egui::Ui, sets: &[CrateSet], on: &[Id], db: &Path) -> Option<(Id, bool)> {
     let mut pick = None;
     crate::ui::menu::menu_button(ui, "Tags", |ui| {
-        crate::ui::menu::embedded(ui, |m| {
-            let mut any = false;
-            for t in sets.iter().filter(|c| c.kind == CrateKind::Tag) {
-                any = true;
-                let checked = on.contains(&t.id);
-                if m.selectable(checked, &t.name) {
-                    pick = Some((t.id, !checked));
-                }
-            }
-            if !any {
-                m.note("No tags yet");
-                m.note("Make one with the + beside TAGS in the sidebar");
-            }
-        });
+        crate::ui::menu::embedded(ui, |m| pick = tag_rows(m, sets, on, db));
     });
+    pick
+}
+
+/// The Tags menu's rows, shared by the song menus' submenu and the
+/// inspector's dropdown: one ✓ row per tag (`ui::menu` rows, the whole row
+/// toggles) in columns of [`TAG_MENU_ROWS`], checked for the tags in `on`
+/// (the song's, or with several songs the tags every one of them carries),
+/// and a box at the end to type a new tag into. Enter there makes the tag
+/// in the catalog at `db` (or finds the one already so named) and reports
+/// it as set. Returns the tag toggled and its new state. The menu stays up
+/// so several tags can be set in one visit.
+pub(crate) fn tag_rows(
+    m: &mut crate::ui::menu::MenuUi,
+    sets: &[CrateSet],
+    on: &[Id],
+    db: &Path,
+) -> Option<(Id, bool)> {
+    let mut pick = None;
+    let tags: Vec<&CrateSet> = sets.iter().filter(|c| c.kind == CrateKind::Tag).collect();
+    m.columns(TAG_MENU_ROWS, TAG_MENU_W, |m| {
+        for t in &tags {
+            let checked = on.contains(&t.id);
+            if m.selectable(checked, &t.name) {
+                pick = Some((t.id, !checked));
+            }
+        }
+    });
+    if tags.is_empty() {
+        m.note("No tags yet");
+    }
+    let ui = m.ui();
+    // The typed name lives in egui's memory under the menu's id, so the
+    // box survives the menu's repaints and starts empty each visit.
+    let id = ui.id().with("new_tag");
+    let mut buf: String = ui.data(|d| d.get_temp(id)).unwrap_or_default();
+    let field = crate::ui::field::Field::singleline(&mut buf)
+        .hint("New tag")
+        .width(ui.available_width() - crate::ui::field::MARGIN.sum().x)
+        .show(ui);
+    if field.lost_focus() {
+        let name = buf.trim().to_string();
+        if ui.input(|i| i.key_pressed(egui::Key::Enter)) && !name.is_empty() {
+            pick = match tags.iter().find(|t| t.name.eq_ignore_ascii_case(&name)) {
+                Some(t) => Some((t.id, true)),
+                None => Catalog::open(db)
+                    .and_then(|c| c.create_crate_set(&name, CrateKind::Tag))
+                    .ok()
+                    .map(|id| (id, true)),
+            };
+        }
+        buf.clear();
+    }
+    ui.data_mut(|d| d.insert_temp(id, buf));
     pick
 }
 
@@ -253,6 +297,11 @@ impl App {
     /// submenu). Songs already marked stay as they were. Reloads the
     /// library rows so the Tags column follows.
     pub(crate) fn set_tag(&mut self, tag: Id, on: bool, songs: Vec<SongPin>) {
+        // A tag typed into the Tags menu a moment ago is in the catalog but
+        // not yet in the loaded sets, so it would be named "the crate".
+        if !self.crate_sets.iter().any(|c| c.id == tag) {
+            self.load_crate_sets();
+        }
         let name = self.crate_name(tag);
         let pins: Vec<SongPin> = songs.into_iter().map(crate::liked::stamped).collect();
         let n = pins.len();

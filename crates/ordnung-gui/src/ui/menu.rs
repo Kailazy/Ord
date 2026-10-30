@@ -50,6 +50,8 @@ const ROW_H: f32 = 26.0;
 const CHECK_W: f32 = 18.0;
 /// Horizontal text inset inside a row.
 const ROW_PAD: f32 = space::S3;
+/// Gap between the columns of a [`MenuUi::columns`] run.
+const COL_GAP: f32 = space::S2;
 /// The panel's drop shadow, shared with egui's own menus (see [`context`]).
 const SHADOW: egui::epaint::Shadow = egui::epaint::Shadow {
     offset: egui::vec2(0.0, 6.0),
@@ -249,6 +251,7 @@ fn draw_panel(
                         since_open,
                         row: 0,
                         close: false,
+                        grid: None,
                     };
                     add(&mut m);
                     rows = m.row;
@@ -387,6 +390,7 @@ pub fn embedded(ui: &mut egui::Ui, add: impl FnOnce(&mut MenuUi)) {
         since_open: f32::MAX,
         row: 0,
         close: false,
+        grid: None,
     };
     add(&mut m);
     if m.close {
@@ -401,6 +405,19 @@ pub struct MenuUi<'u> {
     since_open: f32,
     row: usize,
     close: bool,
+    /// Set while a [`MenuUi::columns`] run lays its rows.
+    grid: Option<Grid>,
+}
+
+/// Where a [`MenuUi::columns`] run puts its rows: the `per_col` rows from
+/// `first` fill a column down from `origin`, the next `per_col` the column
+/// to its right, and so on.
+#[derive(Clone, Copy)]
+struct Grid {
+    origin: egui::Pos2,
+    col_w: f32,
+    per_col: usize,
+    first: usize,
 }
 
 impl MenuUi<'_> {
@@ -513,6 +530,7 @@ impl MenuUi<'_> {
                     since_open,
                     row,
                     close: false,
+                    grid: None,
                 };
                 add(&mut m);
                 row = m.row;
@@ -520,6 +538,41 @@ impl MenuUi<'_> {
             });
         self.row = row;
         self.close |= close;
+    }
+
+    /// The rows inside laid in columns of `per_col`, each `col_w` wide: a
+    /// list longer than that runs on to the right instead of down the
+    /// screen (the Tags menu), and the panel widens to hold the columns.
+    /// Rows after the run span the whole width. The width is given, not
+    /// read from the panel: egui's own menus size the panel from last
+    /// frame's content, so a column as wide as the panel would double it
+    /// every frame.
+    pub fn columns(&mut self, per_col: usize, col_w: f32, add: impl FnOnce(&mut MenuUi)) {
+        self.ui.set_max_width(col_w);
+        let grid = Grid {
+            origin: self.ui.cursor().min,
+            col_w,
+            per_col,
+            first: self.row,
+        };
+        self.grid = Some(grid);
+        add(self);
+        self.grid = None;
+        let n = self.row - grid.first;
+        if n == 0 {
+            return;
+        }
+        let cols = n.div_ceil(grid.per_col);
+        let gap = self.ui.spacing().item_spacing.y;
+        let size = egui::vec2(
+            cols as f32 * (grid.col_w + COL_GAP) - COL_GAP,
+            n.min(grid.per_col) as f32 * (ROW_H + gap) - gap,
+        );
+        // The rows placed themselves; this widens the panel to the last
+        // column and puts the cursor under the tallest one.
+        self.ui.set_max_width(size.x);
+        self.ui
+            .advance_cursor_after_rect(egui::Rect::from_min_size(grid.origin, size));
     }
 
     /// A hairline between row groups, inset from the panel edges.
@@ -580,10 +633,24 @@ impl MenuUi<'_> {
         let t = ((self.since_open - ROW_STAGGER * i as f32) / ROW_ANIM).clamp(0.0, 1.0);
         let enter = egui::emath::easing::cubic_out(t);
 
-        let w = self.ui.available_width();
-        let (rect, resp) = self
-            .ui
-            .allocate_exact_size(egui::vec2(w, ROW_H), egui::Sense::click());
+        let (rect, resp) = match self.grid {
+            Some(g) => {
+                let k = i - g.first;
+                let (col, r) = (k / g.per_col, k % g.per_col);
+                let gap = self.ui.spacing().item_spacing.y;
+                let rect = egui::Rect::from_min_size(
+                    g.origin
+                        + egui::vec2(col as f32 * (g.col_w + COL_GAP), r as f32 * (ROW_H + gap)),
+                    egui::vec2(g.col_w, ROW_H),
+                );
+                (rect, self.ui.allocate_rect(rect, egui::Sense::click()))
+            }
+            None => {
+                let w = self.ui.available_width();
+                self.ui
+                    .allocate_exact_size(egui::vec2(w, ROW_H), egui::Sense::click())
+            }
+        };
         if !self.ui.is_rect_visible(rect) {
             return resp;
         }
@@ -733,5 +800,32 @@ mod tests {
         assert_eq!(area_left(at(280.0, 360.0)), first);
         // The whole anchor moved: the panel follows.
         assert_ne!(area_left(at(380.0, 460.0)), first);
+    }
+
+    /// A run of rows past its column cap continues in a column to the
+    /// right, the panel widens to it, and the rows after span that width.
+    #[test]
+    fn columns_run_a_long_list_rightwards() {
+        let ctx = egui::Context::default();
+        let mut size = egui::Vec2::ZERO;
+        let mut after = 0.0;
+        let _ = ctx.run(Default::default(), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                let menu = ui.scope(|ui| {
+                    embedded(ui, |m| {
+                        m.columns(12, 100.0, |m| {
+                            for i in 0..13 {
+                                m.item(i.to_string());
+                            }
+                        });
+                        after = m.ui().available_width();
+                    });
+                });
+                size = menu.response.rect.size();
+            });
+        });
+        assert!(size.x >= 200.0, "{size:?}");
+        assert!(size.y <= 12.0 * (ROW_H + 2.0), "{size:?}");
+        assert!(after >= 200.0, "{after}");
     }
 }

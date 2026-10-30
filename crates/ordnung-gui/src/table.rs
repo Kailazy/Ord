@@ -1033,6 +1033,7 @@ impl App {
             .map(|x| crate::crates::track_song_key(&x.artist, &x.title, self.track_releases.get(&x.id).copied()))
             .collect();
         let menu_sets = &self.crate_sets;
+        let menu_db = &self.db_path;
         let song_tags = &self.song_tags;
         const ROW_H: f32 = 28.0;
         const COVER_PX: f32 = 24.0;
@@ -2042,7 +2043,7 @@ impl App {
                                             }
                                             common.unwrap_or_default()
                                         };
-                                        if let Some((tag, on)) = crate::crates::tag_menu(ui, menu_sets, &tagged) {
+                                        if let Some((tag, on)) = crate::crates::tag_menu(ui, menu_sets, &tagged, menu_db) {
                                             menu_action = Some(TrackMenuAction::SetTag(tag, on, drag_ids.clone()));
                                         }
                                         // Export to <stick>: the same items a
