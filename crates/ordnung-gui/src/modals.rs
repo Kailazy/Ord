@@ -2417,6 +2417,33 @@ files elsewhere on the device stay plain storage.",
         }
     }
 
+    /// "Update from library" confirmation: how many of the device's tracks
+    /// get their rows, cues and grids rewritten from the library.
+    #[cfg(feature = "usb-export")]
+    pub(crate) fn draw_usb_update_confirm(&mut self, ctx: &egui::Context) {
+        let Some((vol, ids)) = self.confirm_usb_update.clone() else {
+            return;
+        };
+        let n = ids.len();
+        let name = vol
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        let answer = confirm(
+            ctx,
+            "Update from library?",
+            &format!("Update {n} track{} on {name} from the library?", if n == 1 { "" } else { "s" }),
+            "Their tags, key, grid and cues on the device are replaced with the              library's; cues or grids set on the device are lost.",
+            Choice::primary("Update"),
+        );
+        if answer.is_some() {
+            self.confirm_usb_update = None;
+        }
+        if answer == Some(true) {
+            self.run_stick_update(ctx, vol, ids);
+        }
+    }
+
     /// "Remove this record from your Discogs collection?" confirmation. Gates the
     /// two vinyl-grid actions that destroy a collection copy on the user's actual
     /// Discogs account — an outright removal and a move to the wantlist. Both

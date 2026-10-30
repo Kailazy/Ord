@@ -2037,6 +2037,10 @@ struct App {
     /// A stick and the paths (relative to its root) of the tracks pending a
     /// "convert for older players?" confirmation.
     confirm_usb_convert: Option<(PathBuf, Vec<String>)>,
+    /// "Update from library" parked for its confirm: the device and the
+    /// library ids of the tracks it shares, whose rows get rewritten.
+    #[cfg(feature = "usb-export")]
+    confirm_usb_update: Option<(PathBuf, Vec<Id>)>,
     /// True while a bulk write-edits job is the active worker. Lets the job's
     /// completion handler drop cover textures, since that job may have embedded
     /// fetched art and the per-id texture cache would otherwise show stale covers.

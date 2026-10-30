@@ -347,6 +347,8 @@ impl App {
             confirm_delete: None,
             confirm_usb_delete: None,
             confirm_usb_convert: None,
+            #[cfg(feature = "usb-export")]
+            confirm_usb_update: None,
             write_edits_running: false,
             export_running_to: None,
             auto_write_stalled_at: None,
@@ -2031,6 +2033,16 @@ impl App {
             self.status = "None of this device's tracks are in the library.".into();
             return;
         }
+        // Rewrites every shared track's cues and grid on the stick, so it
+        // asks first (see `draw_usb_update_confirm`).
+        let _ = ctx;
+        self.confirm_usb_update = Some((vol, ids));
+    }
+
+    /// The update itself, once confirmed: the ordinary merge export over the
+    /// shared tracks.
+    #[cfg(feature = "usb-export")]
+    pub(crate) fn run_stick_update(&mut self, ctx: &egui::Context, vol: PathBuf, ids: Vec<Id>) {
         let scope = format!("{} tracks", ids.len());
         let player = self.export_player();
         self.spawn_export(ctx.clone(), vol, Vec::new(), ids, None, scope, false, true, player);
@@ -4737,6 +4749,8 @@ impl App {
         self.draw_delete_confirm(ctx);
         self.draw_usb_delete_confirm(ctx);
         self.draw_usb_convert_confirm(ctx);
+        #[cfg(feature = "usb-export")]
+        self.draw_usb_update_confirm(ctx);
         self.draw_vinyl_edit_confirm(ctx);
         self.draw_collect_wanted(ctx);
         self.draw_dig_window(ctx);
