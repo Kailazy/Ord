@@ -17,6 +17,7 @@ graph_hide = []
 nav_primary = "digital"
 export_convert_for_older_players = false
 export_comment = "notes"
+export_db_id = 0
 nav_density = "narrow"
 nav_collapsed = []
 inspector_density = "regular"

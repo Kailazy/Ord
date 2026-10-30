@@ -51,6 +51,7 @@ graph_hide = [
 nav_primary = "vinyl"
 export_convert_for_older_players = true
 export_comment = "notes_tags"
+export_db_id = 0
 nav_density = "icon"
 nav_collapsed = [
     "playlists",
