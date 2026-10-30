@@ -3111,58 +3111,59 @@ impl App {
             ui.add_space(2.0);
             let mut do_abort = false;
             let mut abort_analysis = false;
-            // Bars and Cancel buttons share one height (see `ui::control_row`).
+            // Bars and Cancel buttons share one height (see `ui::control_row`),
+            // and the row is that tall whether or not a job runs, so the
+            // strip never grows and shifts the content above it. The text
+            // leads from the left; bars and Cancels gather at the right end,
+            // so a job starting never moves the text either.
             ui.horizontal(|ui| crate::ui::control_row(ui, |ui| {
-                // Determinate bar when the job reports item counts; otherwise a
-                // plain spinner for work whose length we can't measure.
-                match self.progress {
-                    Some((done, total)) if total > 0 => {
-                        status_progress(ui, done, total, format!("{done}/{total}"));
+                ui.set_min_height(crate::ui::control_h(ui));
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    // Analysis runs on its own lane, so it has its own bar and
+                    // Cancel beside the job's: stopping one never stops the other.
+                    if let Some((done, total)) = self.analysis_progress().filter(|&(_, t)| t > 0) {
+                        if ui
+                            .button("✖ Cancel")
+                            .on_hover_note("Stop analyzing after the tracks already running")
+                            .clicked()
+                        {
+                            abort_analysis = true;
+                        }
+                        status_progress(ui, done, total, format!("Analyzing {done}/{total}"));
                     }
-                    _ if self.is_busy() || self.vinyl_edit_running() => {
-                        ui.spinner();
-                    }
-                    _ => {}
-                }
-                if self.job_cancel.is_some()
-                    && ui
-                        .button("✖ Cancel")
-                        .on_hover_note("Stop after the items already running")
-                        .clicked()
-                {
-                    do_abort = true;
-                }
-                // Analysis runs on its own lane, so it has its own bar and
-                // Cancel beside the job's: stopping one never stops the other.
-                if let Some((done, total)) = self.analysis_progress().filter(|&(_, t)| t > 0) {
-                    status_progress(ui, done, total, format!("Analyzing {done}/{total}"));
-                    if ui
-                        .button("✖ Cancel")
-                        .on_hover_note("Stop analyzing after the tracks already running")
-                        .clicked()
+                    if self.job_cancel.is_some()
+                        && ui
+                            .button("✖ Cancel")
+                            .on_hover_note("Stop after the items already running")
+                            .clicked()
                     {
-                        abort_analysis = true;
+                        do_abort = true;
                     }
-                }
-                if let Some(err) = &self.load_error {
-                    ui.colored_label(egui::Color32::LIGHT_RED, format!("catalog error: {err}"));
-                } else {
-                    // Always render a label, falling back to a blank space when
-                    // there's no message, so the status bar keeps a constant
-                    // height — only the text changes, the layout never shifts.
-                    let text = if self.status.is_empty() {
-                        " ".to_string()
-                    } else {
-                        self.status.clone()
-                    };
-                    // A failure reads as a plain sentence; the colour is what
-                    // says "this didn't work", not an "error:" prefix.
-                    if !self.status.is_empty() && self.status == self.status_failed {
-                        ui.colored_label(egui::Color32::LIGHT_RED, text);
-                    } else {
-                        ui.label(text);
+                    // Determinate bar when the job reports item counts; otherwise a
+                    // plain spinner for work whose length we can't measure.
+                    match self.progress {
+                        Some((done, total)) if total > 0 => {
+                            status_progress(ui, done, total, format!("{done}/{total}"));
+                        }
+                        _ if self.is_busy() || self.vinyl_edit_running() => {
+                            ui.spinner();
+                        }
+                        _ => {}
                     }
-                }
+                    ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                        if let Some(err) = &self.load_error {
+                            ui.colored_label(egui::Color32::LIGHT_RED, format!("catalog error: {err}"));
+                        } else if !self.status.is_empty() {
+                            // A failure reads as a plain sentence; the colour is what
+                            // says "this didn't work", not an "error:" prefix.
+                            if self.status == self.status_failed {
+                                ui.colored_label(egui::Color32::LIGHT_RED, &self.status);
+                            } else {
+                                ui.label(&self.status);
+                            }
+                        }
+                    });
+                });
             }));
             if do_abort {
                 if let Some(cancel) = &self.job_cancel {
