@@ -2651,21 +2651,18 @@ impl App {
                         // fetches were dropped — the per-track ↻ re-pick covers the
                         // metadata case, and re-analysis is rarely wanted in bulk.
                         // It stays live while a job runs: analysis has its own
-                        // lane, and a click mid-run adds to the queue.
-                        let analyze_label = if sel_ids.is_empty() {
-                            "Analyze".to_string()
-                        } else {
-                            format!("Analyze {} selected", sel_ids.len())
-                        };
+                        // lane, and a click mid-run adds to the queue. One
+                        // label in every state; the top bar's readout carries
+                        // the selection count.
                         if ui
                             .button(crate::ui::icon_text(
                                 named(icons::LIGHTNING),
-                                &analyze_label,
+                                "Analyze",
                                 font::body(),
                             ))
                             .on_hover_note(
-                                "Detect BPM, key, beatgrid, and quality. Skips tracks \
-                         already analyzed.",
+                                "Detect BPM, key, beatgrid, and quality for the selected \
+                         tracks, or all of them. Skips tracks already analyzed.",
                             )
                             .clicked()
                         {
@@ -2676,13 +2673,15 @@ impl App {
                             }
                         }
                         ui.add_enabled_ui(!busy, |ui| {
-                            // Batch convert: enabled whenever tracks are selected. Opens a
-                            // dialog to pick one target format for all of them.
-                            if !self.selection.is_empty() && !usb_view {
-                                let n = self.selection.len();
-                                let noun = if n == 1 { "track" } else { "tracks" };
-                                if ui
-                                    .button(format!("Convert {n} {noun}…"))
+                            // Selection-only actions keep their place and grey
+                            // out when nothing is selected, rather than
+                            // appearing with the selection and pushing the
+                            // row apart on every click.
+                            let has_selection = !self.selection.is_empty();
+                            // Batch convert: opens a dialog to pick one target
+                            // format for every selected track.
+                            if !usb_view {
+                                if crate::ui::button::button_enabled(ui, has_selection, "Convert…")
                                     .on_hover_note(
                                         "Convert selected tracks to one format, keeping \
                                  metadata and cover.",
@@ -2711,26 +2710,26 @@ impl App {
                             // tracks from it. Only unlinks the playlist membership — the
                             // tracks stay in the catalog (and in any other playlists).
                             if let Some(pid) = self.view.playlist_id() {
-                                if !self.selection.is_empty() {
-                                    let n = self.selection.len();
-                                    if ui
-                                        .button(format!("Remove {n} from playlist"))
-                                        .on_hover_note(
-                                            "Remove from this playlist. Tracks stay in the catalog",
-                                        )
-                                        .clicked()
-                                    {
-                                        let ids: Vec<Id> = self
-                                            .rows
-                                            .iter()
-                                            .filter(|r| self.selection.contains(&r.id))
-                                            .map(|r| r.id)
-                                            .collect();
-                                        if let Ok(cat) = Catalog::open(&self.db_path) {
-                                            let _ = cat.remove_tracks(pid, &ids);
-                                        }
-                                        self.reload();
+                                if crate::ui::button::button_enabled(
+                                    ui,
+                                    has_selection,
+                                    "Remove from playlist",
+                                )
+                                .on_hover_note(
+                                    "Remove the selected tracks from this playlist. They stay in the catalog",
+                                )
+                                .clicked()
+                                {
+                                    let ids: Vec<Id> = self
+                                        .rows
+                                        .iter()
+                                        .filter(|r| self.selection.contains(&r.id))
+                                        .map(|r| r.id)
+                                        .collect();
+                                    if let Ok(cat) = Catalog::open(&self.db_path) {
+                                        let _ = cat.remove_tracks(pid, &ids);
                                     }
+                                    self.reload();
                                 }
                             }
                             // Deleting from the catalog lives in the right-click context
@@ -2740,15 +2739,17 @@ impl App {
                             // edits not yet written to their files. Mutates source files,
                             // so it's visually distinct and gated behind a confirmation.
                             if self.edited_count > 0 {
-                                let label =
-                                    format!("⬇ Write {} edited to files", self.edited_count);
                                 let btn = egui::Button::new(
-                                    egui::RichText::new(label).color(egui::Color32::WHITE),
+                                    egui::RichText::new("⬇ Write edits to files")
+                                        .color(egui::Color32::WHITE),
                                 )
                                 .fill(egui::Color32::from_rgb(70, 110, 70));
                                 if ui
                                     .add(btn)
-                                    .on_hover_note("Write edited tags into the source files")
+                                    .on_hover_note(format!(
+                                        "Write the edited tags of {} track(s) into their files",
+                                        self.edited_count
+                                    ))
                                     .clicked()
                                 {
                                     self.confirm_bulk_write = true;
@@ -2759,9 +2760,9 @@ impl App {
                             // by name (and content fingerprint) are repointed in the
                             // catalog. Catalog-only — never moves or modifies files.
                             if self.missing_count > 0 {
-                                let label = format!("🔗 Relocate {} missing", self.missing_count);
                                 let btn = egui::Button::new(
-                                    egui::RichText::new(label).color(egui::Color32::WHITE),
+                                    egui::RichText::new("🔗 Relocate missing")
+                                        .color(egui::Color32::WHITE),
                                 )
                                 .fill(egui::Color32::from_rgb(150, 90, 40));
                                 let labels = &self.missing_labels;
