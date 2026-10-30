@@ -681,9 +681,9 @@ impl App {
                     // inherited height — the auto-sized window can grow but
                     // never shrink back (the "Settings keeps its bugged tall
                     // size" dead space).
-                    ui.add_space(5.0);
+                    ui.add_space(crate::ui::tokens::space::S2);
                     let sep_x = ui.cursor().left();
-                    ui.add_space(7.0);
+                    ui.add_space(crate::ui::tokens::space::S3);
                     // Right: the active tab's controls.
                     // The viewport fills the window's remaining height rather
                     // than sizing to its content, so switching tabs never moves
@@ -3624,7 +3624,7 @@ impl App {
                     });
                 });
                 if matches.is_empty() {
-                    ui.label(egui::RichText::new("No icons match.").weak());
+                    ui.label(egui::RichText::new("No icons match").weak());
                 }
                 ui.add_space(space::S4);
                 ui.horizontal(|ui| {

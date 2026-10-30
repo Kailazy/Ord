@@ -569,7 +569,7 @@ impl App {
             ui.vertical_centered(|ui| {
                 ui.heading("Dig through a seller's crates");
                 ui.add_space(6.0);
-                ui.label("Save a Discogs seller above, then update their inventory.");
+                ui.label("Save a Discogs seller above, then update their inventory");
                 ui.add_space(4.0);
                 ui.label(
                     egui::RichText::new(
@@ -671,12 +671,12 @@ impl App {
         // Being read (see `ensure_seller_listings`): a spinner, not an
         // empty shop.
         if self.seller_listings_rx.is_some() && self.seller_listings.is_empty() {
-            ui.add_space(30.0);
+            ui.add_space(crate::ui::tokens::space::S7);
             ui.vertical_centered(|ui| ui.spinner());
             return;
         }
         if self.seller_listings.is_empty() {
-            ui.add_space(30.0);
+            ui.add_space(crate::ui::tokens::space::S7);
             ui.vertical_centered(|ui| {
                 if shop.swept_at.is_none() {
                     ui.label(format!(
@@ -684,13 +684,13 @@ impl App {
                         shop.username
                     ));
                 } else {
-                    ui.label("No vinyl in this seller's inventory.");
+                    ui.label("No vinyl in this seller's inventory");
                 }
             });
             return;
         }
         if filtered.is_empty() {
-            ui.add_space(30.0);
+            ui.add_space(crate::ui::tokens::space::S7);
             ui.vertical_centered(|ui| {
                 // Name the tags when they're the whole filter ("Techno and
                 // Ambient" — the AND actually applied); with year/price/
@@ -1037,7 +1037,7 @@ impl App {
                     if resp.hovered() || is_current {
                         ui.painter().rect_filled(
                             rect,
-                            egui::Rounding::same(5.0),
+                            egui::Rounding::same(crate::ui::tokens::radius::SM),
                             if resp.hovered() {
                                 color::surface_hover()
                             } else {
@@ -1168,7 +1168,7 @@ impl App {
                     .allocate_exact_size(egui::vec2(cover_side, cover_side), egui::Sense::click());
                 let resp = resp
                     .on_hover_cursor(egui::CursorIcon::PointingHand)
-                    .on_hover_note("Open the record — listen, wantlist, or buy");
+                    .on_hover_note("Open the record to listen, want or buy");
                 hovered = resp.hovered();
                 // The dig disc's hit area is claimed before anything paints, so
                 // the cover's hover frame can see the disc's hover and the pair
@@ -1566,7 +1566,7 @@ impl App {
         };
         text_ui.add(egui::Label::new(egui::RichText::new(line2).weak()).truncate());
 
-        let resp = resp.on_hover_note("Open the record — listen, wantlist, or buy");
+        let resp = resp.on_hover_note("Open the record to listen, want or buy");
         if resp.clicked() && !cart_clicked {
             act = Some(SellerAct::Open(idx));
         }

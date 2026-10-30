@@ -410,7 +410,7 @@ fn catalog_badge(
     } else {
         crate::ui::tokens::color::PLAY
     };
-    ui.painter().rect_filled(rect, egui::Rounding::same(5.0), bg);
+    ui.painter().rect_filled(rect, egui::Rounding::same(crate::ui::tokens::radius::SM), bg);
     ui.painter().text(
         rect.center(),
         egui::Align2::CENTER_CENTER,
@@ -431,7 +431,7 @@ fn catalog_badge(
 /// Your own Discogs note on a record: a small bubble in the grid's corner or
 /// beside the list row's badge, with the note itself as its hover note.
 fn note_bubble(ui: &egui::Ui, rect: egui::Rect, resp: egui::Response, note: &str) {
-    let rounding = egui::Rounding::same(5.0);
+    let rounding = egui::Rounding::same(crate::ui::tokens::radius::SM);
     ui.painter().rect_filled(rect, rounding, egui::Color32::from_gray(40));
     ui.painter().rect_stroke(
         rect,
@@ -919,7 +919,7 @@ impl App {
                     });
                 } else {
                     ui.heading("No duplicates found");
-                    ui.label("Every track is unique by audio content and by artist + title.");
+                    ui.label("Every track is unique by audio content and by artist + title");
                 }
             });
             if recompute {
@@ -2091,7 +2091,7 @@ impl App {
                 ui.vertical_centered(|ui| {
                     ui.heading("No vinyl synced yet");
                     ui.add_space(6.0);
-                    ui.label("Pull your record collection and wantlist straight from Discogs.");
+                    ui.label("Pull your record collection and wantlist straight from Discogs");
                     ui.add_space(4.0);
                     ui.label(
                         egui::RichText::new(
@@ -3078,7 +3078,7 @@ impl App {
             ui.add_space(24.0);
             ui.vertical_centered(|ui| {
                 ui.heading("Nothing missing");
-                ui.label("Every track's source file is present on disk.");
+                ui.label("Every track's source file is present on disk");
             });
             if recompute {
                 self.reload();
@@ -3253,7 +3253,7 @@ impl App {
             ui.add_space(24.0);
             ui.vertical_centered(|ui| {
                 ui.heading("No audio files");
-                ui.label("Nothing playable was found on this volume.");
+                ui.label("Nothing playable was found on this volume");
             });
             return;
         }

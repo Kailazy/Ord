@@ -518,7 +518,7 @@ impl App {
                     return;
                 }
                 if rows.is_empty() {
-                    ui.label(egui::RichText::new("No records on this page of the run.").weak());
+                    ui.label(egui::RichText::new("No records on this page of the run").weak());
                 }
                 egui::ScrollArea::vertical()
                     .max_height(440.0)
@@ -674,9 +674,9 @@ impl App {
                                     },
                                 );
                             });
-                            ui.add_space(3.0);
+                            ui.add_space(crate::ui::tokens::space::S2);
                             ui.separator();
-                            ui.add_space(3.0);
+                            ui.add_space(crate::ui::tokens::space::S2);
                         }
                     });
                 // Pager, only when the run outgrows one page.

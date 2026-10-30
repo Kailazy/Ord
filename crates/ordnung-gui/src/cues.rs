@@ -1181,13 +1181,13 @@ fn cue_context_menu(
                 ui.allocate_exact_size(egui::vec2(16.0, 16.0), egui::Sense::click());
             ui.painter().rect_filled(
                 rect,
-                egui::Rounding::same(3.0),
+                egui::Rounding::same(crate::ui::tokens::radius::XS),
                 egui::Color32::from_rgb(rgb[0], rgb[1], rgb[2]),
             );
             if resp.hovered() {
                 ui.painter().rect_stroke(
                     rect,
-                    egui::Rounding::same(3.0),
+                    egui::Rounding::same(crate::ui::tokens::radius::XS),
                     egui::Stroke::new(1.5, crate::ui::tokens::color::LABEL),
                 );
             }

@@ -484,7 +484,7 @@ impl App {
                                 bg,
                                 egui::Shape::rect_filled(
                                     full,
-                                    egui::Rounding::same(5.0),
+                                    egui::Rounding::same(crate::ui::tokens::radius::SM),
                                     ui.visuals().widgets.hovered.weak_bg_fill,
                                 ),
                             );
@@ -1561,7 +1561,7 @@ impl App {
                                                         );
                                                         ui.painter().rect_filled(
                                                             rect,
-                                                            egui::Rounding::same(3.0),
+                                                            egui::Rounding::same(crate::ui::tokens::radius::XS),
                                                             egui::Color32::from_gray(40),
                                                         );
                                                         if has_any_cover {

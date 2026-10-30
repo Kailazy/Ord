@@ -4328,7 +4328,7 @@ impl App {
                             } else if in_playlist {
                                 ui.heading("Empty playlist");
                                 ui.add_space(6.0);
-                                ui.label("Drag tracks here from “Library” to add them.");
+                                ui.label("Drag tracks here from “Library” to add them");
                                 ui.label(
                                     "Hold ⌥ Option while dragging to drop straight into rekordbox.",
                                 );

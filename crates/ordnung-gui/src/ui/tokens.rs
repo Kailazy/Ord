@@ -1,10 +1,24 @@
-//! Design tokens — the single source of truth for Ordnung's visual language.
+//! Design tokens — the single source of truth for Ord's visual language.
 //!
 //! Apple-inspired and deliberately small: layered dark-gray surfaces (never pure
-//! black), hairline separators, an 8-pt spacing grid, a concentric corner-radius
-//! scale, an SF-like type ramp, and a semantic colour palette. Everything visual
-//! should reference a token here rather than an inline literal, so the whole app
-//! re-skins from one place.
+//! black), hairline separators, a 4-pt spacing grid (2 for a nudge inside a
+//! control), a concentric corner-radius scale, an SF-like type ramp, and a
+//! semantic colour palette. Everything visual should reference a token here
+//! rather than an inline literal, so the whole app re-skins from one place.
+//!
+//! The direction the tokens serve, so a new surface starts from the same
+//! five answers rather than from habit:
+//!
+//! - **Product.** A DJ's record library on the desktop: the digital tracks,
+//!   the vinyl collection and wantlist, what the shops have, and the stick
+//!   that goes to the booth.
+//! - **Character.** Exact, unhurried, a little warm.
+//! - **World.** A record shop after hours: black vinyl, printed sleeves, one
+//!   lit meter in a dark room.
+//! - **Moments.** The cover art, on the wall and on the record sheet, and the
+//!   waveform under the playhead. Everything else stays quiet.
+//! - **Signature.** The shelf mark: the small check or plus on a record that
+//!   says whether it is yours already.
 //!
 //! Pass 1 wires these into egui's global [`Style`](eframe::egui::Style) (see
 //! [`super::theme`]); bespoke components consume them directly in a later pass.
@@ -21,8 +35,6 @@ pub mod radius {
     pub const LG: f32 = 14.0; // cards, windows
 }
 
-/// 8-pt spacing grid. Reach for these instead of ad-hoc pixel gaps; consistent
-/// rhythm is most of what makes a layout read as "designed".
 /// Stroke widths.
 pub mod stroke {
     /// The edge of a control at rest: a touch over a hairline, so at Retina it
@@ -30,6 +42,9 @@ pub mod stroke {
     pub const OUTLINE: f32 = 1.5;
 }
 
+/// Spacing: 4 and its multiples, 2 only for a nudge inside a control.
+/// Reach for these instead of ad-hoc pixel gaps; consistent rhythm is most
+/// of what makes a layout read as "designed".
 pub mod space {
     pub const S1: f32 = 2.0;
     pub const S2: f32 = 4.0;
