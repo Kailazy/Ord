@@ -475,7 +475,13 @@ impl MenuUi<'_> {
     /// groups rows under headings (facet pickers). Aligned to the row text
     /// inset. Uppercased here so call sites write natural-case labels.
     pub fn header(&mut self, text: impl Into<String>) {
-        self.ui.add_space(space::S3);
+        // The gap above is a group gap: it parts this caption from the rows
+        // before it. A caption that opens the panel has nothing to part
+        // from, and on the panel's own margin it sits as far from the top
+        // edge as the last row does from the bottom.
+        if self.ui.cursor().top() > self.ui.max_rect().top() {
+            self.ui.add_space(space::S3);
+        }
         self.ui.horizontal(|ui| {
             ui.add_space(ROW_PAD);
             ui.label(
