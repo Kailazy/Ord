@@ -24,6 +24,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use ordnung_core::convert::ConvertSpec;
 use ordnung_core::model::{Cue, Format, Id, Playlist, Track};
+use unicode_normalization::UnicodeNormalization;
 
 use crate::anlz;
 use crate::pdb::RbPlaylist;
@@ -93,17 +94,17 @@ pub(crate) fn write_atomic(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     Ok(())
 }
 
-/// Atomically place an already-built file (e.g. the DLP built on local disk)
-/// onto `dest`: copy to a sibling temp, fsync, rename over `dest`. Same
-/// all-or-nothing guarantee as [`write_atomic`] without holding the bytes in
-/// memory.
-pub(crate) fn place_atomic(src: &Path, dest: &Path) -> std::io::Result<()> {
+/// Atomically place an already-built file (the DLP built on local disk, a
+/// track's audio) onto `dest`: copy to a sibling temp, fsync, rename over
+/// `dest`. Same all-or-nothing guarantee as [`write_atomic`] without holding
+/// the bytes in memory. Returns the bytes copied.
+pub(crate) fn place_atomic(src: &Path, dest: &Path) -> std::io::Result<u64> {
     let tmp = tmp_sibling(dest);
     let _ = std::fs::remove_file(&tmp);
-    std::fs::copy(src, &tmp)?;
+    let n = std::fs::copy(src, &tmp)?;
     sync_existing(&tmp)?;
     std::fs::rename(&tmp, dest)?;
-    Ok(())
+    Ok(n)
 }
 
 /// A hidden temp path beside `path` (`.foo.pdb.tmp`), on the same filesystem so
@@ -294,8 +295,10 @@ fn clamp(s: &str, max_chars: usize) -> String {
 
 /// Replace FAT-hostile characters and trim what FAT dislikes at the edges.
 fn sanitize_fat(name: &str) -> String {
+    // NFC, so the same track named from an NFD (old HFS+) source and an NFC
+    // one lands on one stick path instead of two.
     let cleaned: String = name
-        .chars()
+        .nfc()
         .map(|c| match c {
             '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|' => '_',
             c if (c as u32) < 0x20 => '_',
@@ -546,6 +549,12 @@ fn read_existing(
     Ok((tracks, export.playlists, export.entries))
 }
 
+/// The key a stick path is matched on: NFC (the macOS FAT driver lists names
+/// in NFD, sources may be either) and lowercase (FAT is case-insensitive).
+fn path_key(path: &str) -> String {
+    path.nfc().collect::<String>().to_lowercase()
+}
+
 /// The ANLZ path older Ord exports gave track `id` (P-dir + 8-hex), kept only
 /// for a carried row whose stick lists no analysis file at all.
 fn default_anlz_path(id: u32) -> String {
@@ -728,11 +737,11 @@ fn export_impl(
         } else {
             Default::default()
         };
-    // Path (as stored on the stick) → its existing id, so a re-selected track
-    // reuses its slot instead of getting a duplicate.
-    let existing_by_path: HashMap<String, u32> = existing_tracks
+    // Path (as stored on the stick) → its existing id and file name, so a
+    // re-selected track reuses its slot instead of getting a duplicate.
+    let existing_by_path: HashMap<String, (u32, String)> = existing_tracks
         .iter()
-        .map(|e| (e.row.file_path.to_lowercase(), e.row.id))
+        .map(|e| (path_key(&e.row.file_path), (e.row.id, e.row.filename.clone())))
         .collect();
     let mut next_id = existing_tracks.iter().map(|e| e.row.id).max().unwrap_or(0) + 1;
 
@@ -754,7 +763,7 @@ fn export_impl(
     // Filenames already taken (existing rows + rows we assign this pass).
     let mut taken: HashSet<String> = existing_tracks
         .iter()
-        .map(|e| e.row.filename.to_lowercase())
+        .map(|e| path_key(&e.row.filename))
         .collect();
     let mut resolved: Vec<ExportTrack> = Vec::new();
     // Track ids we've placed this pass, to skip carrying an existing row that
@@ -797,20 +806,29 @@ fn export_impl(
         if transcode.is_some() {
             ext = ".aiff".to_string();
         }
+        // FAT32 holds no file of 4 GiB or more: a WAV that long would fail
+        // with EFBIG mid-copy, minutes in, so it is skipped up front.
+        if transcode.is_none() && std::fs::metadata(&source).is_ok_and(|m| m.len() >= 1 << 32) {
+            report.skipped.push((t.id, "larger than FAT32 allows (4 GB)".into()));
+            continue;
+        }
         let base = format!("{stem}{ext}");
         // Does this exact `/Contents/<base>` already live on the stick?
-        let reuse_id = existing_by_path
-            .get(&format!("/contents/{}", base.to_lowercase()))
-            .copied();
-        let (id, name) = match reuse_id {
-            Some(id) => {
-                taken.insert(base.to_lowercase());
-                (id, base.clone())
+        let reuse = existing_by_path
+            .get(&path_key(&format!("/Contents/{base}")))
+            .cloned();
+        let reuse_id = reuse.as_ref().map(|(id, _)| *id);
+        let (id, name) = match reuse {
+            // The stick's own spelling of the name: its directory entry is
+            // whatever form it was created in, and a CDJ compares code units.
+            Some((id, name)) => {
+                taken.insert(path_key(&name));
+                (id, name)
             }
             None => {
                 let mut name = base.clone();
                 let mut n = 2;
-                while !taken.insert(name.to_lowercase()) {
+                while !taken.insert(path_key(&name)) {
                     name = format!("{stem} ({n}){ext}");
                     n += 1;
                 }
@@ -1054,9 +1072,10 @@ fn export_impl(
             // Already on the stick (a merge re-selecting it): nothing to copy.
             _ if !tr.copy_needed => {}
             None => {
-                let n = std::fs::copy(&tr.source, &dest).map_err(io_err(dest.clone()))?;
-                sync_existing(&dest).map_err(io_err(dest))?;
-                report.bytes_copied += n;
+                // Temp sibling + rename, like the databases: a merge that
+                // re-copies a changed file never leaves a torn one under a
+                // name the stick's current pdb still lists.
+                report.bytes_copied += place_atomic(&tr.source, &dest).map_err(io_err(dest))?;
             }
             Some((spec, rate)) => {
                 // Encode to a sibling temp name (real extension last so ffmpeg
@@ -1177,11 +1196,13 @@ fn export_impl(
             let dat = dest_root.join(tr.row.analyze_path.trim_start_matches('/'));
             let dir = dat.parent().unwrap_or(&anlz_root).to_path_buf();
             std::fs::create_dir_all(&dir).map_err(io_err(dir.clone()))?;
-            write_synced(&dat, &dat_bytes).map_err(io_err(dat.clone()))?;
+            // Atomic like the databases: a re-selected track's files are
+            // live under the stick's current pdb while they are rewritten.
+            write_atomic(&dat, &dat_bytes).map_err(io_err(dat.clone()))?;
             let ext = dat.with_extension("EXT");
-            write_synced(&ext, &ext_bytes).map_err(io_err(ext))?;
+            write_atomic(&ext, &ext_bytes).map_err(io_err(ext))?;
             let ex2 = dat.with_extension("2EX");
-            write_synced(&ex2, &ex2_bytes).map_err(io_err(ex2))?;
+            write_atomic(&ex2, &ex2_bytes).map_err(io_err(ex2))?;
         }
         Ok(())
     })?;
@@ -1357,6 +1378,8 @@ mod tests {
     #[test]
     fn fat_sanitizer_neutralizes_reserved_chars() {
         assert_eq!(sanitize_fat("a/b:c*d?.mp3"), "a_b_c_d_.mp3");
+        assert_eq!(sanitize_fat("Kesa\u{0308}.mp3"), "Kes\u{00e4}.mp3");
+        assert_eq!(path_key("/Contents/Kesa\u{0308}.MP3"), path_key("/contents/Kes\u{00e4}.mp3"));
         assert_eq!(sanitize_fat("  spaced.aif  "), "spaced.aif");
         assert_eq!(sanitize_fat("dots..."), "dots");
         assert_eq!(sanitize_fat(""), "track");

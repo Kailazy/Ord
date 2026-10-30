@@ -9,6 +9,8 @@ description = "rekordbox/CDJ export: export.pdb (DeviceSQL) + ANLZ writers."
 [dependencies]
 ordnung-core = { path = "../ordnung-core" }
 thiserror = "2.0.18"
+# Stick file names in NFC, matched the same way (ordnung-core's version).
+unicode-normalization = "0.1"
 # Device Library Plus (`exportLibrary.db`): a SQLCipher-encrypted SQLite
 # database. rekordbox 6/7 exports write playlists there and leave export.pdb's
 # playlist tables empty, so reading a modern stick's playlists needs it.

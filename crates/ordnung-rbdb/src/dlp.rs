@@ -238,7 +238,7 @@ pub(crate) fn place_library(tmp: &Path, db_path: &Path) -> std::io::Result<()> {
     for suffix in ["-wal", "-shm"] {
         let _ = std::fs::remove_file(crate::export::sibling(db_path, suffix));
     }
-    crate::export::place_atomic(tmp, db_path)
+    crate::export::place_atomic(tmp, db_path).map(|_| ())
 }
 
 /// Create and populate a fresh Device Library Plus database at `db_path`

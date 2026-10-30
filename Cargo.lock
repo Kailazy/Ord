@@ -2718,6 +2718,7 @@ dependencies = [
  "ordnung-core",
  "rusqlite",
  "thiserror 2.0.18",
+ "unicode-normalization",
 ]
 
 [[package]]
