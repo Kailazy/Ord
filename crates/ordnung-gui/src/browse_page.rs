@@ -697,10 +697,12 @@ impl App {
                         {
                             act = Some(Act::Page(page + 1));
                         }
+                        ui.label(egui::RichText::new(format!("Page {page} of {pages}")).weak());
+                        // After the label, so the page number holds still
+                        // while a page loads.
                         if loading {
                             ui.spinner();
                         }
-                        ui.label(egui::RichText::new(format!("Page {page} of {pages}")).weak());
                     });
                 }
             });
