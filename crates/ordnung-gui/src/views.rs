@@ -849,26 +849,31 @@ impl App {
         ui.horizontal(|ui| {
             switch_tab = health_tabs(ui, &self.view, dup_count, self.missing_count);
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                // The same verb as the Missing tab's button, so the pair
+                // keeps one width across the tab switch.
                 if ui
-                    .button("↻ Recompute")
+                    .button("↻ Rescan")
                     .on_hover_note("Re-scan the catalog for duplicates")
                     .clicked()
                 {
                     recompute = true;
                 }
-                if !unanalyzed.is_empty() {
-                    let n = unanalyzed.len();
-                    if ui
-                        .button(crate::ui::icon_text(
+                // Fixed labels, the counts in the notes: a button that grew
+                // with its count, or came and went with it, moved the row.
+                let n = unanalyzed.len();
+                if ui
+                    .add_enabled(
+                        n > 0,
+                        egui::Button::new(crate::ui::icon_text(
                             crate::ui::phosphor_icons::named(crate::ui::phosphor_icons::app::LIGHTNING),
-                            &format!("Analyze {n} for quality"),
+                            "Analyze for quality",
                             crate::ui::tokens::font::body(),
-                        ))
-                        .on_hover_note("Scan unchecked copies for lossy transcodes")
-                        .clicked()
-                    {
-                        acts.push(Act::Analyze(unanalyzed.clone()));
-                    }
+                        )),
+                    )
+                    .on_hover_note(format!("Scan {n} unchecked copies for lossy transcodes"))
+                    .clicked()
+                {
+                    acts.push(Act::Analyze(unanalyzed.clone()));
                 }
                 // The one mutating action: commit every marked copy at once. It
                 // runs in the background, so it never blocks reviewing the rest.
@@ -876,17 +881,17 @@ impl App {
                 let resp = ui.add_enabled(
                     enabled,
                     egui::Button::new(
-                        egui::RichText::new(format!("🗑 Delete {marked_total} marked"))
+                        egui::RichText::new("🗑 Delete marked")
                             .strong()
                             .color(egui::Color32::WHITE),
                     )
                     .fill(egui::Color32::from_rgb(0xB0, 0x30, 0x30)),
                 );
                 if resp
-                    .on_hover_note(
-                        "Move marked copies to the Trash. Kept copies inherit \
-                         their playlist slots.",
-                    )
+                    .on_hover_note(format!(
+                        "Move {marked_total} marked copies to the Trash. Kept copies inherit \
+                         their playlist slots."
+                    ))
                     .clicked()
                 {
                     request_commit = true;
@@ -999,13 +1004,21 @@ impl App {
                 } else {
                     ("🗑 REJECT", red)
                 };
-                ui.label(
-                    egui::RichText::new(pill)
+                let pill_text = |s: &str, bg| {
+                    egui::RichText::new(s)
                         .small()
                         .strong()
                         .color(egui::Color32::WHITE)
-                        .background_color(pill_bg),
-                );
+                        .background_color(bg)
+                };
+                // The pill's slot is the wider label's, so flipping it
+                // leaves the ★ and everything after it in place.
+                let slot = egui::WidgetText::from(pill_text("🗑 REJECT", red))
+                    .into_galley(ui, Some(egui::TextWrapMode::Extend), f32::INFINITY, egui::TextStyle::Small)
+                    .size();
+                ui.allocate_ui_with_layout(slot, egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                    ui.label(pill_text(pill, pill_bg));
+                });
                 if c.is_best {
                     ui.label(
                         egui::RichText::new("★").color(egui::Color32::from_rgb(0xD8, 0xB0, 0x4A)),
@@ -1056,7 +1069,13 @@ impl App {
                     }
                     if audio_enabled {
                         let label = if c.playing { "⏸" } else { "▶" };
-                        if ui.small_button(label).on_hover_note("Preview").clicked() {
+                        // One width for both glyphs, so the swap moves nothing.
+                        let w = crate::ui::button::widest(ui, &["⏸", "▶"]);
+                        if ui
+                            .add(egui::Button::new(label).small().min_size(egui::vec2(w, 0.0)))
+                            .on_hover_note("Preview")
+                            .clicked()
+                        {
                             inner_clicked = true;
                             acts.push(Act::Preview(c.id, c.path.clone()));
                         }
@@ -1810,14 +1829,13 @@ impl App {
                 // shelves come back. The button wears the hidden count.
                 ui.add_space(6.0);
                 let hidden_n = graph::Status::hidden(&self.config.graph_hide).len();
-                let show_label = if hidden_n == 0 {
-                    "⚟ Show".to_string()
+                // The label holds still; the hidden count lives in the note
+                // and in the menu's own rows.
+                let show_btn = ui.button("⚟ Show").on_hover_note(if hidden_n == 0 {
+                    "Choose which records are on the map: your collection, your wantlist, and the records dug to".to_string()
                 } else {
-                    format!("⚟ Show ({hidden_n} hidden)")
-                };
-                let show_btn = ui.button(show_label).on_hover_note(
-                    "Choose which records are on the map: your collection, your wantlist, and the records dug to",
-                );
+                    format!("Choose which records are on the map. {hidden_n} kinds hidden")
+                });
                 let counts = self.map_status_counts();
                 let mut hide = self.config.graph_hide.clone();
                 let mut clear_dug = false;
@@ -1864,8 +1882,14 @@ impl App {
                 ui.add_space(6.0);
                 // The radio: play a record, dig to the next, keep going.
                 let on = self.radio.on;
+                // One width for both glyphs, so Fit stays put when the
+                // radio comes on.
+                let radio_w = crate::ui::button::widest(ui, &["■ Radio", "▶ Radio"]);
                 if ui
-                    .selectable_label(on, if on { "■ Radio" } else { "▶ Radio" })
+                    .add_sized(
+                        [radio_w, ui.spacing().interact_size.y],
+                        egui::SelectableLabel::new(on, if on { "■ Radio" } else { "▶ Radio" }),
+                    )
                     .on_hover_note(if on {
                         "Switch the radio off"
                     } else {
@@ -1901,27 +1925,53 @@ impl App {
                     );
                 });
             }
+            // The right-hand group is laid from the right edge in, so in a
+            // narrow window it ran back over the view toggle: when the row
+            // has no room for the full labels, every button drops to its
+            // glyph. Whether it does is a question of the window's width
+            // alone: the need is measured from the fullest set any tab
+            // shows (the wantlist's, with room for a three-digit stock
+            // count), so all three tabs flip at one width and a button
+            // shared between tabs keeps its place across a switch.
+            use crate::ui::button::widest;
+            let sort_labels: Vec<String> = [VinylSort::Added, VinylSort::Price, VinylSort::Artist]
+                .iter()
+                .flat_map(|o| ["↑", "↓"].map(|a| format!("⇅ {} {a}", o.label())))
+                .collect();
+            let sort_full_w = widest(ui, &sort_labels.iter().map(String::as_str).collect::<Vec<_>>());
+            let gap = ui.spacing().item_spacing.x;
+            let discogs_w = |label| if collection_url.is_some() { widest(ui, &[label]) + gap } else { 0.0 };
+            let need = widest(ui, &["↻ Refresh"])
+                + discogs_w("↗ Open in Discogs")
+                + sort_full_w
+                + widest(ui, &["⊞"])
+                + widest(ui, &["☰"])
+                + widest(ui, &["⛃ In stock (999)"])
+                + 3.0 * gap;
+            let compact = need > ui.available_width();
+            // The sort button is as wide as its widest option, so picking
+            // another field moves nothing beside it.
+            let sort_w = if compact { widest(ui, &["⇅ ↑", "⇅ ↓"]) } else { sort_full_w };
+            // Sized for a three-digit count, so the count changing moves nothing.
+            let stock_w = widest(ui, &[if compact { "⛃ 999" } else { "⛃ In stock (999)" }]);
             // Grid vs list: one layout choice for all three tabs. A wall of
             // covers browses; rows compare — price, year and format line up.
             // It sits at the right, beside the sort: both say how the records
-            // are laid out, so they read as one group. The sellers tab has no
-            // right-hand group of its own, so the toggle makes one there.
+            // are laid out, so they read as one group. The sellers tab has
+            // none of the group's other buttons, so the toggle is set where
+            // the shelf tabs put it, past the room they take.
             if seller_mode {
+                let shared = widest(ui, &[if compact { "↻" } else { "↻ Refresh" }])
+                    + discogs_w(if compact { "↗" } else { "↗ Open in Discogs" })
+                    + sort_w
+                    + 2.0 * gap;
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    ui.add_space(shared);
                     self.vinyl_view_toggle(ui);
                 });
                 return;
             }
-            // The right-hand group is laid from the right edge in, so in a
-            // narrow window it ran back over the view toggle. It remembers
-            // the width its full labels took last frame; when the row no
-            // longer has that much room, every button drops to its glyph
-            // and the group fits. Full labels come back once the room does.
-            let avail = ui.available_width();
-            let need_id = ui.id().with("vinyl-right-need");
-            let need: Option<f32> = ctx.data(|d| d.get_temp(need_id));
-            let compact = need.is_some_and(|w| w > avail);
-            let group = ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 ui.add_enabled_ui(!busy, |ui| {
                     if ui
                         .button(if compact { "↻" } else { "↻ Refresh" })
@@ -1951,7 +2001,7 @@ impl App {
                     format!("⇅ {} {arrow}", sort.label())
                 };
                 let sort_btn = ui
-                    .button(sort_label)
+                    .add(egui::Button::new(sort_label).min_size(egui::vec2(sort_w, 0.0)))
                     .on_hover_note("Order both shelves by date added, price or artist");
                 crate::ui::menu::dropdown(&sort_btn, 170.0, |m| {
                     for option in [VinylSort::Added, VinylSort::Price, VinylSort::Artist] {
@@ -1983,8 +2033,9 @@ impl App {
                         (false, true) => format!("⛃ In stock ({n})"),
                         (false, false) => "⛃ In stock".to_string(),
                     };
+                    let h = ui.spacing().interact_size.y;
                     if ui
-                        .selectable_label(self.show_watch, label)
+                        .add_sized([stock_w, h], egui::SelectableLabel::new(self.show_watch, label))
                         .on_hover_note(
                             "Wantlist records for sale at your saved sellers, \
                              grouped by shop so one order covers the most records \
@@ -1996,12 +2047,6 @@ impl App {
                     }
                 }
             });
-            // Only a full-label frame measures the width the group wants;
-            // a compact frame keeps the last full measure, so the group
-            // doesn't flip back the moment it has shrunk.
-            if !compact {
-                ctx.data_mut(|d| d.insert_temp(need_id, group.response.rect.width()));
-            }
         }));
         // The row's trailing item spacing is part of the gap.
         ui.add_space(pad - ui.spacing().item_spacing.y);
@@ -2982,16 +3027,16 @@ impl App {
         // The tab the user clicked in the shared Library Health header, applied
         // after the layout closure releases its borrow of `self`.
         let mut switch_tab = None;
-        // The duplicate cache is dropped while this view is up, so this tab has no
-        // trustworthy group count to show.
-        let dup_count = None;
+        // The same count the Duplicates view shows, so the tab is the same
+        // width on both: it only goes quiet while a scan is pending.
+        let dup_count = (!self.dup_dirty && !self.dup_loading).then(|| self.dup_groups.len());
 
         ui.add_space(6.0);
         ui.horizontal(|ui| {
             switch_tab = health_tabs(ui, &self.view, dup_count, self.missing_count);
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if ui
-                    .button("↻ Recheck")
+                    .button("↻ Rescan")
                     .on_hover_note("Re-scan disk for tracks whose source file is gone")
                     .clicked()
                 {

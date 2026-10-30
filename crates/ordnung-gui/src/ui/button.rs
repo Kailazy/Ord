@@ -119,6 +119,23 @@ pub fn square(ui: &mut egui::Ui, glyph: &str) -> egui::Response {
     resp
 }
 
+/// The width a [`button`] takes for the widest of `labels`: what a button
+/// whose label changes with state reserves, so the swap moves nothing
+/// beside it (a Play/Pause key, a sort menu naming its field).
+pub fn widest(ui: &egui::Ui, labels: &[&str]) -> f32 {
+    let font_id = egui::TextStyle::Button.resolve(ui.style());
+    labels
+        .iter()
+        .map(|s| {
+            ui.painter()
+                .layout_no_wrap(s.to_string(), font_id.clone(), egui::Color32::PLACEHOLDER)
+                .size()
+                .x
+        })
+        .fold(0.0, f32::max)
+        + 2.0 * ui.spacing().button_padding.x
+}
+
 /// The anchor of a [`super::menu::dropdown`]: a [`button`] whose label ends
 /// in a chevron, so it says before the click that it opens a list rather
 /// than doing something.
