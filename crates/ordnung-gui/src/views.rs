@@ -3202,6 +3202,17 @@ impl App {
             .file_name()
             .map(|n| n.to_string_lossy().into_owned())
             .unwrap_or_else(|| vol.display().to_string());
+        // Between two file copies nothing holds the volume open, so an eject
+        // mid-export would succeed and the exporter would carry on writing
+        // into an empty /Volumes/<name> on the boot disk.
+        if self.export_running_to.as_deref() == Some(vol) {
+            self.fail(format!("Still writing to {name}. Wait for the job to finish, or cancel it, before ejecting."));
+            return;
+        }
+        // The plug-in analysis holds the stick's files open; let it go first.
+        if let Some(c) = &self.usb_analysis_cancel {
+            c.store(true, Ordering::Relaxed);
+        }
         let vol = vol.to_path_buf();
         let n = name.clone();
         self.usb_eject_rx = Some(util::spawn_oneshot(ctx, move || {
