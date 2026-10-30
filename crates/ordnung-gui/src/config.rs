@@ -1060,6 +1060,7 @@ mod tests {
         use crate::sidebar::NavDensity;
         use crate::views::VinylSort;
         let expected = Config {
+            export_db_id: 0,
             discogs_token: "tok-abc".into(),
             hidden_release_mediums: ["vinyl", "cd", "digital", "cassette", "other"]
                 .map(String::from)

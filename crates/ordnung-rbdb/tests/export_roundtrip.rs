@@ -218,7 +218,7 @@ fn export_then_read_back_full_surface() {
     assert_eq!(stick.playlists.len(), 2);
     // Each row carries the day it was added (the device view's Added column).
     for t in stick.tracks.values() {
-        let d = t.date_added.as_deref().expect("date added");
+        let d = t.date_added.as_str();
         assert!(d.len() == 10 && d.as_bytes()[4] == b'-', "{d}");
     }
 

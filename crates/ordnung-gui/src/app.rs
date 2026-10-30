@@ -4929,7 +4929,7 @@ impl UsbPdbInfo {
             waveform_bands,
             anlz_path: t.analyze_path.as_ref().map(on_stick),
             pdb_id: Some(id),
-            added_at: t.date_added.as_deref().and_then(crate::util::ymd_to_unix),
+            added_at: crate::util::ymd_to_unix(&t.date_added),
         }
     }
 }
