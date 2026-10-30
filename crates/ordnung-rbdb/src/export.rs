@@ -1273,6 +1273,11 @@ fn export_impl(
     let queue = std::sync::Mutex::new(resolved.iter().enumerate());
     let (tx, rx) = std::sync::mpsc::sync_channel::<(usize, [Vec<u8>; 3])>(workers);
     std::thread::scope(|s| -> Result<()> {
+        // The receiver lives inside the scope: when the writer loop below
+        // leaves early (a failed write, a yanked stick), it drops here and
+        // every worker blocked on a full channel gets an error and stops.
+        // Held outside, the scope's join would wait on them for ever.
+        let rx = rx;
         for _ in 0..workers {
             let (queue, tx) = (&queue, tx.clone());
             s.spawn(move || loop {

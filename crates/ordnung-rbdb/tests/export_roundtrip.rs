@@ -594,6 +594,44 @@ fn cancel_aborts_before_completion() {
 /// a plain volume into a rekordbox device without touching its files. That
 /// only works if an empty selection yields a valid, empty device — and one a
 /// later real export can merge onto.
+/// An analysis write that fails (a yanked stick, a full one) ends the export
+/// with an error instead of leaving the decode workers blocked on a channel
+/// nobody reads any more: the job used to hang for good.
+#[test]
+fn failed_analysis_write_ends_the_export() {
+    use std::os::unix::fs::PermissionsExt;
+    let src = temp_root("anlz-fail-src");
+    let usb = temp_root("anlz-fail-usb");
+    // More tracks than the decode workers can queue, so one of them is
+    // blocked on the channel by the time the writer has given up.
+    let tracks: Vec<Track> = (0..16u64)
+        .map(|i| {
+            let f = audio_file(&src, &format!("t{i}.mp3"), 2_000 + i as usize);
+            track(i, &f, Format::Mp3, &format!("T{i}"), "A")
+        })
+        .collect();
+    let anlz_root = usb.join("PIONEER/USBANLZ");
+    std::fs::create_dir_all(&anlz_root).unwrap();
+    std::fs::set_permissions(&anlz_root, std::fs::Permissions::from_mode(0o555)).unwrap();
+    let (tx, rx) = std::sync::mpsc::channel();
+    let dest = usb.clone();
+    std::thread::spawn(move || {
+        let cancel = AtomicBool::new(false);
+        let r = export_usb_with(&dest, &tracks, &[], ExportOptions::default(), &mut |_| {}, &cancel);
+        let _ = tx.send(r.map(|_| ()).map_err(|e| e.to_string()));
+    });
+    let outcome = rx
+        .recv_timeout(std::time::Duration::from_secs(60))
+        .expect("the export returns instead of hanging");
+    let _ = std::fs::set_permissions(&anlz_root, std::fs::Permissions::from_mode(0o755));
+    let err = outcome.expect_err("an unwritable analysis directory fails the export");
+    assert!(err.contains("USBANLZ"), "{err}");
+    assert!(
+        !usb.join("PIONEER/rekordbox/export.pdb").exists(),
+        "no database lands after a failed analysis write"
+    );
+}
+
 #[test]
 fn empty_merge_sets_up_a_valid_device() {
     let usb = temp_root("setup-usb");
