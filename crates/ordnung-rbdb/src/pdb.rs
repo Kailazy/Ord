@@ -188,11 +188,10 @@ pub fn read_stick(volume_root: &Path) -> Result<RbExport, ReadError> {
     if !dlp_db.is_file() {
         return Ok(export);
     }
-    // A failure here (foreign key, future schema change) degrades to the
-    // pdb-only view rather than failing the whole stick.
-    let Ok(dlp) = crate::dlp::read_playlists(&dlp_db) else {
-        return Ok(export);
-    };
+    // A database that won't open or answer is the stick's error, not an
+    // empty tree: a merge or edit that carried on from the pdb alone would
+    // write back a stick without its playlists.
+    let dlp = crate::dlp::read_playlists(&dlp_db)?;
     let by_path: HashMap<String, u32> = export
         .tracks
         .iter()

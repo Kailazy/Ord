@@ -44,6 +44,8 @@ pub enum ExportError {
     BadDestination(PathBuf),
     #[error("device library: {0}")]
     Dlp(String),
+    #[error("the device's library can't be read ({0}), so adding to it would drop the tracks already there; fix or re-export the device first")]
+    ExistingUnreadable(crate::pdb::ReadError),
     #[error(
         "not enough space on the destination: need ~{need_mb} MB, {free_mb} MB free"
     )]
@@ -440,16 +442,19 @@ struct ExistingTrack {
 }
 
 /// Read the export already at `dest_root` for a merge. Returns the existing
-/// tracks (keyed for path lookup), playlist nodes and playlist memberships. A
-/// stick with no export (or an unreadable one) merges as if empty.
-fn read_existing(dest_root: &Path) -> (Vec<ExistingTrack>, Vec<RbPlaylist>, HashMap<u32, Vec<u32>>) {
+/// tracks (keyed for path lookup), playlist nodes and playlist memberships.
+/// The caller skips this for a stick with no export; one whose export won't
+/// read is [`ExportError::ExistingUnreadable`], never an empty stick.
+fn read_existing(
+    dest_root: &Path,
+) -> Result<(Vec<ExistingTrack>, Vec<RbPlaylist>, HashMap<u32, Vec<u32>>)> {
     // The stick reader, not the bare pdb parse: a rekordbox 6/7 export keeps
     // its playlists only in exportLibrary.db (the pdb tree is empty), and a
     // merge that read the pdb alone carried none of them over, so adding one
-    // track to such a stick silently wiped its playlists.
-    let Ok(export) = crate::pdb::read_stick(dest_root) else {
-        return Default::default();
-    };
+    // track to such a stick silently wiped its playlists. A stick that won't
+    // read is an error, not an empty stick: the merge would otherwise write
+    // databases listing only the new selection.
+    let export = crate::pdb::read_stick(dest_root).map_err(ExportError::ExistingUnreadable)?;
     let mut tracks = Vec::new();
     for (id, t) in &export.tracks {
         // Rebuild just enough of the row to re-emit it. The read-side view is
@@ -500,7 +505,7 @@ fn read_existing(dest_root: &Path) -> (Vec<ExistingTrack>, Vec<RbPlaylist>, Hash
                 .map(|p| (t.artwork_id, p)),
         });
     }
-    (tracks, export.playlists, export.entries)
+    Ok((tracks, export.playlists, export.entries))
 }
 
 /// The ANLZ path older Ord exports gave track `id` (P-dir + 8-hex), kept only
@@ -679,11 +684,12 @@ fn export_impl(
     // ---- carry-over from an existing export (Merge only) -----------------
     // In Merge mode the tracks already on the stick are kept verbatim — same
     // id, filename and ANLZ files — and the new selection is layered on top.
-    let (existing_tracks, existing_playlists, existing_entries) = if mode == ExportMode::Merge {
-        read_existing(dest_root)
-    } else {
-        Default::default()
-    };
+    let (existing_tracks, existing_playlists, existing_entries) =
+        if mode == ExportMode::Merge && rb_dir.join("export.pdb").is_file() {
+            read_existing(dest_root)?
+        } else {
+            Default::default()
+        };
     // Path (as stored on the stick) → its existing id, so a re-selected track
     // reuses its slot instead of getting a duplicate.
     let existing_by_path: HashMap<String, u32> = existing_tracks
@@ -1329,6 +1335,25 @@ mod tests {
         assert_eq!(d.len(), 10);
         assert_eq!(&d[4..5], "-");
         assert!(d.starts_with("20"));
+    }
+
+    #[test]
+    fn merge_refuses_a_stick_whose_library_wont_read() {
+        let dir = std::env::temp_dir().join(format!("ordnung-unreadable-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let rb = crate::pdb::rb_dir(&dir);
+        std::fs::create_dir_all(&rb).unwrap();
+        std::fs::write(rb.join("export.pdb"), b"not a database").unwrap();
+        let opts = ExportOptions {
+            mode: ExportMode::Merge,
+            player: PlayerTarget::default(),
+        };
+        let err = export_usb_with(&dir, &[], &[], opts, &mut |_| {}, &AtomicBool::new(false))
+            .unwrap_err();
+        assert!(matches!(err, ExportError::ExistingUnreadable(_)), "{err}");
+        // The stick is left as it was, garbage included, for the user to look at.
+        assert_eq!(std::fs::read(rb.join("export.pdb")).unwrap(), b"not a database");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
