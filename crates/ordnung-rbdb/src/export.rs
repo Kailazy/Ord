@@ -143,12 +143,7 @@ pub(crate) const DB_NAMES: [&str; 3] = ["exportLibrary.db", "exportExt.pdb", "ex
 /// `.orig`: the export goes on, it only leaves no way back.
 fn keep_previous_set(rb_dir: &Path) {
     let prev = |name: &str| sibling(&rb_dir.join(name), ".prev");
-    let clear = || {
-        for name in DB_NAMES {
-            let _ = std::fs::remove_file(prev(name));
-        }
-    };
-    clear();
+    drop_previous_set(rb_dir);
     let kept = DB_NAMES
         .iter()
         .filter(|name| rb_dir.join(name).is_file())
@@ -156,7 +151,14 @@ fn keep_previous_set(rb_dir: &Path) {
             std::fs::copy(rb_dir.join(name), prev(name)).and_then(|_| sync_existing(&prev(name)))
         });
     if kept.is_err() {
-        clear();
+        drop_previous_set(rb_dir);
+    }
+}
+
+/// Remove the `.prev` set: there is no library to go back to.
+fn drop_previous_set(rb_dir: &Path) {
+    for name in DB_NAMES {
+        let _ = std::fs::remove_file(sibling(&rb_dir.join(name), ".prev"));
     }
 }
 
@@ -220,12 +222,12 @@ pub(crate) fn sync_dir(dir: &Path) {
 /// at the right size, plus a fractional margin for the databases, ANLZ files
 /// and artwork the export also writes. Summed from the true u64 file lengths
 /// (the `TrackRow.file_size` field is clamped to u32, so it must not be used
-/// here). `dest_contents` is the stick's `/Contents` dir, used to skip files
+/// here). Paths are the rows' own, relative to `dest_root`, to skip files
 /// already copied.
-fn estimated_bytes_needed(sources: &[(u64, String)], dest_contents: &Path) -> u64 {
+fn estimated_bytes_needed(sources: &[(u64, String)], dest_root: &Path) -> u64 {
     let mut audio: u64 = 0;
-    for (src_len, name) in sources {
-        let already = std::fs::metadata(dest_contents.join(name))
+    for (src_len, rel) in sources {
+        let already = std::fs::metadata(dest_root.join(rel))
             .map(|m| m.len())
             .unwrap_or(0);
         if already != *src_len {
@@ -574,6 +576,9 @@ fn read_existing(
             filename: name.clone(),
             file_path: t.file_path.clone(),
             sample_depth: 16,
+            // The row itself, written back as it was when the track is
+            // carried; the fields above serve the lookups and the DLP.
+            raw: t.raw.clone(),
             ..Default::default()
         };
         // Re-fetch file size from the stick so the row stays truthful.
@@ -864,12 +869,21 @@ fn export_impl(
         } else {
             Default::default()
         };
-    // Path (as stored on the stick) → its existing id and file name, so a
-    // re-selected track reuses its slot instead of getting a duplicate.
+    // Path (as stored on the stick) → its existing id and path, so a
+    // re-selected track reuses its slot instead of getting a duplicate; and
+    // file name → the rows of that name, for a stick rekordbox laid out as
+    // `/Contents/<Artist>/<Album>/<file>`, where the flat path never matches.
     let existing_by_path: HashMap<String, (u32, String)> = existing_tracks
         .iter()
-        .map(|e| (path_key(&e.row.file_path), (e.row.id, e.row.filename.clone())))
+        .map(|e| (path_key(&e.row.file_path), (e.row.id, e.row.file_path.clone())))
         .collect();
+    let mut existing_by_name: HashMap<String, Vec<(u32, String)>> = HashMap::new();
+    for e in &existing_tracks {
+        existing_by_name
+            .entry(path_key(&e.row.filename))
+            .or_default()
+            .push((e.row.id, e.row.file_path.clone()));
+    }
     let mut next_id = existing_tracks.iter().map(|e| e.row.id).max().unwrap_or(0) + 1;
 
     // ---- resolve tracks: filenames, interned ids, metadata ---------------
@@ -940,9 +954,15 @@ fn export_impl(
             continue;
         }
         let base = format!("{stem}{ext}");
-        // Does this exact `/Contents/<base>` already live on the stick?
+        // Is this track on the stick already: at `/Contents/<base>`, or, on
+        // a stick rekordbox wrote, as the one file of that name under its
+        // artist and album folders?
         let reuse = existing_by_path
             .get(&path_key(&format!("/Contents/{base}")))
+            .or_else(|| match existing_by_name.get(&path_key(&base)).map(Vec::as_slice) {
+                Some([one]) => Some(one),
+                _ => None,
+            })
             .cloned();
         // The stick's own row for a re-selected track: its content id, added
         // date and analysis path stay with it. rekordbox keys a track by the
@@ -950,13 +970,8 @@ fn export_impl(
         let kept = reuse
             .as_ref()
             .and_then(|(id, _)| existing_tracks.iter().find(|e| e.row.id == *id));
-        let (id, name) = match reuse {
-            // The stick's own spelling of the name: its directory entry is
-            // whatever form it was created in, and a CDJ compares code units.
-            Some((id, name)) => {
-                taken.insert(path_key(&name));
-                (id, name)
-            }
+        let (id, usb_path) = match reuse {
+            Some((id, path)) => (id, path),
             None => {
                 let mut name = base.clone();
                 let mut n = 2;
@@ -966,11 +981,14 @@ fn export_impl(
                 }
                 let id = next_id;
                 next_id += 1;
-                (id, name)
+                (id, format!("/Contents/{name}"))
             }
         };
+        // A reused name in the stick's own spelling: its directory entry is
+        // whatever form it was created in, and a CDJ compares code units.
+        let name = usb_path.rsplit('/').next().unwrap_or_default().to_string();
+        taken.insert(path_key(&name));
         placed_ids.insert(id);
-        let usb_path = format!("/Contents/{name}");
 
         let props = t.properties.as_ref();
         let duration_ms = props.map(|p| p.duration_ms).unwrap_or(0);
@@ -1062,9 +1080,10 @@ fn export_impl(
             ),
             filename: name.clone(),
             file_path: usb_path,
+            raw: None,
         };
         report.placed.push((t.id, row.file_path.clone()));
-        let dest = contents.join(&name);
+        let dest = dest_root.join(row.file_path.trim_start_matches('/'));
         // A byte copy is current when the sizes agree; a conversion's size
         // isn't known ahead, so any non-empty output on the stick stands.
         let copy_needed = match std::fs::metadata(&dest) {
@@ -1165,9 +1184,9 @@ fn export_impl(
     // half-writing it. Sum the bytes of the audio we'd actually write.
     let sources: Vec<(u64, String)> = resolved
         .iter()
-        .map(|t| (t.expected_bytes, t.row.filename.clone()))
+        .map(|t| (t.expected_bytes, t.row.file_path.trim_start_matches('/').to_string()))
         .collect();
-    let need = estimated_bytes_needed(&sources, &contents);
+    let need = estimated_bytes_needed(&sources, dest_root);
     if let Some(free) = free_space(dest_root) {
         if free < need {
             return Err(ExportError::NotEnoughSpace {
@@ -1199,7 +1218,9 @@ fn export_impl(
             detail,
             landed: None,
         });
-        let dest = contents.join(&tr.row.filename);
+        // The row's own path: `/Contents/<file>`, or wherever a stick
+        // rekordbox wrote already keeps a re-selected track.
+        let dest = dest_root.join(tr.row.file_path.trim_start_matches('/'));
         match tr.transcode {
             // Already on the stick (a merge re-selecting it): nothing to copy.
             _ if !tr.copy_needed => {}
@@ -1214,7 +1235,7 @@ fn export_impl(
                 // picks the muxer), then move into place: an interrupted
                 // conversion never leaves a half file under the track's name.
                 let stem = tr.row.filename.trim_end_matches(".aiff");
-                let tmp = contents.join(format!("{stem}.ordnung-tmp.aiff"));
+                let tmp = dest.with_file_name(format!("{stem}.ordnung-tmp.aiff"));
                 let _ = std::fs::remove_file(&tmp);
                 if dest.exists() {
                     std::fs::remove_file(&dest).map_err(io_err(dest.clone()))?;
@@ -1662,13 +1683,13 @@ mod tests {
         std::fs::create_dir_all(&contents).unwrap();
         let src = dir.join("a.mp3");
         std::fs::write(&src, vec![0u8; 1000]).unwrap();
-        let sources = vec![(1000u64, "a.mp3".to_string())];
+        let sources = vec![(1000u64, "Contents/a.mp3".to_string())];
         // Nothing on the stick yet: the 1000 bytes count (plus margin).
-        let need_fresh = estimated_bytes_needed(&sources, &contents);
+        let need_fresh = estimated_bytes_needed(&sources, &dir);
         assert!(need_fresh >= 1000);
         // Same-size file already present: its bytes drop out of the estimate.
         std::fs::write(contents.join("a.mp3"), vec![0u8; 1000]).unwrap();
-        let need_present = estimated_bytes_needed(&sources, &contents);
+        let need_present = estimated_bytes_needed(&sources, &dir);
         assert!(
             need_present < need_fresh,
             "an already-copied file must not be re-counted"

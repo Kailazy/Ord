@@ -757,60 +757,9 @@ fn backup_anlz(dat_path: &Path) {
     }
 }
 
-/// One pdb track row, split into the parts an in-place edit may change: the
-/// fixed 0x88-byte header (tempo lives at 0x38) and its 21 strings in slot
-/// order (§2.5 of the format notes). Everything else is carried verbatim.
-struct TrackRowEdit {
-    header: [u8; 0x88],
-    strings: [String; 21],
-    tempo_centi_bpm: u32,
-}
-
-/// Decode the row at `row` into its editable form, and measure its extent
-/// (header plus the last byte of its furthest string).
-fn decode_track_row(data: &[u8], row: usize) -> Option<(TrackRowEdit, usize)> {
-    use crate::pdb::{dsql_string, u16_at, u32_at};
-    let header: [u8; 0x88] = data.get(row..row + 0x88)?.try_into().ok()?;
-    let mut strings: [String; 21] = Default::default();
-    let mut end = 0x88;
-    for (i, s) in strings.iter_mut().enumerate() {
-        let rel = u16_at(data, row + 0x5E + 2 * i)? as usize;
-        *s = dsql_string(data, row + rel)?;
-        let b0 = *data.get(row + rel)?;
-        let len = if b0 & 1 == 1 {
-            (b0 >> 1) as usize
-        } else {
-            u16_at(data, row + rel + 1)? as usize
-        };
-        end = end.max(rel + len);
-    }
-    Some((
-        TrackRowEdit {
-            header,
-            strings,
-            tempo_centi_bpm: u32_at(data, row + 0x38)?,
-        },
-        end,
-    ))
-}
-
-/// Re-encode an edited row: the header with its tempo, then the strings
-/// packed in slot order with the offset table rewritten. ISRC keeps its
-/// 0x90 form; every other string takes the writer's usual encoding.
-fn encode_track_row(r: &TrackRowEdit) -> Vec<u8> {
-    let mut out = r.header.to_vec();
-    out[0x38..0x3C].copy_from_slice(&r.tempo_centi_bpm.to_le_bytes());
-    for (i, s) in r.strings.iter().enumerate() {
-        let enc = if i == 0 && !s.is_empty() {
-            pdbw::dsql_isrc(s)
-        } else {
-            pdbw::dsql_string(s)
-        };
-        let off = pdbw::push_dsql(&mut out, &enc);
-        out[0x5E + 2 * i..0x60 + 2 * i].copy_from_slice(&off.to_le_bytes());
-    }
-    pdbw::pad4(out)
-}
+// The row codec (`TrackRowEdit`, `decode_track_row`, `encode_track_row`)
+// lives in `pdbw`, where the export's merge carries stick rows through it too.
+use crate::pdbw::{decode_track_row, encode_track_row, TrackRowEdit};
 
 /// Every slot of a data page in order: whether it is live, and its row's
 /// absolute offset. Deleted slots (pages flagged 0x34) keep their place so
@@ -1340,7 +1289,16 @@ mod tests {
         write_stick_cues(&root, id, &dat, std::slice::from_ref(&cue)).unwrap();
 
         let after = read_export(&pdb).unwrap();
-        assert_eq!(after.tracks, before.tracks, "parsed rows must be unchanged");
+        // The parsed view of every row is unchanged; the stored bytes of the
+        // edited row are not (its counter grew), so they are left out here
+        // and checked slot by slot below.
+        let parsed = |m: &std::collections::HashMap<u32, crate::pdb::RbTrack>| {
+            let mut v: Vec<crate::pdb::RbTrack> =
+                m.values().map(|t| crate::pdb::RbTrack { raw: None, ..t.clone() }).collect();
+            v.sort_by(|a, b| a.file_path.cmp(&b.file_path));
+            v
+        };
+        assert_eq!(parsed(&after.tracks), parsed(&before.tracks), "parsed rows must be unchanged");
         assert_eq!(after.playlists, before.playlists);
         let strings_after = row_strings(&pdb, id);
         assert_eq!(strings_after[4], "2", "cue counter counts from {:?}", strings_before[4]);

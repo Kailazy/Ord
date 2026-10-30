@@ -135,6 +135,66 @@ pub(crate) struct TrackRow {
     pub title: String,
     pub filename: String,
     pub file_path: String,
+    /// The row as the stick already holds it, for a track a merge carries
+    /// over: written back byte for byte except for what this export assigns
+    /// afresh (see [`carried_track_row`]).
+    pub raw: Option<TrackRowEdit>,
+}
+
+/// One pdb track row split into the parts an edit may change: the fixed
+/// 0x88-byte header (tempo lives at 0x38) and its 21 strings in slot order
+/// (§2.5 of the format notes). Everything else is carried verbatim.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct TrackRowEdit {
+    pub header: [u8; 0x88],
+    pub strings: [String; 21],
+    pub tempo_centi_bpm: u32,
+}
+
+/// Decode the row at `row` into its editable form, and measure its extent
+/// (header plus the last byte of its furthest string).
+pub(crate) fn decode_track_row(data: &[u8], row: usize) -> Option<(TrackRowEdit, usize)> {
+    use crate::pdb::{dsql_string, u16_at, u32_at};
+    let header: [u8; 0x88] = data.get(row..row + 0x88)?.try_into().ok()?;
+    let mut strings: [String; 21] = Default::default();
+    let mut end = 0x88;
+    for (i, s) in strings.iter_mut().enumerate() {
+        let rel = u16_at(data, row + 0x5E + 2 * i)? as usize;
+        *s = dsql_string(data, row + rel)?;
+        let b0 = *data.get(row + rel)?;
+        let len = if b0 & 1 == 1 {
+            (b0 >> 1) as usize
+        } else {
+            u16_at(data, row + rel + 1)? as usize
+        };
+        end = end.max(rel + len);
+    }
+    Some((
+        TrackRowEdit {
+            header,
+            strings,
+            tempo_centi_bpm: u32_at(data, row + 0x38)?,
+        },
+        end,
+    ))
+}
+
+/// Re-encode an edited row: the header with its tempo, then the strings
+/// packed in slot order with the offset table rewritten. ISRC keeps its
+/// 0x90 form; every other string takes the writer's usual encoding.
+pub(crate) fn encode_track_row(r: &TrackRowEdit) -> Vec<u8> {
+    let mut out = r.header.to_vec();
+    out[0x38..0x3C].copy_from_slice(&r.tempo_centi_bpm.to_le_bytes());
+    for (i, s) in r.strings.iter().enumerate() {
+        let enc = if i == 0 && !s.is_empty() {
+            dsql_isrc(s)
+        } else {
+            dsql_string(s)
+        };
+        let off = push_dsql(&mut out, &enc);
+        out[0x5E + 2 * i..0x60 + 2 * i].copy_from_slice(&off.to_le_bytes());
+    }
+    pad4(out)
 }
 
 /// Everything `build_export_pdb` needs. Interned tables are `(id, name)` in
@@ -165,6 +225,9 @@ pub(crate) struct PdbTables {
 // ---------------------------------------------------------------------------
 
 fn track_row(t: &TrackRow, index_shift: u16, master_db_id: u32) -> Vec<u8> {
+    if let Some(raw) = &t.raw {
+        return carried_track_row(raw, t, index_shift, master_db_id);
+    }
     let mut r = Vec::with_capacity(0x120);
     let u16le = |r: &mut Vec<u8>, v: u16| r.extend_from_slice(&v.to_le_bytes());
     let u32le = |r: &mut Vec<u8>, v: u32| r.extend_from_slice(&v.to_le_bytes());
@@ -231,6 +294,37 @@ fn track_row(t: &TrackRow, index_shift: u16, master_db_id: u32) -> Vec<u8> {
         r[0x5E + 2 * i..0x60 + 2 * i].copy_from_slice(&at.to_le_bytes());
     }
     r
+}
+
+/// A row carried over from the stick's own pdb: the bytes rekordbox (or an
+/// earlier export) wrote, rating, colour, bit depth, counters, dates and
+/// flags included, with only what this export assigns afresh patched in:
+/// the page slot, the interned ids, the library pair, the artwork and the
+/// paths. Rebuilding the row from the reader's view lost all of those and
+/// left the pdb disagreeing with the Device Library Plus beside it.
+fn carried_track_row(raw: &TrackRowEdit, t: &TrackRow, index_shift: u16, master_db_id: u32) -> Vec<u8> {
+    let mut r = raw.clone();
+    r.header[0x02..0x04].copy_from_slice(&index_shift.to_le_bytes());
+    for (at, v) in [
+        (0x0C, t.composer_id),
+        (0x14, t.master_content_id),
+        (0x18, master_db_id),
+        (0x1C, t.artwork_id),
+        (0x20, t.key_id),
+        (0x24, t.original_artist_id),
+        (0x28, t.label_id),
+        (0x2C, t.remixer_id),
+        (0x3C, t.genre_id),
+        (0x40, t.album_id),
+        (0x44, t.artist_id),
+        (0x48, t.id),
+    ] {
+        r.header[at..at + 4].copy_from_slice(&v.to_le_bytes());
+    }
+    r.strings[14] = t.analyze_path.clone();
+    r.strings[19] = t.filename.clone();
+    r.strings[20] = t.file_path.clone();
+    encode_track_row(&r)
 }
 
 fn genre_row(id: u32, name: &str) -> Vec<u8> {

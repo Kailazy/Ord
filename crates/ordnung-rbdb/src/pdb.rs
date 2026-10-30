@@ -125,6 +125,10 @@ pub struct RbTrack {
     /// e.g. `/PIONEER/USBANLZ/P016/0000B5/ANLZ0000.DAT`. Not parsed here yet;
     /// carried so a caller (or the Phase 5 round-trip) can find it.
     pub analyze_path: Option<String>,
+    /// The row's bytes as stored, so a merge can write it back unchanged
+    /// (rating, colour, counters, dates and all); `None` when it would not
+    /// decode.
+    pub(crate) raw: Option<crate::pdbw::TrackRowEdit>,
 }
 
 impl RbTrack {
@@ -333,6 +337,7 @@ fn parse_export(data: &[u8]) -> Result<RbExport, ReadError> {
                                 composer: None,
                                 original_artist: None,
                                 analyze_path: string_at(14).filter(|s| !s.is_empty()),
+                                raw: crate::pdbw::decode_track_row(data, row).map(|(r, _)| r),
                             },
                         );
                     }

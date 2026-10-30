@@ -298,10 +298,11 @@ fn merge_adds_to_an_existing_export_without_clobbering_it() {
         icon: None,
         color: None,
     }];
-    let tracks_a = vec![
+    let mut tracks_a = vec![
         track(10, &a, Format::Mp3, "Alpha", "AA"),
         track(11, &b, Format::Mp3, "Beta", "BB"),
     ];
+    tracks_a[1].tags.rating = Some(4);
     let as_lib_77 = ExportOptions { master_db_id: 77, ..Default::default() };
     export_usb_with(&usb, &tracks_a, &set_a, as_lib_77, &mut |_| {}, &cancel).unwrap();
     let pdb_path = usb.join("PIONEER/rekordbox/export.pdb");
@@ -337,6 +338,10 @@ fn merge_adds_to_an_existing_export_without_clobbering_it() {
     // The stick's library id wins over the merging library's, on every row,
     // and every row carries a content id.
     assert!(export.tracks.values().all(|t| t.master_db_id == 77 && t.master_content_id != 0));
+    // A carried row is the stick's own row: Beta keeps the rating the first
+    // export gave it (a rebuilt row read it back as 0).
+    let beta = export.tracks.values().find(|t| t.title == "Beta").unwrap();
+    assert_eq!(beta.rating, 4, "a carried row keeps its rating");
     // Re-selected (Alpha) and carried (Beta) rows keep the content id the
     // stick gave them; only the new row gets a fresh one.
     for t in export.tracks.values() {
@@ -429,6 +434,51 @@ fn replace_sweeps_files_the_new_databases_no_longer_name() {
     assert_eq!(names, ["alpha.mp3", "gamma.mp3"]);
     assert!(!beta_dat.exists(), "beta's analysis files are swept");
     let _ = std::fs::remove_dir_all(&root);
+}
+
+/// A stick rekordbox wrote keeps its audio under `/Contents/<Artist>/<Album>/`;
+/// a merge finds a re-selected track there by its file name instead of
+/// landing a second copy as "<name> (2)" beside a fresh row.
+#[test]
+fn merge_finds_a_track_a_rekordbox_stick_nests_under_contents() {
+    let src = temp_root("nested-src");
+    let usb = temp_root("nested-usb");
+    let rb = usb.join("PIONEER/rekordbox");
+    std::fs::create_dir_all(&rb).unwrap();
+    // rekordbox's own two-track export: rows under /Contents/<Artist>/<Album>/.
+    let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/demo_tracks_export.pdb");
+    std::fs::copy(&fixture, rb.join("export.pdb")).unwrap();
+    let before = pdb::read_export(&rb.join("export.pdb")).unwrap();
+    // The stick holds every row's audio and analysis files, as a real one does.
+    for t in before.tracks.values() {
+        let audio = usb.join(t.file_path.trim_start_matches('/'));
+        std::fs::create_dir_all(audio.parent().unwrap()).unwrap();
+        std::fs::write(&audio, vec![0x5Au8; 4_000]).unwrap();
+        let dat = usb.join(t.analyze_path.as_deref().unwrap().trim_start_matches('/'));
+        std::fs::create_dir_all(dat.parent().unwrap()).unwrap();
+        std::fs::write(&dat, b"PMAI").unwrap();
+        std::fs::write(dat.with_extension("EXT"), b"PMAI").unwrap();
+    }
+    let (nested_id, nested) = before
+        .tracks
+        .iter()
+        .find(|(_, t)| t.file_path.matches('/').count() > 2)
+        .map(|(id, t)| (*id, t.file_path.clone()))
+        .expect("a nested row");
+    let name = nested.rsplit('/').next().unwrap().to_string();
+    let a = audio_file(&src, &name, 4_000);
+    let tracks = vec![track(1, &a, Format::Mp3, "Nested", "N")];
+    let cancel = AtomicBool::new(false);
+    let merge = ExportOptions { mode: ExportMode::Merge, ..Default::default() };
+    let report = export_usb_with(&usb, &tracks, &[], merge, &mut |_| {}, &cancel).unwrap();
+    assert_eq!(report.placed, vec![(1, nested.clone())], "lands on the stick's own path");
+
+    let after = pdb::read_export(&rb.join("export.pdb")).unwrap();
+    assert_eq!(after.tracks.len(), before.tracks.len(), "no second row for the track");
+    assert_eq!(after.tracks[&nested_id].file_path, nested);
+    assert!(!usb.join("Contents").join(&name).exists(), "no flat copy beside the nested file");
+    let _ = std::fs::remove_dir_all(&src);
+    let _ = std::fs::remove_dir_all(&usb);
 }
 
 #[test]
