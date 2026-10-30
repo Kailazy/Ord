@@ -1577,6 +1577,80 @@ impl App {
         self.reload();
     }
 
+    /// The running export's plan for this stick (`JobMsg::UsbPlan`): its
+    /// playlist nodes join the sidebar tree now, empty, and fill through
+    /// [`Self::usb_live_landed`] as the files copy, the way rekordbox shows
+    /// a sync. `replace` drops the stick's current tree first, as the
+    /// export will. The rescan after the job replaces all of it with what
+    /// the stick then says.
+    #[cfg(feature = "usb-export")]
+    pub(crate) fn usb_live_plan(
+        &mut self,
+        vol: &Path,
+        playlists: Vec<ordnung_rbdb::pdb::RbPlaylist>,
+        replace: bool,
+    ) {
+        if self.usb_loaded_for.as_deref() != Some(vol) {
+            return;
+        }
+        if replace {
+            self.usb_playlists.clear();
+            self.usb_playlist_tracks.clear();
+        }
+        for p in playlists {
+            if !p.is_folder {
+                self.usb_playlist_tracks.insert(p.id, Vec::new());
+            }
+            match self.usb_playlists.iter_mut().find(|e| e.id == p.id) {
+                Some(e) => {
+                    e.parent_id = p.parent_id;
+                    e.name = p.name;
+                }
+                None => self.usb_playlists.push(p),
+            }
+        }
+    }
+
+    /// One exported track's file is on the stick (`JobMsg::UsbLanded`): its
+    /// row joins the device listing (or refreshes the row the stick already
+    /// had at that path), its catalog analysis stands in for the pdb's until
+    /// the rescan, and it appears in the playlists it was exported to.
+    #[cfg(feature = "usb-export")]
+    pub(crate) fn usb_live_landed(
+        &mut self,
+        vol: &Path,
+        track: ScannedTrack,
+        analyzed: UsbAnalyzed,
+        lists: &[u32],
+    ) {
+        if self.usb_loaded_for.as_deref() != Some(vol) {
+            return;
+        }
+        // By path, case-insensitively: the volume is FAT32.
+        let want = track.source_path.to_lowercase();
+        let i = match self.usb_tracks.iter().position(|t| t.source_path.to_lowercase() == want) {
+            Some(i) => {
+                self.usb_tracks[i] = track;
+                // The pdb's numbers and art are the old export's: the row
+                // reads the catalog's until the rescan, its cover re-decodes.
+                self.usb_pdb_info.remove(&i);
+                self.cover_cache.remove(&usb_track_id(i));
+                i
+            }
+            None => {
+                self.usb_tracks.push(track);
+                self.usb_tracks.len() - 1
+            }
+        };
+        self.usb_analysis.insert(analyzed.path.clone(), analyzed);
+        for pid in lists {
+            let members = self.usb_playlist_tracks.entry(*pid).or_default();
+            if !members.contains(&i) {
+                members.push(i);
+            }
+        }
+    }
+
     /// Transfer device rows into the local library: resolve the (synthetic)
     /// ids to their files on the stick and hand them to the copy-then-import
     /// job. The destination is the library root; an install that never picked

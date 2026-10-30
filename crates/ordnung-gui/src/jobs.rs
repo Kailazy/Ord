@@ -70,6 +70,9 @@ impl App {
         let mut reload = false;
         let mut finished = false;
         let mut tracklists_changed = false;
+        // Device-view messages wait until `rx` lets go of `self`.
+        #[cfg(feature = "usb-export")]
+        let mut usb_live: Vec<JobMsg> = Vec::new();
         loop {
             match rx.try_recv() {
                 Ok(JobMsg::Status(s)) => self.status = s,
@@ -121,6 +124,8 @@ impl App {
                 Ok(JobMsg::VinylChanged) => reload = true,
                 // The rows and the list's counts both move as lines settle.
                 Ok(JobMsg::TracklistChanged) => tracklists_changed = true,
+                #[cfg(feature = "usb-export")]
+                Ok(m @ (JobMsg::UsbPlan { .. } | JobMsg::UsbLanded { .. })) => usb_live.push(m),
                 Ok(JobMsg::VinylUsername(u)) => {
                     // Persist the resolved username so the collection link works
                     // across launches. Only write when it actually changed.
@@ -133,6 +138,23 @@ impl App {
                 Err(mpsc::TryRecvError::Disconnected) => {
                     finished = true;
                     break;
+                }
+            }
+        }
+        #[cfg(feature = "usb-export")]
+        if let Some(vol) = self.export_running_to.clone() {
+            for m in usb_live {
+                match m {
+                    JobMsg::UsbPlan { playlists, replace } => {
+                        self.usb_live_plan(&vol, playlists, replace)
+                    }
+                    JobMsg::UsbLanded { track, analyzed, lists } => {
+                        self.usb_live_landed(&vol, track, analyzed, &lists);
+                        // Only a device table lists the row; the sidebar
+                        // counts read the tree directly.
+                        reload |= matches!(self.view, LibraryView::Usb(..));
+                    }
+                    _ => {}
                 }
             }
         }
@@ -1434,6 +1456,59 @@ pub(crate) fn run_export(
         ctx.request_repaint();
         return;
     }
+    // The live device view (`App::usb_live_plan` / `usb_live_landed`): the
+    // incoming playlist nodes now, each row as its file lands. Ids are minted
+    // the way the exporter mints them (export.rs, "playlists": a same-name
+    // node of the same kind is reused, the rest number on from the stick's
+    // highest; Replace starts from nothing), so the tree the rescan after the
+    // job reads back keeps the ids the user may have clicked meanwhile.
+    let existing = if replace {
+        Vec::new()
+    } else {
+        ordnung_rbdb::pdb::read_stick(&dest)
+            .map(|e| e.playlists)
+            .unwrap_or_default()
+    };
+    let mut next_pl_id = existing.iter().map(|p| p.id).max().unwrap_or(0) + 1;
+    let mut pl_ids: HashMap<Id, u32> = HashMap::new();
+    for p in &playlists {
+        let id = existing
+            .iter()
+            .find(|e| e.name == p.name && e.is_folder == p.is_folder)
+            .map(|e| e.id)
+            .unwrap_or_else(|| {
+                next_pl_id += 1;
+                next_pl_id - 1
+            });
+        pl_ids.insert(p.id, id);
+    }
+    // Catalog track id → the stick playlists its row joins as it lands.
+    let mut lists_of: HashMap<Id, Vec<u32>> = HashMap::new();
+    let nodes: Vec<ordnung_rbdb::pdb::RbPlaylist> = playlists
+        .iter()
+        .map(|p| {
+            let id = pl_ids[&p.id];
+            if !p.is_folder {
+                for t in &p.track_ids {
+                    lists_of.entry(*t).or_default().push(id);
+                }
+            }
+            ordnung_rbdb::pdb::RbPlaylist {
+                id,
+                parent_id: p.parent.and_then(|pp| pl_ids.get(&pp).copied()).unwrap_or(0),
+                sort_order: id,
+                is_folder: p.is_folder,
+                name: p.name.clone(),
+            }
+        })
+        .collect();
+    if let Some((pid, _)) = &usb_playlist {
+        for t in &tracks {
+            lists_of.entry(t.id).or_default().push(*pid);
+        }
+    }
+    let _ = tx.send(JobMsg::UsbPlan { playlists: nodes, replace });
+    let by_id: HashMap<Id, &ordnung_core::model::Track> = tracks.iter().map(|t| (t.id, t)).collect();
     let name_by_id: std::collections::HashMap<u64, String> = tracks
         .iter()
         .map(|t| {
@@ -1472,6 +1547,16 @@ pub(crate) fn run_export(
                 done: p.done,
                 total: p.total,
             });
+            if let Some((id, path)) = &p.landed {
+                if let Some(t) = by_id.get(id) {
+                    let (track, analyzed) = landed_row(&dest, path, t, &catalog);
+                    let _ = tx.send(JobMsg::UsbLanded {
+                        track,
+                        analyzed,
+                        lists: lists_of.get(id).cloned().unwrap_or_default(),
+                    });
+                }
+            }
             ctx.request_repaint();
         },
         &cancel,
@@ -1570,6 +1655,39 @@ to finish it."
         }
     }
     ctx.request_repaint();
+}
+
+/// The device row for a track whose file just landed on the stick, in the
+/// shape the file scan would read back from it, plus its catalog analysis in
+/// the shape the device view overlays (`App::usb_analysis`).
+#[cfg(feature = "usb-export")]
+fn landed_row(
+    dest: &Path,
+    path: &str,
+    t: &ordnung_core::model::Track,
+    catalog: &Catalog,
+) -> (ScannedTrack, UsbAnalyzed) {
+    let abs = dest.join(path.trim_start_matches('/'));
+    let source_path = abs.to_string_lossy().into_owned();
+    let a = t.analysis.as_ref();
+    let track = ScannedTrack {
+        source_path: source_path.clone(),
+        format: ordnung_core::scan::format_from_ext(&abs),
+        properties: t.properties.clone().unwrap_or_default(),
+        tags: t.tags.clone(),
+        cover_thumb: catalog.get_cover_thumb(t.id).ok().flatten(),
+        fingerprint: None,
+        src_size: None,
+        src_mtime: None,
+    };
+    let analyzed = UsbAnalyzed {
+        path: source_path,
+        bpm: a.and_then(|a| a.bpm),
+        key: a.and_then(|a| a.key),
+        waveform: a.map(|a| a.waveform_preview.clone()).unwrap_or_default(),
+        waveform_bands: a.map(|a| a.waveform_bands.clone()).unwrap_or_default(),
+    };
+    (track, analyzed)
 }
 
 /// Copy device tracks into the local library folder, then import the copies.

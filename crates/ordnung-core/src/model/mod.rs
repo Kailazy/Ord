@@ -25,7 +25,7 @@ pub enum Format {
 }
 
 /// Raw audio properties read during scan.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct AudioProperties {
     pub sample_rate_hz: u32,
     pub bit_depth: Option<u8>,

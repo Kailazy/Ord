@@ -1003,6 +1003,24 @@ enum JobMsg {
     /// Tracklists window re-reads its rows on the next frame (rows fill in as
     /// they land rather than all at once when the job ends).
     TracklistChanged,
+    /// The USB export's plan, once its selection is resolved: the playlist
+    /// nodes the stick will carry, under the ids the exporter will give
+    /// them, so the sidebar shows them filling (see `App::usb_live_plan`).
+    /// `replace` drops the stick's current tree first, as the export will.
+    #[cfg(feature = "usb-export")]
+    UsbPlan {
+        playlists: Vec<ordnung_rbdb::pdb::RbPlaylist>,
+        replace: bool,
+    },
+    /// One exported track's file is on the stick: its device row, its
+    /// catalog analysis in the shape the device view overlays, and the stick
+    /// playlists it joins (see `App::usb_live_landed`).
+    #[cfg(feature = "usb-export")]
+    UsbLanded {
+        track: ScannedTrack,
+        analyzed: UsbAnalyzed,
+        lists: Vec<u32>,
+    },
 }
 
 /// A Discogs run's "only hidden formats" outcome: the tracks it applied to,

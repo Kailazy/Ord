@@ -187,6 +187,11 @@ pub struct ExportProgress {
     pub total: usize,
     /// Current file/track label, for status lines.
     pub detail: String,
+    /// A track whose file is now fully on the stick, as (catalog id, the
+    /// `/Contents/…` path the database will store). Sent once per track in
+    /// [`ExportStage::CopyingAudio`], after its copy (or at once when the
+    /// stick already held it), so a caller can show the stick filling up.
+    pub landed: Option<(Id, String)>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -998,12 +1003,12 @@ fn export_impl(
             done: i,
             total,
             detail,
+            landed: None,
         });
-        if !tr.copy_needed {
-            continue;
-        }
         let dest = contents.join(&tr.row.filename);
         match tr.transcode {
+            // Already on the stick (a merge re-selecting it): nothing to copy.
+            _ if !tr.copy_needed => {}
             None => {
                 let n = std::fs::copy(&tr.source, &dest).map_err(io_err(dest.clone()))?;
                 sync_existing(&dest).map_err(io_err(dest))?;
@@ -1032,6 +1037,13 @@ fn export_impl(
                 report.transcoded += 1;
             }
         }
+        progress(ExportProgress {
+            stage: ExportStage::CopyingAudio,
+            done: i + 1,
+            total,
+            detail: tr.row.filename.clone(),
+            landed: Some((tr.catalog_id, tr.row.file_path.clone())),
+        });
     }
 
     // ---- artwork ----------------------------------------------------------
@@ -1042,6 +1054,7 @@ fn export_impl(
             done: i,
             total: covers.files.len(),
             detail: format!("artwork {}", art.id),
+            landed: None,
         });
         crate::artwork::write_files(dest_root, art)
             .map_err(io_err(dest_root.join("PIONEER").join("Artwork")))?;
@@ -1102,6 +1115,7 @@ fn export_impl(
                 done,
                 total,
                 detail: tr.row.filename.clone(),
+                landed: None,
             });
             if let Some(old) = tr
                 .old_anlz_path
@@ -1135,6 +1149,7 @@ fn export_impl(
         done: 0,
         total: 1,
         detail: "export.pdb".into(),
+        landed: None,
     });
 
     // Catalog track id → the pdb track id it landed on (new or reused slot).
@@ -1282,6 +1297,7 @@ fn export_impl(
         done: 1,
         total: 1,
         detail: "done".into(),
+        landed: None,
     });
     Ok(report)
 }
