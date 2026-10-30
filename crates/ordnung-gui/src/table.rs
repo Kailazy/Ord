@@ -2907,6 +2907,11 @@ impl Default for RowSources {
 
 impl RowSources {
     /// Mark everything held here as out of date.
+    /// How many tracks the whole library lists, once it has been read.
+    pub(crate) fn library_len(&self) -> usize {
+        self.library.as_ref().map_or(0, Vec::len)
+    }
+
     pub(crate) fn invalidate(&mut self) {
         self.stale = true;
         self.library = None;

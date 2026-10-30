@@ -2833,8 +2833,8 @@ impl App {
                     // Built longest-first: a narrow window drops the trailing
                     // parts rather than letting the label run under the search
                     // group (see the fitting below).
-                    let count_forms: Vec<String> = if shelf_counts.is_some() {
-                        Vec::new()
+                    let (count_forms, count_widest): (Vec<String>, String) = if shelf_counts.is_some() {
+                        (Vec::new(), String::new())
                     } else {
                         // The crate's rows are songs, not tracks, and its
                         // table isn't `rows`: counted here through the same
@@ -2854,6 +2854,19 @@ impl App {
                             // "tracks" said nothing the column didn't.
                             self.rows.len().to_string()
                         };
+                        // The widest text the readout can show, every slot at
+                        // the library's full count: its width is reserved
+                        // whatever the readout says, so a selection, a filter
+                        // or a view change never moves the controls beside it.
+                        let n_max = self
+                            .row_sources
+                            .library_len()
+                            .max(self.rows.len())
+                            .max(self.selection.len());
+                        let mut widest = format!("{n_max} tracks · {n_max} selected");
+                        if self.missing_count > 0 {
+                            widest.push_str(&format!(" · {} missing", self.missing_count));
+                        }
                         let mut forms = vec![counts.clone()];
                         if !self.selection.is_empty() {
                             counts.push_str(&format!(" · {} selected", self.selection.len()));
@@ -2863,7 +2876,7 @@ impl App {
                             counts.push_str(&format!(" · {} missing", self.missing_count));
                             forms.insert(0, counts.clone());
                         }
-                        forms
+                        (forms, widest)
                     };
                     let note_count =
                         !matches!(self.view, LibraryView::Liked | LibraryView::CrateSet(_));
@@ -2913,9 +2926,9 @@ impl App {
                             // Right-to-left, so the wantlist goes first to
                             // land on the right.
                             Some((owned, wanted)) => {
-                                crate::ui::icon::shelf_count(ui, VinylList::Wantlist, wanted);
+                                crate::ui::icon::shelf_count(ui, VinylList::Wantlist, wanted, self.wantlist.len());
                                 ui.label("·");
-                                crate::ui::icon::shelf_count(ui, VinylList::Collection, owned);
+                                crate::ui::icon::shelf_count(ui, VinylList::Collection, owned, self.vinyl.len());
                             }
                             None => {
                                 // Whatever the search group can't give up: the
@@ -2959,19 +2972,33 @@ impl App {
                                         None => text.into(),
                                     }
                                 };
+                                // The slot is the widest text's (plus the
+                                // mark), capped by the room; the text sits at
+                                // its left so the count itself never moves
+                                // when a part is appended.
+                                let w = (count_forms
+                                    .iter()
+                                    .chain(std::iter::once(&count_widest))
+                                    .map(|f| width_of(ui, f))
+                                    .fold(0.0, f32::max)
+                                    + note_w)
+                                    .min(room);
                                 let fitting = count_forms
                                     .iter()
-                                    .find(|f| width_of(ui, f) + note_w <= room)
+                                    .find(|f| width_of(ui, f) + note_w <= w)
                                     .or_else(|| count_forms.last());
-                                if let Some(text) = fitting {
-                                    if width_of(ui, text) + note_w <= room {
-                                        ui.label(label(text));
-                                    } else if room >= 24.0 {
-                                        ui.scope(|ui| {
-                                            ui.set_max_width(room);
-                                            ui.add(egui::Label::new(label(text)).truncate());
-                                        });
-                                    }
+                                if let Some(text) = fitting.filter(|_| w >= 24.0) {
+                                    let (rect, _) = ui.allocate_exact_size(
+                                        egui::vec2(w, ui.spacing().interact_size.y),
+                                        egui::Sense::hover(),
+                                    );
+                                    let mut slot = ui.new_child(
+                                        egui::UiBuilder::new()
+                                            .max_rect(rect)
+                                            .layout(egui::Layout::left_to_right(egui::Align::Center)),
+                                    );
+                                    slot.set_clip_rect(rect.intersect(ui.clip_rect()));
+                                    slot.add(egui::Label::new(label(text)).truncate());
                                 }
                             }
                         }

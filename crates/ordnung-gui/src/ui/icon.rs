@@ -845,14 +845,18 @@ pub fn glyph_button(ui: &mut egui::Ui, glyph: &str, enabled: bool) -> egui::Resp
     resp
 }
 
-/// A count beside its shelf mark, for a status line: the mark, then the number.
-pub fn shelf_count(ui: &mut egui::Ui, list: VinylList, n: usize) {
-    let text = n.to_string();
+/// A count beside its shelf mark, for a status line: the mark, then the
+/// number. The slot is as wide as `max` (the whole shelf) needs, so a search
+/// narrowing the count never moves what sits beside it.
+pub fn shelf_count(ui: &mut egui::Ui, list: VinylList, n: usize, max: usize) {
     let galley = ui
         .painter()
-        .layout_no_wrap(text, font::body(), color::LABEL);
+        .layout_no_wrap(n.to_string(), font::body(), color::LABEL);
+    let widest = ui
+        .painter()
+        .layout_no_wrap(max.max(n).to_string(), font::body(), color::LABEL);
     let mark = SHELF_R * 2.0 + 2.0;
-    let size = egui::vec2(mark + space::S2 + galley.size().x, galley.size().y.max(mark));
+    let size = egui::vec2(mark + space::S2 + widest.size().x, galley.size().y.max(mark));
     let (rect, _) = ui.allocate_exact_size(size, egui::Sense::hover());
     let c = egui::pos2(rect.left() + mark * 0.5, rect.center().y);
     shelf(ui.painter(), c, SHELF_R, color::LABEL_2, true, list);

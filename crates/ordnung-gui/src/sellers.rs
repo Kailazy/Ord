@@ -25,6 +25,7 @@ fn draw_cart_button(
     ui: &mut egui::Ui,
     seller: &str,
     cart: Option<&SellerBasket>,
+    max: usize,
     open: &mut Option<u64>,
 ) {
     let n = cart.map_or(0, |b| b.wants());
@@ -32,12 +33,22 @@ fn draw_cart_button(
         0 => "Cart".to_string(),
         n => format!("Cart · {n}"),
     };
+    let cart_text = |s: &str| {
+        crate::ui::icon_text(named(icons::SHOPPING_CART), s, crate::ui::tokens::font::body())
+    };
+    // As wide as the whole wantlist's count needs, so the buttons left of it
+    // hold still as the shop's stock changes.
+    let widest = cart_text(&format!("Cart · {max}")).into_galley(
+        ui,
+        Some(egui::TextWrapMode::Extend),
+        f32::INFINITY,
+        egui::TextStyle::Button,
+    );
     let btn = ui
-        .button(crate::ui::icon_text(
-            named(icons::SHOPPING_CART),
-            &label,
-            crate::ui::tokens::font::body(),
-        ))
+        .add(
+            egui::Button::new(cart_text(&label))
+                .min_size(widest.size() + 2.0 * ui.spacing().button_padding),
+        )
         .on_hover_note("What this shop stocks from your wantlist");
     crate::ui::menu::dropdown(&btn, 320.0, |m| {
         let Some(b) = cart.filter(|b| b.wants() > 0) else {
@@ -436,7 +447,7 @@ impl App {
             }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if let Some(cur) = self.seller_current.clone() {
-                    draw_cart_button(ui, &cur, cart.as_ref(), &mut cart_open);
+                    draw_cart_button(ui, &cur, cart.as_ref(), self.wantlist.len(), &mut cart_open);
                     // The note sizes the job once the shop's size is known
                     // (stamped by the first page of any earlier update): a
                     // distributor takes half an hour, and saying so up front
