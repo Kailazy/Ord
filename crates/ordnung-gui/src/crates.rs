@@ -669,18 +669,18 @@ impl App {
                         let count = if n == 1 { "1 song".to_string() } else { format!("{n} songs") };
                         two_line(ui, egui::RichText::new(words.join(" · ")).color(color::LABEL_2), Some(count));
                     });
-                    // OWNED / WANT for the shelf, FILES when every song of
+                    // Owned / Want for the shelf, Files when every song of
                     // the record is a track in the library.
                     row.col(|ui| {
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                             if g.songs.iter().all(|&i| files[i]) {
-                                badge(ui, "FILES", color::GREEN, "Every song the crate takes from this record is a track in your library");
+                                badge(ui, "Files", color::GREEN, "Every song the crate takes from this record is a track in your library");
                             }
                             if let Some(r) = g.release_id {
                                 if self.vinyl_owned.contains(&r) {
-                                    badge(ui, "OWNED", color::GREEN, "In your collection");
+                                    badge(ui, "Owned", color::GREEN, "In your collection");
                                 } else if self.vinyl_wanted.contains(&r) {
-                                    badge(ui, "WANT", color::accent_hover(), "On your wantlist");
+                                    badge(ui, "Want", color::accent_hover(), "On your wantlist");
                                 }
                             }
                         });

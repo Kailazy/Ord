@@ -125,7 +125,7 @@ pub fn section_with_action(
     add_body(ui);
 }
 
-/// The caption, small capitals in the tertiary ink, and the action at the
+/// The caption, small and semibold in the tertiary ink, and the action at the
 /// row's right end. One row for the header and every section, so the
 /// panel's title is set the way its sections are. The library nav's list
 /// headers ("Playlists", "Crates") are this row too, with the "+" as the
@@ -147,7 +147,7 @@ pub fn caption_row(ui: &mut egui::Ui, title: &str, add_action: impl FnOnce(&mut 
     } else {
         row.width()
     };
-    let galley = super::text::truncated(ui, title.to_uppercase(), font::strong(font::caption().size), color::LABEL_3, cap, true);
+    let galley = super::text::truncated(ui, title, font::strong(font::footnote().size), color::LABEL_3, cap, true);
     ui.painter().galley(
         egui::pos2(row.left(), row.center().y - galley.size().y / 2.0),
         galley,

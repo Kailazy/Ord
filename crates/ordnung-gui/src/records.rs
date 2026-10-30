@@ -854,8 +854,8 @@ fn record_row(
     let artist_y = slot.center().y + 10.0;
     let meta_y = slot.center().y + 27.0;
 
-    // The format eyebrow: letter-spaced small caps, the way a category label
-    // reads on a record sleeve rather than as another line of prose.
+    // The format eyebrow: a small category word above the title, the way
+    // a sleeve names its carrier rather than as another line of prose.
     let eyebrow = format_eyebrow(&hit.format);
     if !eyebrow.is_empty() {
         clipped_line(
@@ -964,39 +964,33 @@ fn draw_list_button(
 ///
 /// Discogs hands back `Vinyl, 12", 33 ⅓ RPM, Album` — accurate but far too long
 /// to sit above a title. What a digger reads at this position is only "is this a
-/// record?", so this reduces to the carrier and spaces it out as small caps.
+/// record?", so this reduces to the carrier.
 /// The sizes and speeds still appear on the meta line via [`pressing_line`].
 fn format_eyebrow(format: &str) -> String {
     let f = format.to_ascii_lowercase();
     // Order matters: the non-vinyl carriers are checked first so a "CD, Comp"
     // can't match on the `lp` inside a word like "sampler".
     let carrier = if f.contains("cassette") {
-        "CASSETTE"
+        "Cassette"
     } else if f.contains("dvd") {
         "DVD"
     } else if f.contains("shellac") {
-        "SHELLAC"
+        "Shellac"
     } else if f.contains("cd") {
         "CD"
     } else if f.contains("file") {
-        "DIGITAL"
+        "Digital"
     } else if f.contains("vinyl")
         || f.contains("lp")
         || f.contains("12\"")
         || f.contains("10\"")
         || f.contains("7\"")
     {
-        "VINYL"
+        "Vinyl"
     } else {
         return String::new();
     };
-    // Letter-spaced, since egui has no tracking control and the eyebrow needs
-    // to read as a label rather than a shouted word.
-    carrier
-        .chars()
-        .map(|c| c.to_string())
-        .collect::<Vec<_>>()
-        .join("\u{2009}")
+    carrier.to_string()
 }
 
 /// The row's last line: `year · country`, the two facts that place a pressing
@@ -1085,18 +1079,18 @@ mod tests {
     fn eyebrow_reduces_format_to_the_carrier() {
         assert_eq!(
             format_eyebrow("Vinyl, 12\", 33 ⅓ RPM, Album"),
-            spaced("VINYL")
+            "Vinyl"
         );
-        assert_eq!(format_eyebrow("LP, Album, Reissue"), spaced("VINYL"));
-        assert_eq!(format_eyebrow("CD, Compilation"), spaced("CD"));
-        assert_eq!(format_eyebrow("Cassette, Album"), spaced("CASSETTE"));
-        assert_eq!(format_eyebrow("File, FLAC, Album"), spaced("DIGITAL"));
+        assert_eq!(format_eyebrow("LP, Album, Reissue"), "Vinyl");
+        assert_eq!(format_eyebrow("CD, Compilation"), "CD");
+        assert_eq!(format_eyebrow("Cassette, Album"), "Cassette");
+        assert_eq!(format_eyebrow("File, FLAC, Album"), "Digital");
     }
 
     /// A CD compilation must not match on the `lp` hiding inside "Sampler".
     #[test]
     fn eyebrow_does_not_read_a_cd_as_vinyl() {
-        assert_eq!(format_eyebrow("CD, Sampler"), spaced("CD"));
+        assert_eq!(format_eyebrow("CD, Sampler"), "CD");
     }
 
     /// Discogs sometimes gives no format at all; the eyebrow then says nothing
@@ -1118,12 +1112,5 @@ mod tests {
         let mut h = hit();
         h.artist = String::new();
         assert_eq!(edit_label(&h), "Deep Sea Dweller");
-    }
-
-    fn spaced(s: &str) -> String {
-        s.chars()
-            .map(|c| c.to_string())
-            .collect::<Vec<_>>()
-            .join("\u{2009}")
     }
 }

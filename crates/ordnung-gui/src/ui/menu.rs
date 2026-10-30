@@ -488,9 +488,9 @@ impl MenuUi<'_> {
         .clicked()
     }
 
-    /// A section caption — small caps, semibold, quiet — for a menu that
+    /// A section caption, small, semibold and quiet, for a menu that
     /// groups rows under headings (facet pickers). Aligned to the row text
-    /// inset. Uppercased here so call sites write natural-case labels.
+    /// inset.
     pub fn header(&mut self, text: impl Into<String>) {
         // The gap above is a group gap: it parts this caption from the rows
         // before it. A caption that opens the panel has nothing to part
@@ -502,8 +502,8 @@ impl MenuUi<'_> {
         self.ui.horizontal(|ui| {
             ui.add_space(ROW_PAD);
             ui.label(
-                egui::RichText::new(text.into().to_uppercase())
-                    .font(font::strong(font::caption().size))
+                egui::RichText::new(text)
+                    .font(font::strong(font::footnote().size))
                     .color(color::LABEL_3),
             );
         });

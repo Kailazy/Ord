@@ -113,7 +113,7 @@ pub(crate) fn two_line(
     .inner
 }
 
-/// A small strong word in the caption font (`OWNED`, `FILE`) with its note.
+/// A small strong word in the caption font (`Owned`, `File`) with its note.
 pub(crate) fn badge(ui: &mut egui::Ui, text: &str, col: egui::Color32, tip: &str) {
     ui.add(egui::Label::new(egui::RichText::new(text).font(font::caption()).color(col).strong()))
         .on_hover_note(tip);

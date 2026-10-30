@@ -804,13 +804,13 @@ impl App {
                                 presp.on_hover_note(words);
                                 if let Some(r) = e.release_id {
                                     if self.vinyl_owned.contains(&r) {
-                                        badge(ui, "OWNED", color::GREEN, "In your collection");
+                                        badge(ui, "Owned", color::GREEN, "In your collection");
                                     } else if self.vinyl_wanted.contains(&r) {
-                                        badge(ui, "WANT", color::accent_hover(), "On your wantlist");
+                                        badge(ui, "Want", color::accent_hover(), "On your wantlist");
                                     }
                                 }
                                 if self.local_track(&e.song(), e.local_track_id).is_some() {
-                                    badge(ui, "FILE", color::LABEL_2, "A track in your library is this song");
+                                    badge(ui, "File", color::LABEL_2, "A track in your library is this song");
                                 }
                             });
                         });
