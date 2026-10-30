@@ -51,9 +51,42 @@ pub(crate) fn open(
     Ok(conn)
 }
 
+/// A stick's `exportLibrary.db` opened for reading, through a copy on local
+/// disk. rekordbox leaves the database in WAL mode, and SQLite creates the
+/// `-wal` and `-shm` sidecars beside any WAL-mode database it opens, even
+/// read-only: read in place, plugging a stick in would write two files onto
+/// it. The copy (with the stick's WAL, when it has one) goes with the
+/// connection: fields drop in order, the connection closes first.
+pub(crate) struct ReadOnlyDlp {
+    conn: rusqlite::Connection,
+    _scratch: Scratch,
+}
+
+impl std::ops::Deref for ReadOnlyDlp {
+    type Target = rusqlite::Connection;
+    fn deref(&self) -> &rusqlite::Connection {
+        &self.conn
+    }
+}
+
+/// A scratch database path removed, sidecars included, when dropped.
+struct Scratch(std::path::PathBuf);
+
+impl Drop for Scratch {
+    fn drop(&mut self) {
+        remove_scratch(&self.0);
+    }
+}
+
 /// Open an `exportLibrary.db` read-only with the Device Library Plus key.
-pub(crate) fn open_read_only(db_path: &Path) -> Result<rusqlite::Connection, ReadError> {
-    open(db_path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+pub(crate) fn open_read_only(db_path: &Path) -> Result<ReadOnlyDlp, ReadError> {
+    let scratch = Scratch(scratch_db_path("ordnung-dlp-read"));
+    scratch_copy(db_path, &scratch.0).map_err(ReadError::io(db_path))?;
+    let conn = open(&scratch.0, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+    Ok(ReadOnlyDlp {
+        conn,
+        _scratch: scratch,
+    })
 }
 
 /// What a `content` row says about which track it is, for checking the
@@ -548,6 +581,39 @@ pub(crate) fn scratch_db_path(prefix: &str) -> std::path::PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Reading a stick's library must not write to the stick: a WAL-mode
+    /// database (rekordbox's own mode) read in place grows `-wal` and `-shm`
+    /// sidecars on every open, even a read-only one.
+    #[test]
+    fn reading_a_wal_mode_library_leaves_no_sidecars_beside_it() {
+        let dir = std::env::temp_dir().join(format!("ordnung-dlp-read-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let db = dir.join("exportLibrary.db");
+        let t = crate::pdbw::PdbTables {
+            created_date: "2026-09-04".into(),
+            master_db_id: 7,
+            ..Default::default()
+        };
+        build_library(&db, &t, "STICK").unwrap();
+        open(&db, rusqlite::OpenFlags::default())
+            .unwrap()
+            .execute_batch("PRAGMA journal_mode = WAL")
+            .unwrap();
+        for suffix in ["-wal", "-shm"] {
+            let _ = std::fs::remove_file(crate::export::sibling(&db, suffix));
+        }
+        read_playlists(&db).unwrap();
+        content_identity(&db).unwrap();
+        let left: Vec<String> = std::fs::read_dir(&dir)
+            .unwrap()
+            .flatten()
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(left, vec!["exportLibrary.db".to_string()], "sidecars on the stick");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     /// The full production writer must persist the complete 22-table schema
     /// and its rows — a partially written exportLibrary.db is exactly what a
