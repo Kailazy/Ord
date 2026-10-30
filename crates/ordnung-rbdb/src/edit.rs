@@ -301,38 +301,8 @@ pub fn delete_stick_tracks(volume_root: &Path, rel_paths: &[String]) -> Result<u
     // Files last: a row that outlives its file is a missing track on the
     // player; a file that outlives its row is only a stray on the stick.
     let still_used: HashSet<u32> = export.tracks.values().map(|t| t.artwork_id).collect();
-    let on_stick = |p: &str| volume_root.join(p.trim_start_matches('/'));
     for t in &gone {
-        let _ = std::fs::remove_file(on_stick(&t.file_path));
-        if let Some(anlz) = &t.analyze_path {
-            let dat = on_stick(anlz);
-            for kind in ["DAT", "EXT", "2EX", "DAT.orig", "EXT.orig"] {
-                let _ = std::fs::remove_file(dat.with_extension(kind));
-            }
-            if let Some(d) = dat.parent() {
-                let _ = std::fs::remove_dir(d); // only an emptied directory goes
-            }
-        }
-        // Artwork is shared by every track of an album: it goes with the
-        // last of them, all four files (`aN`, `aN_m`, `bN`, `bN_m`).
-        if t.artwork_id != 0 && !still_used.contains(&t.artwork_id) {
-            if let Some(art) = t.artwork_path.as_deref().map(on_stick) {
-                let _ = std::fs::remove_file(&art);
-                let n = art
-                    .file_name()
-                    .and_then(|n| n.to_str())
-                    .and_then(|n| n.strip_prefix('a'))
-                    .and_then(|n| n.strip_suffix(".jpg"));
-                if let Some(n) = n {
-                    for name in [format!("a{n}_m.jpg"), format!("b{n}.jpg"), format!("b{n}_m.jpg")] {
-                        let _ = std::fs::remove_file(art.with_file_name(name));
-                    }
-                }
-                if let Some(d) = art.parent() {
-                    let _ = std::fs::remove_dir(d);
-                }
-            }
-        }
+        crate::export::remove_track_files(volume_root, t, &still_used);
     }
     Ok(gone.len())
 }

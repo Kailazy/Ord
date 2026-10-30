@@ -399,6 +399,39 @@ fn merge_adds_to_an_existing_export_without_clobbering_it() {
 }
 
 #[test]
+fn replace_sweeps_files_the_new_databases_no_longer_name() {
+    let root = temp_root("sweep");
+    let src = root.join("src");
+    let usb = root.join("usb");
+    std::fs::create_dir_all(&src).unwrap();
+    std::fs::create_dir_all(&usb).unwrap();
+    let a = audio_file(&src, "alpha.mp3", 20_000);
+    let b = audio_file(&src, "beta.mp3", 20_000);
+    let c = audio_file(&src, "gamma.mp3", 20_000);
+    let cancel = AtomicBool::new(false);
+    let replace = ExportOptions { mode: ExportMode::Replace, ..Default::default() };
+    let first = vec![track(10, &a, Format::Mp3, "Alpha", "AA"), track(11, &b, Format::Mp3, "Beta", "BB")];
+    export_usb_with(&usb, &first, &[], replace, &mut |_| {}, &cancel).unwrap();
+    let before = pdb::read_export(&usb.join("PIONEER/rekordbox/export.pdb")).unwrap();
+    let beta_anlz = before.tracks.values().find(|t| t.title == "Beta").unwrap().analyze_path.clone().unwrap();
+    let beta_dat = usb.join(beta_anlz.trim_start_matches('/'));
+    assert!(beta_dat.is_file());
+
+    // Replace with gamma and alpha: beta's audio and analysis go, nothing else.
+    let second = vec![track(12, &c, Format::Mp3, "Gamma", "CC"), track(10, &a, Format::Mp3, "Alpha", "AA")];
+    export_usb_with(&usb, &second, &[], replace, &mut |_| {}, &cancel).unwrap();
+    let mut names: Vec<String> = std::fs::read_dir(usb.join("Contents"))
+        .unwrap()
+        .flatten()
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .collect();
+    names.sort();
+    assert_eq!(names, ["alpha.mp3", "gamma.mp3"]);
+    assert!(!beta_dat.exists(), "beta's analysis files are swept");
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+#[test]
 fn export_refuses_empty_and_missing_dest() {
     let usb = temp_root("empty");
     let cancel = AtomicBool::new(false);

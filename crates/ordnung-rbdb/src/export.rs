@@ -27,7 +27,7 @@ use ordnung_core::model::{Cue, Format, Id, Playlist, Track};
 use unicode_normalization::UnicodeNormalization;
 
 use crate::anlz;
-use crate::pdb::RbPlaylist;
+use crate::pdb::{RbPlaylist, RbTrack};
 use crate::pdbw::{self, PdbTables, TrackRow};
 
 #[derive(Debug, thiserror::Error)]
@@ -157,6 +157,50 @@ fn keep_previous_set(rb_dir: &Path) {
         });
     if kept.is_err() {
         clear();
+    }
+}
+
+/// Remove a track's analysis files (`.DAT`, `.EXT`, `.2EX` and their
+/// first-edit `.orig` copies) and their directory once it is empty.
+pub(crate) fn remove_anlz_files(volume_root: &Path, analyze_path: &str) {
+    let dat = volume_root.join(analyze_path.trim_start_matches('/'));
+    for kind in ["DAT", "EXT", "2EX", "DAT.orig", "EXT.orig"] {
+        let _ = std::fs::remove_file(dat.with_extension(kind));
+    }
+    if let Some(d) = dat.parent() {
+        let _ = std::fs::remove_dir(d); // only an emptied directory goes
+    }
+}
+
+/// Remove the files of a track no database on the stick lists any more: its
+/// audio, its analysis files and, unless a surviving row shares it
+/// (`still_used` holds their artwork ids), its artwork, all four files
+/// (`aN`, `aN_m`, `bN`, `bN_m`). Best-effort, and always after the rows: a
+/// row that outlives its file is a missing track on the player, a file that
+/// outlives its row only a stray on the stick.
+pub(crate) fn remove_track_files(volume_root: &Path, t: &RbTrack, still_used: &HashSet<u32>) {
+    let on_stick = |p: &str| volume_root.join(p.trim_start_matches('/'));
+    let _ = std::fs::remove_file(on_stick(&t.file_path));
+    if let Some(anlz) = &t.analyze_path {
+        remove_anlz_files(volume_root, anlz);
+    }
+    if t.artwork_id != 0 && !still_used.contains(&t.artwork_id) {
+        if let Some(art) = t.artwork_path.as_deref().map(on_stick) {
+            let _ = std::fs::remove_file(&art);
+            let n = art
+                .file_name()
+                .and_then(|n| n.to_str())
+                .and_then(|n| n.strip_prefix('a'))
+                .and_then(|n| n.strip_suffix(".jpg"));
+            if let Some(n) = n {
+                for name in [format!("a{n}_m.jpg"), format!("b{n}.jpg"), format!("b{n}_m.jpg")] {
+                    let _ = std::fs::remove_file(art.with_file_name(name));
+                }
+            }
+            if let Some(d) = art.parent() {
+                let _ = std::fs::remove_dir(d);
+            }
+        }
     }
 }
 
@@ -798,6 +842,17 @@ fn export_impl(
     let mut report = ExportReport::default();
     let date = today();
 
+    // ---- what a Replace sweeps away ---------------------------------------
+    // The tracks the stick listed before: once the new databases have landed,
+    // the files of those they no longer name go too, and nothing else.
+    let swept: Vec<RbTrack> = if mode == ExportMode::Replace {
+        crate::pdb::read_export(&rb_dir.join("export.pdb"))
+            .map(|e| e.tracks.into_values().collect())
+            .unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+
     // ---- carry-over from an existing export (Merge only) -----------------
     // In Merge mode the tracks already on the stick are kept verbatim — same
     // id, filename and ANLZ files — and the new selection is layered on top.
@@ -1260,13 +1315,7 @@ fn export_impl(
                 .as_deref()
                 .filter(|o| !live.contains(o))
             {
-                let old_dat = dest_root.join(old.trim_start_matches('/'));
-                for kind in ["DAT", "EXT", "2EX"] {
-                    let _ = std::fs::remove_file(old_dat.with_extension(kind));
-                }
-                if let Some(d) = old_dat.parent() {
-                    let _ = std::fs::remove_dir(d); // only an emptied directory goes
-                }
+                remove_anlz_files(dest_root, old);
             }
             let dat = dest_root.join(tr.row.analyze_path.trim_start_matches('/'));
             let dir = dat.parent().unwrap_or(&anlz_root).to_path_buf();
@@ -1472,6 +1521,28 @@ fn export_impl(
     // persisted on FAT until the dir entry flushes, so a power loss right after
     // export could leave the directory pointing at the old files.
     sync_dir(&rb_dir);
+
+    // Replace: the files of tracks the old export listed and the new
+    // databases don't, and the old analysis files of a track that moved.
+    if !swept.is_empty() {
+        let live_paths: HashSet<String> = tables.tracks.iter().map(|r| path_key(&r.file_path)).collect();
+        let live_anlz: HashSet<&str> = tables.tracks.iter().map(|r| r.analyze_path.as_str()).collect();
+        let live_art: HashSet<u32> = tables.artwork.iter().map(|(id, _)| *id).collect();
+        for t in &swept {
+            if !live_paths.contains(&path_key(&t.file_path)) {
+                // Two tracks can share an analysis directory (its name is a
+                // hash of the audio path), so a dropped track's slot may now
+                // hold a live track's fresh files: those stay.
+                let mut gone = t.clone();
+                if gone.analyze_path.as_deref().is_some_and(|a| live_anlz.contains(a)) {
+                    gone.analyze_path = None;
+                }
+                remove_track_files(dest_root, &gone, &live_art);
+            } else if let Some(old) = t.analyze_path.as_deref().filter(|a| !live_anlz.contains(a)) {
+                remove_anlz_files(dest_root, old);
+            }
+        }
+    }
 
     progress(ExportProgress {
         stage: ExportStage::WritingDatabase,
