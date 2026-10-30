@@ -2469,6 +2469,9 @@ enum SidebarAction {
     EjectUsb(PathBuf),
     /// A volume's right-click menu: re-read the device's files.
     RescanUsb(PathBuf),
+    /// A rekordbox stick's right-click menu: put its export databases back
+    /// as they were before the last export (the `.prev` siblings).
+    RestoreUsb(PathBuf),
     /// A rekordbox stick's right-click menu: re-encode, in place, every
     /// file on it that CDJ-2000-era players can't play.
     ConvertUsb(PathBuf),

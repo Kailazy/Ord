@@ -121,6 +121,44 @@ pub(crate) fn sync_existing(path: &Path) -> std::io::Result<()> {
     std::fs::File::open(path)?.sync_all()
 }
 
+/// `path` with `suffix` appended to its file name (`export.pdb` →
+/// `export.pdb.orig`): the shape every backup beside a stick database takes.
+pub(crate) fn sibling(path: &Path, suffix: &str) -> PathBuf {
+    let mut s = path.as_os_str().to_owned();
+    s.push(suffix);
+    PathBuf::from(s)
+}
+
+/// The three databases an export places, in placement order: the pdb a
+/// player reads first lands last. [`crate::edit::restore_previous`] walks
+/// them the same way.
+pub(crate) const DB_NAMES: [&str; 3] = ["exportLibrary.db", "exportExt.pdb", "export.pdb"];
+
+/// Keep copies of the stick's databases as `.prev` siblings, fsynced,
+/// replacing the last set, for [`crate::edit::restore_previous`]. All or
+/// nothing: a copy that fails (a nearly full stick, right after the audio)
+/// takes every `.prev` with it, so a restore can never place a truncated
+/// pdb or an old pdb beside a new DLP. Best-effort like the first-edit
+/// `.orig`: the export goes on, it only leaves no way back.
+fn keep_previous_set(rb_dir: &Path) {
+    let prev = |name: &str| sibling(&rb_dir.join(name), ".prev");
+    let clear = || {
+        for name in DB_NAMES {
+            let _ = std::fs::remove_file(prev(name));
+        }
+    };
+    clear();
+    let kept = DB_NAMES
+        .iter()
+        .filter(|name| rb_dir.join(name).is_file())
+        .try_for_each(|name| {
+            std::fs::copy(rb_dir.join(name), prev(name)).and_then(|_| sync_existing(&prev(name)))
+        });
+    if kept.is_err() {
+        clear();
+    }
+}
+
 /// fsync a directory so a rename/create *into* it is durable. On FAT (and
 /// most filesystems) a file rename isn't persisted until the directory entry
 /// itself is flushed — without this a power loss just after export can leave
@@ -1280,6 +1318,10 @@ fn export_impl(
     // (temp + rename): an interrupted write leaves the previous complete file,
     // never a torn one.
     check(cancel)?;
+    // What the stick held before this export, kept as `.prev` siblings for
+    // "Restore previous library" (`edit::restore_previous`): the one way
+    // back when a player or rekordbox rejects what this export wrote.
+    keep_previous_set(&rb_dir);
     let device_name = dest_root
         .file_name()
         .map(|s| s.to_string_lossy().into_owned())
@@ -1353,6 +1395,28 @@ mod tests {
         assert!(matches!(err, ExportError::ExistingUnreadable(_)), "{err}");
         // The stick is left as it was, garbage included, for the user to look at.
         assert_eq!(std::fs::read(rb.join("export.pdb")).unwrap(), b"not a database");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn previous_set_is_all_or_nothing() {
+        let dir = std::env::temp_dir().join(format!("ordnung-prev-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("exportLibrary.db"), b"dlp").unwrap();
+        std::fs::write(dir.join("export.pdb"), b"pdb").unwrap();
+        std::fs::write(dir.join("exportExt.pdb.prev"), b"stale").unwrap();
+        keep_previous_set(&dir);
+        assert_eq!(std::fs::read(dir.join("export.pdb.prev")).unwrap(), b"pdb");
+        assert_eq!(std::fs::read(dir.join("exportLibrary.db.prev")).unwrap(), b"dlp");
+        // A stale copy of a database the stick no longer has is dropped.
+        assert!(!dir.join("exportExt.pdb.prev").exists());
+        // A copy that fails (a directory squatting on the pdb's name) takes
+        // the whole set with it, so no restore can mix generations.
+        std::fs::remove_file(dir.join("export.pdb.prev")).unwrap();
+        std::fs::create_dir(dir.join("export.pdb.prev")).unwrap();
+        keep_previous_set(&dir);
+        assert!(!dir.join("exportLibrary.db.prev").exists());
         let _ = std::fs::remove_dir_all(&dir);
     }
 

@@ -717,9 +717,33 @@ pub fn original_stick_beatgrid(dat_path: &Path) -> Option<Vec<Beat>> {
 }
 
 fn orig_path(path: &Path) -> std::path::PathBuf {
-    let mut orig = path.as_os_str().to_owned();
-    orig.push(".orig");
-    std::path::PathBuf::from(orig)
+    crate::export::sibling(path, ".orig")
+}
+
+/// Put the export databases back as they were before the last export, from
+/// the `.prev` siblings the export keeps: the way back when a player or
+/// rekordbox rejects what that export wrote. Files the export added stay on
+/// the stick; a row for a file deleted since comes back as a missing track.
+/// Placed in the export's order, pdb last. Returns how many were restored.
+pub fn restore_previous(volume_root: &Path) -> Result<usize, ReadError> {
+    let dir = rb_dir(volume_root);
+    let mut restored = 0;
+    for name in crate::export::DB_NAMES {
+        let live = dir.join(name);
+        let prev = crate::export::sibling(&live, ".prev");
+        if !prev.is_file() {
+            continue;
+        }
+        crate::dlp::place_library(&prev, &live).map_err(ReadError::io(&live))?;
+        restored += 1;
+    }
+    crate::export::sync_dir(&dir);
+    Ok(restored)
+}
+
+/// Whether the stick at `volume_root` holds a previous library to go back to.
+pub fn has_previous(volume_root: &Path) -> bool {
+    crate::export::sibling(&rb_dir(volume_root).join("export.pdb"), ".prev").is_file()
 }
 
 /// Keep the pristine `.DAT` and `.EXT` beside themselves before the first
@@ -1369,6 +1393,28 @@ mod tests {
             .flat_map(|p| page_rows(data, pdbw::PAGE, p, TYPE_SUMMARY))
             .find(|&row| u16_at(data, row) == Some(0x0280))
             .and_then(|row| u32_at(data, row + 4))
+    }
+
+    #[test]
+    fn restore_previous_puts_back_every_kept_database_and_only_those() {
+        let dir = std::env::temp_dir().join(format!("ordnung-restore-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let rb = rb_dir(&dir);
+        std::fs::create_dir_all(&rb).unwrap();
+        std::fs::write(rb.join("export.pdb"), b"new pdb").unwrap();
+        std::fs::write(rb.join("export.pdb.prev"), b"old pdb").unwrap();
+        std::fs::write(rb.join("exportLibrary.db.prev"), b"old dlp").unwrap();
+        std::fs::write(rb.join("exportLibrary.db-wal"), b"stale").unwrap();
+        std::fs::write(rb.join("exportExt.pdb"), b"ext stays").unwrap();
+        assert!(has_previous(&dir));
+        assert_eq!(restore_previous(&dir).unwrap(), 2);
+        assert_eq!(std::fs::read(rb.join("export.pdb")).unwrap(), b"old pdb");
+        assert_eq!(std::fs::read(rb.join("exportLibrary.db")).unwrap(), b"old dlp");
+        assert!(!rb.join("exportLibrary.db-wal").exists());
+        assert_eq!(std::fs::read(rb.join("exportExt.pdb")).unwrap(), b"ext stays");
+        // The copies stay: restoring is repeatable.
+        assert!(has_previous(&dir));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

@@ -1424,6 +1424,23 @@ impl App {
         false
     }
 
+    /// Put a stick's export databases back as they were before the last
+    /// export (see `edit::restore_previous`), then re-read the device.
+    pub(crate) fn usb_restore_previous(&mut self, vol: PathBuf) {
+        if self.stick_write_blocked(&vol) {
+            return;
+        }
+        match ordnung_rbdb::edit::restore_previous(&vol) {
+            Ok(_) => {
+                self.status = "Restored the device's previous library.".into();
+                if self.usb_loaded_for.as_deref() == Some(vol.as_path()) {
+                    self.usb_loaded_for = None;
+                }
+            }
+            Err(e) => self.fail(format!("Couldn't restore the device's previous library: {e}")),
+        }
+    }
+
     /// Apply one playlist edit to the stick backing the current USB view,
     /// writing it straight to the device's export databases, and mirror the
     /// result into the sidebar state. Returns the created id for a `Create`.
@@ -4134,6 +4151,9 @@ impl App {
                 if self.usb_loaded_for.as_deref() == Some(vol.as_path()) {
                     self.usb_loaded_for = None;
                 }
+            }
+            Some(SidebarAction::RestoreUsb(vol)) => {
+                self.usb_restore_previous(vol);
             }
             Some(SidebarAction::ConvertUsb(vol)) => {
                 self.usb_convert_for_players(vol, None);

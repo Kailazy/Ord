@@ -1481,6 +1481,21 @@ pub(crate) fn usb_volume_menu(
             *action = Some(SidebarAction::UpdateUsb(v.path.clone()));
             ui.close_menu();
         }
+        // The databases as they were before the last export, for a stick a
+        // player or rekordbox has since rejected (see `edit::restore_previous`).
+        if v.is_rekordbox_export
+            && ordnung_rbdb::edit::has_previous(&v.path)
+            && ui
+                .button("Restore previous library")
+                .on_hover_note(
+                    "Put the device library back as it was before the last export; \
+                     files added since stay on the device",
+                )
+                .clicked()
+        {
+            *action = Some(SidebarAction::RestoreUsb(v.path.clone()));
+            ui.close_menu();
+        }
         // The stick's FLAC and hi-res files re-encoded in place for players
         // that can't take them (see `App::usb_convert_for_players`).
         if v.is_rekordbox_export

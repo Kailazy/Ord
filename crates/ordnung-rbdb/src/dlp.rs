@@ -236,9 +236,7 @@ pub(crate) fn write_library(
 /// leaves the previous complete file rather than nothing at all.
 pub(crate) fn place_library(tmp: &Path, db_path: &Path) -> std::io::Result<()> {
     for suffix in ["-wal", "-shm"] {
-        let mut p = db_path.as_os_str().to_owned();
-        p.push(suffix);
-        let _ = std::fs::remove_file(p);
+        let _ = std::fs::remove_file(crate::export::sibling(db_path, suffix));
     }
     crate::export::place_atomic(tmp, db_path)
 }
