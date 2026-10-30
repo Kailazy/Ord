@@ -1136,6 +1136,35 @@ fn tight_caption(ui: &mut egui::Ui, caption: &str, action: impl FnOnce(&mut egui
     ui.spacing_mut().item_spacing.y = gap;
 }
 
+/// The caption of the list scrolled under the top edge, pinned there: a
+/// list's caption stays over its rows, the way a settings list's section
+/// captions do, until the next caption reaches it and pushes it out, so
+/// the "+" in view always makes a row of the list under it. `top` is the
+/// scrolled panel's top edge, `heads` the captions' in-place rects in list
+/// order, and `draw` lays caption `i` out a second time, pinned, so its
+/// controls answer there too. Returns the pinned rect while one is drawn.
+pub(crate) fn pin_header(
+    ui: &mut egui::Ui,
+    top: f32,
+    heads: &[egui::Rect],
+    draw: impl FnOnce(&mut egui::Ui, usize),
+) -> Option<egui::Rect> {
+    let i = heads.iter().rposition(|h| h.top() < top)?;
+    let mut y = top;
+    if let Some(next) = heads.get(i + 1) {
+        y = y.min(next.top() - heads[i].height());
+    }
+    let rect = egui::Rect::from_min_size(egui::pos2(heads[i].left(), y), heads[i].size());
+    // Over the rows it covers: the fill hides them and a blocker takes
+    // their clicks (the last widget registered at a point wins egui's hit
+    // test), then the caption draws on top of both.
+    ui.interact(rect, ui.id().with(("pinned_block", i)), egui::Sense::click());
+    ui.painter().rect_filled(rect, 0.0, crate::ui::sidebar::fill());
+    let mut pinned = ui.new_child(egui::UiBuilder::new().id_salt(("pinned", i)).max_rect(rect));
+    draw(&mut pinned, i);
+    Some(rect)
+}
+
 /// The sidebar's source tabs: the local catalog ("Library") and each mounted
 /// removable volume, drawn as a slim strip of abutting browser-style tabs above
 /// the library group — the same shape as the vinyl view's Collection/Wantlist
@@ -1928,4 +1957,60 @@ pub(crate) fn rail_tile_sized(
         )
     })
     .inner
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A caption scrolled under the panel's top is pinned there, and the
+    /// next caption pushes it out as it arrives.
+    #[test]
+    fn pinned_caption_holds_the_top_until_the_next_pushes_it_out() {
+        let ctx = egui::Context::default();
+        crate::ui::theme::install(&ctx);
+        // Two captioned lists in a 200 pt panel, scrolled by `offset`:
+        // the panel's top edge, which caption pinned and where, and the
+        // captions' in-place rects.
+        let shoot = |offset: f32| {
+            let mut out = (0.0, None, Vec::new());
+            let input = egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(300.0, 200.0),
+                )),
+                ..Default::default()
+            };
+            let _ = ctx.run(input, |ctx| {
+                egui::CentralPanel::default()
+                    .frame(egui::Frame::none())
+                    .show(ctx, |ui| {
+                        let top = ui.max_rect().top();
+                        egui::ScrollArea::vertical()
+                            .vertical_scroll_offset(offset)
+                            .show(ui, |ui| {
+                                let mut heads = Vec::new();
+                                for cap in ["Playlists", "Tags"] {
+                                    heads.push(ui.scope(|ui| list_header(ui, cap, "")).response.rect);
+                                    for _ in 0..10 {
+                                        ui.allocate_exact_size(egui::vec2(100.0, 30.0), egui::Sense::hover());
+                                    }
+                                }
+                                let mut which = None;
+                                let rect = pin_header(ui, top, &heads, |_, i| which = Some(i));
+                                out = (top, rect.map(|r| (which.unwrap(), r.top())), heads);
+                            });
+                    });
+            });
+            out
+        };
+        let (top, pinned, heads) = shoot(0.0);
+        assert_eq!(pinned, None, "unscrolled, the first caption is in place");
+        let h = heads[0].height();
+        let tags_at = heads[1].top() - top;
+        assert_eq!(shoot(h).1, Some((0, top)), "into the playlists, PLAYLISTS pins");
+        let (_, pushed, _) = shoot(tags_at - h / 2.0);
+        assert_eq!(pushed, Some((0, top - h / 2.0)), "TAGS arriving pushes it up");
+        assert_eq!(shoot(tags_at + h).1, Some((1, top)), "into the tags, TAGS pins");
+    }
 }

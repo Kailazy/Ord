@@ -3404,9 +3404,10 @@ impl App {
                 let stick_lists = self.usb_playlists.clone();
 
                 // The digital-library group: the "Library" / "New" tile pair
-                // and the PLAYLISTS header (the tree itself scrolls in the middle
-                // panel below). Drawn wherever `nav_primary` puts it, so the same
-                // code serves both the top slot and the vinyl-first layout.
+                // (the PLAYLISTS caption and the tree itself scroll in the
+                // middle panel below; the rail's "+" tile stays here). Drawn
+                // wherever `nav_primary` puts it, so the same code serves both
+                // the top slot and the vinyl-first layout.
                 let draw_digital_group =
                     |ui: &mut egui::Ui,
                      view: &mut LibraryView,
@@ -3548,19 +3549,6 @@ impl App {
                                 *sidebar_action = Some(SidebarAction::NewPlaylist(None));
                             }
                             ui.add_space(6.0);
-                        } else {
-                            let h = crate::sidebar::list_header_folding(
-                                ui,
-                                "Playlists",
-                                "New playlist",
-                                open("playlists"),
-                            );
-                            if h.add {
-                                *sidebar_action = Some(SidebarAction::NewPlaylist(None));
-                            }
-                            if h.toggle {
-                                *sidebar_action = Some(SidebarAction::ToggleSection("playlists"));
-                            }
                         }
                     };
 
@@ -3849,6 +3837,9 @@ impl App {
                 egui::CentralPanel::default()
                     .frame(egui::Frame::none())
                     .show_inside(ui, |ui| {
+                        // The panel's top edge: where a list's caption pins
+                        // once its rows have scrolled under it.
+                        let top = ui.max_rect().top();
                         egui::ScrollArea::vertical()
                             .auto_shrink([false, false])
                             .show(ui, |ui| {
@@ -3874,6 +3865,38 @@ impl App {
                                     let all = self.playlists.clone();
                                     let volumes = self.usb_volumes.clone();
                                     let mut drop_rects = Vec::new();
+                                    // The PLAYLISTS and TAGS captions, each
+                                    // laid out in place and, once its rows
+                                    // have scrolled under the panel's top,
+                                    // once more pinned there (see
+                                    // `sidebar::pin_header`). One closure
+                                    // draws both, so a pinned "+" does what
+                                    // the one in place does. The rail has no
+                                    // captions: its "+" tiles stay put.
+                                    let head = |ui: &mut egui::Ui, i: usize, action: &mut Option<SidebarAction>| {
+                                        let (caption, tip, key) = match i {
+                                            0 => ("Playlists", "New playlist", "playlists"),
+                                            _ => ("Tags", "New tag: a word to mark songs with, like dub or sunrise", "tags"),
+                                        };
+                                        let h = crate::sidebar::list_header_folding(ui, caption, tip, open(key));
+                                        if h.add {
+                                            *action = Some(match i {
+                                                0 => SidebarAction::NewPlaylist(None),
+                                                _ => SidebarAction::NewCrateSet(CrateKind::Tag),
+                                            });
+                                        }
+                                        if h.toggle {
+                                            *action = Some(SidebarAction::ToggleSection(key));
+                                        }
+                                    };
+                                    let mut heads = Vec::new();
+                                    if !density.icons_only() {
+                                        // The gap the panel above drops after
+                                        // its last tile: a panel keeps no
+                                        // trailing spacing.
+                                        ui.add_space(ui.spacing().item_spacing.y);
+                                        heads.push(ui.scope(|ui| head(ui, 0, &mut sidebar_action)).response.rect);
+                                    }
                                     if open("playlists") {
                                         draw_playlist_nodes(
                                             ui,
@@ -3887,7 +3910,6 @@ impl App {
                                             &mut drop_rects,
                                         );
                                     }
-                                    self.playlist_screen_rects = drop_rects;
                                     // The tags, under the playlists: the
                                     // words the user marks songs with, one
                                     // row each in the playlist row's shape.
@@ -3905,18 +3927,7 @@ impl App {
                                         }
                                         ui.add_space(6.0);
                                     } else {
-                                        let h = crate::sidebar::list_header_folding(
-                                            ui,
-                                            "Tags",
-                                            "New tag: a word to mark songs with, like dub or sunrise",
-                                            open("tags"),
-                                        );
-                                        if h.add {
-                                            sidebar_action = Some(SidebarAction::NewCrateSet(CrateKind::Tag));
-                                        }
-                                        if h.toggle {
-                                            sidebar_action = Some(SidebarAction::ToggleSection("tags"));
-                                        }
+                                        heads.push(ui.scope(|ui| head(ui, 1, &mut sidebar_action)).response.rect);
                                     }
                                     if open("tags") {
                                         let crate_sets = self.crate_sets.clone();
@@ -3930,6 +3941,14 @@ impl App {
                                             &mut sidebar_action,
                                         );
                                     }
+                                    if let Some(pinned) = crate::sidebar::pin_header(ui, top, &heads, |ui, i| {
+                                        head(ui, i, &mut sidebar_action)
+                                    }) {
+                                        // A Finder drop on the pinned caption
+                                        // is not a drop on the row under it.
+                                        drop_rects.retain(|(_, r)| !r.intersects(pinned));
+                                    }
+                                    self.playlist_screen_rects = drop_rects;
                                 }
                             });
                     });
