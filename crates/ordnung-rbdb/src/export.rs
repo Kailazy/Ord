@@ -241,7 +241,7 @@ fn estimated_bytes_needed(sources: &[(u64, String)], dest_root: &Path) -> u64 {
 
 /// Free bytes on the filesystem holding `path`. `None` when it can't be
 /// determined (the precheck then skips rather than blocking a valid export).
-fn free_space(path: &Path) -> Option<u64> {
+pub(crate) fn free_space(path: &Path) -> Option<u64> {
     ordnung_core::usb::volume_space(path).map(|(free, _)| free)
 }
 
@@ -1481,7 +1481,12 @@ fn export_impl(
             .collect(),
         playlists: playlist_rows,
         playlist_entries: entries,
-        created_date: date,
+        // A merge keeps the stick's own creation date, as its DLP has it:
+        // the two summary rows must say the same.
+        created_date: (mode == ExportMode::Merge)
+            .then(|| crate::dlp::created_date(&rb_dir.join("exportLibrary.db")))
+            .flatten()
+            .unwrap_or(date),
         master_db_id,
     };
 

@@ -579,6 +579,20 @@ pub fn convert_stick_track(
         ));
     }
     let _ = std::fs::remove_file(&dest);
+    // A 16-bit stereo AIFF is two to four times its FLAC; a stick that
+    // cannot hold it is refused before the encode, not found out mid-way
+    // with the databases next in line.
+    let out_rate = u64::from(rate.unwrap_or(track.sample_rate_hz).max(44_100));
+    let need = u64::from(track.duration_s) * out_rate * 4 + (1 << 20);
+    if let Some(free) = crate::export::free_space(volume_root) {
+        if free < need {
+            return Err(convert_err(format!(
+                "not enough space on the device: the converted file needs about {} MB, {} MB free",
+                need >> 20,
+                free >> 20
+            )));
+        }
+    }
     // The source's own tags and cover ride along: ffmpeg carries only some
     // of them into an AIFF, and while the player reads the row, the file
     // should stay a complete file.

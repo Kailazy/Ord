@@ -120,6 +120,16 @@ pub(crate) fn content_identity(db_path: &Path) -> Result<BTreeMap<u32, ContentId
     Ok(rows.flatten().collect())
 }
 
+/// The stick's creation date as its `property` row has it (`YYYY-MM-DD`),
+/// for the pdb summary row of a merge to repeat; `None` without a readable
+/// library.
+pub(crate) fn created_date(db_path: &Path) -> Option<String> {
+    let conn = open_read_only(db_path).ok()?;
+    conn.query_row("SELECT createdDate FROM property", [], |r| r.get::<_, String>(0))
+        .ok()
+        .filter(|d| !d.is_empty())
+}
+
 /// Open `db_path` (an `exportLibrary.db`) read-only and pull the playlist
 /// tree and memberships out of it.
 pub fn read_playlists(db_path: &Path) -> Result<DlpPlaylists, ReadError> {
