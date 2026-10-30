@@ -78,14 +78,15 @@ pub fn edit_stick_playlists(
 
     let dir = rb_dir(volume_root);
     let pdb_path = dir.join("export.pdb");
-    backup_once(&pdb_path);
-    rewrite_pdb_playlist_tables(&pdb_path, &export.playlists, &export.entries)?;
-
+    let mut data = std::fs::read(&pdb_path).map_err(ReadError::io(&pdb_path))?;
+    relink_playlist_tables(&mut data, &export.playlists, &export.entries)?;
     let dlp_path = dir.join("exportLibrary.db");
     if dlp_path.is_file() {
-        backup_once(&dlp_path);
         sync_dlp_playlists(&dlp_path, &export)?;
     }
+    // The pdb last, as the export places it: a player reads it first and
+    // treats it as the stick's manifest.
+    write_pdb(&pdb_path, &data)?;
     Ok(EditOutcome { new_id, export })
 }
 
@@ -97,6 +98,15 @@ fn backup_once(path: &Path) {
     if !orig.exists() {
         let _ = std::fs::copy(path, &orig);
     }
+}
+
+/// Every `export.pdb` rewrite lands through here: the pristine copy is kept
+/// on the first edit, then the new bytes replace the file atomically, so a
+/// stick yanked mid-write holds the old database or the new one, never a
+/// torn page. Callers write the Device Library Plus first and this last.
+fn write_pdb(pdb_path: &Path, data: &[u8]) -> Result<(), ReadError> {
+    backup_once(pdb_path);
+    crate::export::write_atomic(pdb_path, data).map_err(ReadError::io(pdb_path))
 }
 
 /// Mutate the in-memory export per `op`. Returns the created id for `Create`.
@@ -230,7 +240,6 @@ pub fn delete_stick_tracks(volume_root: &Path, rel_paths: &[String]) -> Result<u
 
     let dlp_path = dir.join("exportLibrary.db");
     if dlp_path.is_file() {
-        backup_once(&dlp_path);
         let keys: Vec<String> = gone
             .iter()
             .map(|t| t.file_path.trim_start_matches('/').to_lowercase())
@@ -264,8 +273,7 @@ pub fn delete_stick_tracks(volume_root: &Path, rel_paths: &[String]) -> Result<u
             mirror_playlists(conn, &export)
         })?;
     }
-    backup_once(&pdb_path);
-    crate::export::write_atomic(&pdb_path, &data).map_err(ReadError::io(&pdb_path))?;
+    write_pdb(&pdb_path, &data)?;
 
     // My Tag links in exportExt.pdb — type 4 rows, `u32 0, u32 track id,
     // u32 tag id`. A stick without the file, or one whose tag database
@@ -469,8 +477,7 @@ fn bump_track_counter(
 ) -> Result<(), ReadError> {
     let dir = rb_dir(volume_root);
     let pdb_path = dir.join("export.pdb");
-    backup_once(&pdb_path);
-    let file_path = rewrite_track_row(&pdb_path, track_id, |row| {
+    let (data, file_path) = edit_track_row(&pdb_path, track_id, |row| {
         if let Some(centi) = centi_bpm {
             row.tempo_centi_bpm = centi;
         }
@@ -479,7 +486,6 @@ fn bump_track_counter(
     })?;
     let dlp_path = dir.join("exportLibrary.db");
     if dlp_path.is_file() {
-        backup_once(&dlp_path);
         with_local_dlp(&dlp_path, |conn| {
             let key = file_path.trim_start_matches('/').to_lowercase();
             let mut stmt = conn.prepare("SELECT content_id, path FROM content")?;
@@ -507,7 +513,7 @@ fn bump_track_counter(
             Ok(())
         })?;
     }
-    Ok(())
+    write_pdb(&pdb_path, &data)
 }
 
 /// Write a track's beatgrid onto the stick it lives on: the ANLZ `PQTZ`
@@ -644,9 +650,8 @@ pub fn relink_converted_track(
         .unwrap_or(props.sample_rate_hz * u32::from(depth) * 2 / 1000);
     let dir = rb_dir(volume_root);
     let pdb_path = dir.join("export.pdb");
-    backup_once(&pdb_path);
     let mut anlz = String::new();
-    let old_path = rewrite_track_row(&pdb_path, track_id, |row| {
+    let (data, old_path) = edit_track_row(&pdb_path, track_id, |row| {
         anlz = row.strings[14].clone();
         row.header[0x08..0x0C].copy_from_slice(&props.sample_rate_hz.to_le_bytes());
         let size = file_size.min(u32::MAX as u64) as u32;
@@ -661,7 +666,6 @@ pub fn relink_converted_track(
     })?;
     let dlp_path = dir.join("exportLibrary.db");
     if dlp_path.is_file() {
-        backup_once(&dlp_path);
         with_local_dlp(&dlp_path, |conn| {
             let key = old_path.trim_start_matches('/').to_lowercase();
             let mut stmt = conn.prepare("SELECT content_id, path FROM content")?;
@@ -700,7 +704,7 @@ pub fn relink_converted_track(
             crate::anlz::write_path(&dat, &new_path).map_err(ReadError::io(&dat))?;
         }
     }
-    Ok(())
+    write_pdb(&pdb_path, &data)
 }
 
 /// The beatgrid a track had before Ordnung first edited it on this stick —
@@ -801,20 +805,20 @@ fn page_slots(data: &[u8], page_off: usize) -> Vec<(bool, usize)> {
     out
 }
 
-/// Rewrite one track row of the DeviceSQL database in place: decode it,
-/// let `edit` change it, re-encode it and rebuild just its page (every
-/// other page of the file is untouched, byte for byte). The page keeps its
-/// header words (index, chain link, transaction id, slot count, flags,
-/// batch words) and its presence bitmasks — including deleted slots — and
-/// only lays its heap and offset words out afresh. Refuses a page the grown
-/// row no longer fits, leaving the file as it was. Returns the row's file
-/// path as it was before the edit (the key the DLP shares). Atomic (temp
-/// file + rename).
-fn rewrite_track_row(
+/// Re-encode one track row of the DeviceSQL database: decode it, let `edit`
+/// change it, and rebuild just its page in a copy of the file (every other
+/// page is untouched, byte for byte). The page keeps its header words
+/// (index, chain link, transaction id, slot count, flags, batch words) and
+/// its presence bitmasks — including deleted slots — and only lays its heap
+/// and offset words out afresh. Refuses a page the grown row no longer fits.
+/// Returns the new file bytes, for [`write_pdb`] once the Device Library
+/// Plus has followed, and the row's file path as it was before the edit
+/// (the key the DLP shares).
+fn edit_track_row(
     pdb_path: &Path,
     track_id: u32,
     edit: impl FnOnce(&mut TrackRowEdit),
-) -> Result<String, ReadError> {
+) -> Result<(Vec<u8>, String), ReadError> {
     use crate::pdb::{table_dir, table_pages, u32_at, PAGE_HEADER, TYPE_TRACKS};
     let mut data = std::fs::read(pdb_path).map_err(ReadError::io(pdb_path))?;
     let tables = table_dir(&data)?;
@@ -889,17 +893,18 @@ fn rewrite_track_row(
         }
     }
     data[page_off..page_off + page_size].copy_from_slice(&page);
-    crate::export::write_atomic(pdb_path, &data).map_err(ReadError::io(pdb_path))?;
-    Ok(file_path)
+    Ok((data, file_path))
 }
 
 /// Run `f` against a local copy of the stick's Device Library Plus database
-/// and copy the result back whole — SQLite cannot write in place on macOS's
-/// msdos (FAT32) driver (see [`crate::dlp::write_library`]).
+/// and place the result back whole — SQLite cannot write in place on macOS's
+/// msdos (FAT32) driver (see [`crate::dlp::write_library`]). Every DLP edit
+/// lands through here; the pristine copy is kept on the first one.
 fn with_local_dlp(
     db_path: &Path,
     f: impl FnOnce(&rusqlite::Connection) -> rusqlite::Result<()>,
 ) -> Result<(), ReadError> {
+    backup_once(db_path);
     let err_io = |e: std::io::Error| ReadError::Dlp(e.to_string());
     let tmp = crate::dlp::scratch_db_path("ordnung-dlp-edit");
     let _ = std::fs::remove_file(&tmp);
@@ -912,8 +917,7 @@ fn with_local_dlp(
         Ok(())
     })();
     if result.is_ok() {
-        std::fs::copy(&tmp, db_path).map_err(err_io)?;
-        crate::export::sync_existing(db_path).map_err(err_io)?;
+        crate::dlp::place_library(&tmp, db_path).map_err(err_io)?;
     }
     let _ = std::fs::remove_file(&tmp);
     result
@@ -924,27 +928,12 @@ fn with_local_dlp(
 // ---------------------------------------------------------------------------
 
 
-/// Rewrite exactly the PlaylistTree and PlaylistEntries tables of the
-/// DeviceSQL database at `pdb_path`, leaving every other byte of every other
-/// table untouched. The new row set may need more pages than the old one, in
-/// which case fresh pages are appended at the end of the file; pages freed by
-/// shrinkage are blanked so no reader can pick up stale rows. The write is
-/// atomic (temp file + rename).
-fn rewrite_pdb_playlist_tables(
-    pdb_path: &Path,
-    playlists: &[RbPlaylist],
-    entries: &HashMap<u32, Vec<u32>>,
-) -> Result<(), ReadError> {
-    let mut data = std::fs::read(pdb_path).map_err(ReadError::io(pdb_path))?;
-    relink_playlist_tables(&mut data, playlists, entries)?;
-    // Atomic replace: a yanked stick mid-write leaves either the old database
-    // or the new one, never a torn page.
-    crate::export::write_atomic(pdb_path, &data).map_err(ReadError::io(pdb_path))
-}
-
-/// The in-memory half of [`rewrite_pdb_playlist_tables`]: `data` is the
-/// whole database, and comes back with its playlist tables replaced and its
-/// header bumped, ready to write.
+/// Replace exactly the PlaylistTree and PlaylistEntries tables of the
+/// DeviceSQL database in `data` (the whole file), leaving every other byte
+/// of every other table untouched. The new row set may need more pages than
+/// the old one, in which case fresh pages are appended at the end; pages
+/// freed by shrinkage are blanked so no reader can pick up stale rows. The
+/// header comes back bumped, ready for [`write_pdb`].
 fn relink_playlist_tables(
     data: &mut Vec<u8>,
     playlists: &[RbPlaylist],
