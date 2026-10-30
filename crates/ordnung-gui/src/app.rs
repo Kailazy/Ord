@@ -3601,6 +3601,13 @@ impl App {
                                 *sidebar_action = Some(SidebarAction::NewPlaylist(None));
                             }
                             ui.add_space(6.0);
+                        } else {
+                            // A panel drops its trailing spacing: a zero-height
+                            // allocation keeps the gap under the row, so the
+                            // PLAYLISTS caption pinned at this edge in the panel
+                            // below keeps its air and the caption it pushes out
+                            // never slides under "Liked".
+                            ui.allocate_space(egui::Vec2::ZERO);
                         }
                     };
 
@@ -3943,10 +3950,6 @@ impl App {
                                     };
                                     let mut heads = Vec::new();
                                     if !density.icons_only() {
-                                        // The gap the panel above drops after
-                                        // its last tile: a panel keeps no
-                                        // trailing spacing.
-                                        ui.add_space(ui.spacing().item_spacing.y);
                                         heads.push(ui.scope(|ui| head(ui, 0, &mut sidebar_action)).response.rect);
                                     }
                                     if open("playlists") {
