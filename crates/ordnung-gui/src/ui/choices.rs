@@ -109,9 +109,13 @@ pub fn choices(ui: &mut egui::Ui, choices: &[Choice]) -> Option<usize> {
     // Not drawn last pass: the dialog is opening. (A frame may run two
     // passes, so the same pass is not a gap.)
     let fresh = prev.as_ref().map_or(true, |s| s.pass + 1 < pass);
+    // The focus opens on the action, so Enter confirms, unless the action
+    // is a danger (a delete, a replace): that one takes a click or a
+    // deliberate Tab, and the row opens on Cancel.
     let default = choices
         .iter()
-        .position(|c| !c.cancel && c.enabled)
+        .position(|c| !c.cancel && c.enabled && c.look != Look::Danger)
+        .or_else(|| choices.iter().position(|c| c.cancel && c.enabled))
         .unwrap_or(0);
     let mut focused = if fresh {
         default
@@ -271,7 +275,7 @@ mod tests {
                     ui,
                     &[
                         Choice::cancel("Cancel"),
-                        Choice::danger("Delete"),
+                        Choice::primary("Save"),
                         Choice::plain("Later").enabled(false),
                     ],
                 );
@@ -288,20 +292,47 @@ mod tests {
         assert_eq!(pass(&ctx, vec![key(egui::Key::Enter, false)]), Some(1));
     }
 
+    /// A danger action (a delete, a replace) never fires on the key that
+    /// confirms an ordinary dialog: the row opens on Cancel, and only a Tab
+    /// onto the danger button arms Enter.
+    #[test]
+    fn a_danger_dialog_opens_on_cancel() {
+        let ctx = egui::Context::default();
+        let run = |events: Vec<egui::Event>| {
+            let input = egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(800.0, 600.0))),
+                events,
+                ..Default::default()
+            };
+            let mut answer = None;
+            let _ = ctx.run(input, |ctx| {
+                Window::new("W").show(ctx, |ui| {
+                    answer = choices(ui, &[Choice::cancel("Cancel"), Choice::danger("Delete")]);
+                });
+                super::super::escape::end_pass(ctx);
+            });
+            answer
+        };
+        assert_eq!(run(vec![]), None);
+        assert_eq!(run(vec![key(egui::Key::Enter, false)]), Some(0), "Enter on open cancels");
+        assert_eq!(run(vec![key(egui::Key::Tab, false)]), None);
+        assert_eq!(run(vec![key(egui::Key::Enter, false)]), Some(1), "Tab onto Delete, then Enter");
+    }
+
     #[test]
     fn tab_and_arrows_walk_the_row_and_skip_the_greyed_out() {
         let ctx = egui::Context::default();
         pass(&ctx, vec![]);
-        // Tab from Delete wraps past the disabled Later to Cancel.
+        // Tab from Save wraps past the disabled Later to Cancel.
         assert_eq!(pass(&ctx, vec![key(egui::Key::Tab, false)]), None);
         assert_eq!(pass(&ctx, vec![key(egui::Key::Enter, false)]), Some(0));
-        // Reopen: back on Delete; left goes to Cancel, right returns.
+        // Reopen: back on Save; left goes to Cancel, right returns.
         pass(&ctx, vec![]);
         pass(&ctx, vec![]);
         pass(&ctx, vec![key(egui::Key::ArrowLeft, false)]);
         pass(&ctx, vec![key(egui::Key::ArrowRight, false)]);
         assert_eq!(pass(&ctx, vec![key(egui::Key::Space, false)]), Some(1));
-        // Shift-Tab from Delete goes back to Cancel.
+        // Shift-Tab from Save goes back to Cancel.
         pass(&ctx, vec![]);
         pass(&ctx, vec![]);
         pass(&ctx, vec![key(egui::Key::Tab, true)]);
