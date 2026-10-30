@@ -1150,13 +1150,13 @@ pub(crate) fn source_tabs(
                tip: &str,
                ejectable: bool|
      -> (egui::Response, bool) {
-        let text_font = if active {
-            font::strong(font::callout().size)
-        } else {
-            font::callout()
-        };
+        // Measured and sized in bold whether or not the tab is active, the
+        // way the vinyl tabs are: bold runs a touch wider, and a tab that
+        // grew on activation shifted its neighbours every switch.
+        let bold = font::strong(font::callout().size);
+        let text_font = if active { bold.clone() } else { font::callout() };
         let eject_w = if ejectable {
-            ui.fonts(|f| f.row_height(&text_font)) + space::S2 * 2.0
+            ui.fonts(|f| f.row_height(&bold)) + space::S2 * 2.0
         } else {
             0.0
         };
@@ -1164,7 +1164,7 @@ pub(crate) fn source_tabs(
         // playlist tiles do — a long volume name must not push "Library" out.
         let inner = budget - space::S3 * 2.0 - eject_w;
         let text_w =
-            |s: &str| ui.fonts(|f| s.chars().map(|c| f.glyph_width(&text_font, c)).sum::<f32>());
+            |s: &str| ui.fonts(|f| s.chars().map(|c| f.glyph_width(&bold, c)).sum::<f32>());
         let shown = if text_w(label) <= inner {
             label.to_string()
         } else {
@@ -1175,9 +1175,10 @@ pub(crate) fn source_tabs(
             format!("{}…", cut.trim_end())
         };
         // Colour is overridden at paint time (hover lifts an inactive label).
+        let width = text_w(&shown);
         let galley = ui.painter().layout_no_wrap(shown, text_font, color::LABEL);
         let size = egui::vec2(
-            galley.size().x + space::S3 * 2.0 + eject_w,
+            width + space::S3 * 2.0 + eject_w,
             galley.size().y + space::S2 * 2.0,
         );
         let (rect, resp) = ui.allocate_exact_size(size, egui::Sense::click());
