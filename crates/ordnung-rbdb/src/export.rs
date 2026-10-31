@@ -464,12 +464,18 @@ pub struct ExportOptions {
     /// `content.masterDbId`), the way rekordbox stamps its library's DBID;
     /// a stick that already carries rows keeps their id instead.
     pub master_db_id: u32,
+    /// Whether a selected track the stick already holds is rewritten from
+    /// the library: row, audio, analysis files, cues. Off, an Add leaves it
+    /// as it is and only lands it in the selection's playlists; on is
+    /// "Update from library", the one place a stick's own cues and grid are
+    /// replaced.
+    pub refresh_existing: bool,
 }
 
 impl Default for ExportOptions {
     fn default() -> Self {
         // `1`: an export with no library behind it (tests, the suite).
-        Self { mode: Default::default(), player: Default::default(), master_db_id: 1 }
+        Self { mode: Default::default(), player: Default::default(), master_db_id: 1, refresh_existing: false }
     }
 }
 
@@ -910,6 +916,9 @@ fn export_impl(
     // Track ids we've placed this pass, to skip carrying an existing row that
     // the new selection already re-covers.
     let mut placed_ids: HashSet<u32> = HashSet::new();
+    // Selected tracks the stick already holds and an Add leaves alone:
+    // catalog id → their existing row id, for the playlist entries.
+    let mut kept: Vec<(Id, u32)> = Vec::new();
 
     for t in tracks {
         let source = PathBuf::from(&t.source_path);
@@ -964,6 +973,22 @@ fn export_impl(
                 _ => None,
             })
             .cloned();
+        if let (Some((id, path)), false) = (&reuse, opts.refresh_existing) {
+            // Already on the stick: an Add keeps its row, audio, analysis
+            // files and cues as they are (they are carried below) and only
+            // lands it in the selection's playlists. Rewriting them from
+            // the library is Update's job.
+            kept.push((t.id, *id));
+            report.placed.push((t.id, path.clone()));
+            progress(ExportProgress {
+                stage: ExportStage::CopyingAudio,
+                done: 0,
+                total: 0,
+                detail: path.rsplit('/').next().unwrap_or_default().to_string(),
+                landed: Some((t.id, path.clone())),
+            });
+            continue;
+        }
         // The stick's own row for a re-selected track: its content id, added
         // date and analysis path stay with it. rekordbox keys a track by the
         // library pair; a fresh hash beside its DBID would resolve to nothing.
@@ -1373,6 +1398,7 @@ fn export_impl(
     let by_catalog: HashMap<Id, u32> = resolved
         .iter()
         .map(|t| (t.catalog_id, t.row.id))
+        .chain(kept.iter().copied())
         .collect();
 
     // Build the export playlist tree. In Merge mode we start from the existing

@@ -1541,7 +1541,7 @@ pub(crate) fn run_export(
         &dest,
         &tracks,
         &playlists,
-        ExportOptions { mode, player, master_db_id },
+        ExportOptions { mode, player, master_db_id, refresh_existing: update },
         &mut |p| {
             let stage = match p.stage {
                 ExportStage::CopyingAudio => "Copying",

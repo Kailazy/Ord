@@ -480,6 +480,13 @@ fn merge_finds_a_track_a_rekordbox_stick_nests_under_contents() {
     assert_eq!(after.tracks.len(), before.tracks.len(), "no second row for the track");
     assert_eq!(after.tracks[&nested_id].file_path, nested);
     assert!(!usb.join("Contents").join(&name).exists(), "no flat copy beside the nested file");
+    // An Add leaves what the stick holds for that track untouched: its
+    // audio, its analysis files (cues, grid) and its row.
+    let dat = usb.join(after.tracks[&nested_id].analyze_path.as_deref().unwrap().trim_start_matches('/'));
+    assert_eq!(std::fs::read(&dat).unwrap(), b"PMAI", "the stick's analysis file stays");
+    assert_eq!(std::fs::read(usb.join(nested.trim_start_matches('/'))).unwrap(), vec![0x5Au8; 4_000], "the audio stays");
+    let row = |t: &pdb::RbTrack| format!("{:?}", (&t.title, &t.artist, &t.key, t.rating, t.color_id, &t.date_added, &t.analyze_path));
+    assert_eq!(row(&after.tracks[&nested_id]), row(&before.tracks[&nested_id]), "the row stays as rekordbox wrote it");
     let _ = std::fs::remove_dir_all(&src);
     let _ = std::fs::remove_dir_all(&usb);
 }

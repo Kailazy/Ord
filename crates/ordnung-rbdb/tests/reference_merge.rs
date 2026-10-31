@@ -73,6 +73,8 @@ fn merge_onto_a_rekordbox_stick_keeps_its_rows_tags_and_cues() {
         .find(|(_, t)| t.file_path.matches('/').count() > 2)
         .map(|(id, t)| (*id, t.file_path.clone()))
         .expect("rekordbox nests its audio");
+    let dat = usb.join(before.tracks[&nested_id].analyze_path.as_deref().unwrap().trim_start_matches('/'));
+    let dat_before = std::fs::read(&dat).unwrap();
     let src = root.join("src");
     std::fs::create_dir_all(&src).unwrap();
     let same = src.join(nested.rsplit('/').next().unwrap());
@@ -89,15 +91,13 @@ fn merge_onto_a_rekordbox_stick_keeps_its_rows_tags_and_cues() {
     let after = pdb::read_stick(&usb).unwrap();
     assert_eq!(after.tracks.len(), before.tracks.len() + 1, "one new row, no duplicate");
     assert!(after.playlists == before.playlists, "the stick's playlists stay");
-    // Every row the stick had, except the one re-selected from the library,
-    // reads back the same: rating, colour, dates, counters, paths.
+    // Every row the stick had reads back the same, the re-selected one
+    // included: an Add never rewrites what the stick holds for a track.
     for (id, was) in &before.tracks {
-        if *id == nested_id {
-            continue;
-        }
         let now = after.tracks.get(id).expect("row kept");
         assert_eq!(view(now), view(was), "row {id} changed");
     }
+    assert_eq!(std::fs::read(&dat).unwrap(), dat_before, "the stick's analysis file for a re-selected track stays");
     pdb::lint(&std::fs::read(rb.join("export.pdb")).unwrap()).expect("lint");
     let dlp_after = dlp_facts(&dlp);
     assert_eq!(dlp_after.my_tags, dlp_before.my_tags, "My Tag links");
@@ -108,6 +108,12 @@ fn merge_onto_a_rekordbox_stick_keeps_its_rows_tags_and_cues() {
         dlp_after.master_db_ids.iter().all(|m| dlp_before.master_db_ids.contains(m)),
         "no second library id appears in the DLP"
     );
+    // Update from library is the explicit rewrite: the same track with
+    // `refresh_existing` replaces the stick's analysis file and row.
+    let refresh = ExportOptions { refresh_existing: true, ..merge };
+    export_usb_with(&usb, &tracks[..1], &[], refresh, &mut |_| {}, &cancel).expect("update onto the reference stick");
+    assert_ne!(std::fs::read(&dat).unwrap(), dat_before, "Update rewrites the analysis file");
+    pdb::lint(&std::fs::read(rb.join("export.pdb")).unwrap()).expect("lint after update");
     let _ = std::fs::remove_dir_all(&root);
 }
 
