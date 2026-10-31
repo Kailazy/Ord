@@ -1128,7 +1128,9 @@ fn mirror_playlists(conn: &rusqlite::Connection, export: &RbExport) -> rusqlite:
             };
             conn.execute(
                 "INSERT INTO playlist_content VALUES (?1, ?2, ?3)",
-                rusqlite::params![p.id as i64, content_id, i as i64],
+                // sequenceNo counts from 1, as rekordbox and the export write
+                // it; a 0 made rekordbox 7 call the device corrupted.
+                rusqlite::params![p.id as i64, content_id, (i + 1) as i64],
             )?;
         }
     }

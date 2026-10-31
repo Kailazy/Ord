@@ -261,6 +261,21 @@ fn dlp_database_mirrors_every_edit() {
         vec!["/Contents/Loopmasters/UnknownAlbum/Demo Track 2.mp3".to_string()]
     );
 
+    // sequenceNo counts from 1 like rekordbox's own rows; a 0 made
+    // rekordbox 7 call the device corrupted.
+    {
+        let conn = rusqlite::Connection::open(&db).unwrap();
+        conn.execute_batch(
+            "PRAGMA key = 'r8gddnr4k847830ar6cqzbkk0el6qytmb3trbbx805jm74vez64i5o8fnrqryqls';
+             PRAGMA cipher_compatibility = 4;",
+        )
+        .unwrap();
+        let first: i64 = conn
+            .query_row("SELECT min(sequenceNo) FROM playlist_content", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(first, 1);
+    }
+
     // And the joined view (what the GUI reads) agrees with both.
     let stick = read_stick(&root).expect("read stick");
     assert_eq!(stick.playlists.len(), 1);
