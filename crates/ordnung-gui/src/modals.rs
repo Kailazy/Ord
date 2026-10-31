@@ -2095,9 +2095,9 @@ the table's Tags column.",
         self.export_player()
     }
 
-    /// "Set up this volume as a rekordbox device?" confirmation. This is the
-    /// only path that ever converts plain storage into an export target, so it
-    /// spells out exactly what gets written before anything touches the device.
+    /// "Set up this volume for performance?" confirmation. This is the only
+    /// path that ever converts plain storage into an export target, so it says
+    /// what gets written before anything touches the device.
     #[cfg(feature = "usb-export")]
     pub(crate) fn draw_usb_setup_confirm(&mut self, ctx: &egui::Context) {
         let Some(dest) = self.usb_setup_confirm.clone() else {
@@ -2108,24 +2108,14 @@ the table's Tags column.",
             .map(|n| n.to_string_lossy().into_owned())
             .unwrap_or_else(|| dest.display().to_string());
         let mut open = true;
-        crate::ui::window::Window::new(format!("Set up {name} for rekordbox?"))
+        crate::ui::window::Window::new(format!("Set up {name} for performance?"))
             .open(&mut open)
             .show(ctx, |ui| {
                 ui.set_max_width(440.0);
                 ui.label(format!(
-                    "Creates the rekordbox/CDJ structure on {name}: a PIONEER folder \
-with empty databases, plus Contents for exported audio. Players will then recognize the \
-device, and Ord's export menus can target it."
+                    "Adds empty player databases and a Contents folder to {name}. \
+Everything already on it stays as it is."
                 ));
-                ui.add_space(6.0);
-                ui.label(
-                    egui::RichText::new(
-                        "Everything already on the volume is left exactly as it is — no \
-files are moved, changed, or reformatted. Music you export later is copied into /Contents; \
-files elsewhere on the device stay plain storage.",
-                    )
-                    .weak(),
-                );
                 ui.add_space(12.0);
                 let busy = self.is_busy();
                 if busy {

@@ -1499,11 +1499,8 @@ pub(crate) fn usb_volume_menu(
         #[cfg(feature = "usb-export")]
         if !v.is_rekordbox_export
             && ui
-                .button("Set up for rekordbox…")
-                .on_hover_note(
-                    "Write the rekordbox folder structure so this device \
-                     can receive exports and play on CDJs",
-                )
+                .button("Set up for performance…")
+                .on_hover_note("Prepare this device to take exports and play on CDJs")
                 .clicked()
         {
             *action = Some(SidebarAction::SetupUsb(v.path.clone()));
