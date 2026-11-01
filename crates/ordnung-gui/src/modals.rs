@@ -2378,6 +2378,47 @@ Everything already on it stays as it is."
         }
     }
 
+    /// "Delete playlist and its N tracks from <device>?" confirmation: the
+    /// playlist goes, and the files only it listed go with it.
+    pub(crate) fn draw_usb_playlist_delete_confirm(&mut self, ctx: &egui::Context) {
+        let Some((pid, ids)) = self.confirm_usb_playlist_delete.clone() else {
+            return;
+        };
+        let LibraryView::Usb(vol, _) = &self.view else {
+            self.confirm_usb_playlist_delete = None;
+            return;
+        };
+        let n = ids.len();
+        let name = vol
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        let playlist = self
+            .usb_playlists
+            .iter()
+            .find(|p| p.id == pid)
+            .map(|p| p.name.clone())
+            .unwrap_or_default();
+        let answer = danger_confirm(
+            ctx,
+            "Delete from device?",
+            &format!(
+                "Delete \u{201C}{playlist}\u{201D} and {n} track{} from {name}?",
+                if n == 1 { "" } else { "s" }
+            ),
+            "No other playlist on the device has these tracks, so their files go \
+             too, with their cues and grids. This can't be undone.",
+            "Delete",
+        );
+        if answer.is_some() {
+            self.confirm_usb_playlist_delete = None;
+        }
+        if answer == Some(true) {
+            self.usb_delete_playlist(pid);
+            self.usb_delete_tracks(ids);
+        }
+    }
+
     /// "Convert N tracks on <device> for older players?" confirmation. The
     /// originals are replaced by 16-bit AIFF in place, so it's an explicit
     /// gate; confirming starts the conversion job.

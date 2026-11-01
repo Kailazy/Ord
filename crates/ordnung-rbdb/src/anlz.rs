@@ -54,7 +54,8 @@ pub struct AnlzWaveforms {
     /// 400-bin amplitude preview, 0–255 per bin (from `PWAV`).
     pub preview: Vec<u8>,
     /// `[low, mid, high, loudness]` quads at 20 bins/sec (from the `.EXT`'s
-    /// `PWV5` color waveform). Empty when the stick has no `.EXT` — the
+    /// `PWV7` three-band waveform in the `.2EX`, or `PWV5`'s colour bits on a
+    /// stick without one; heights from `PWV5`). Empty when the stick has no `.EXT` — the
     /// preview alone still draws a monochrome waveform.
     pub bands: Vec<u8>,
 }
@@ -274,25 +275,67 @@ pub fn read_waveforms(dat_path: &std::path::Path) -> Option<AnlzWaveforms> {
         return None; // an un-analyzed export; let the caller fall back
     }
 
-    // PWV5 body: u32 2, u32 num, u32 0x00960305, then u16be columns at
-    // 150/sec — bits 15–13 low, 12–10 mid, 9–7 high, 6–2 height.
+    // Bands from the `.EXT`: heights off `PWV5` (u32 2, u32 num, u32
+    // 0x00960305, then u16be columns at 150/sec: bits 15–13 low, 12–10 mid,
+    // 9–7 high, 6–2 height) and the three bands off the `.2EX`'s `PWV7`
+    // (u32 3, u32 num, u32 0x00960000, then 3 bytes/column low/mid/high
+    // 0–127, linear) where the stick has it. PWV5's three-bit colour was the band source before
+    // and drew eight-step blocks; PWV7 carries the real levels. Each 20/sec
+    // bin takes the peak of its 7.5 columns, as the drawer pools zoomed-out
+    // columns, instead of one point-sampled column.
     let bands = std::fs::read(dat_path.with_extension("EXT"))
         .ok()
         .and_then(|ext| {
             let body = find_section(&ext, b"PWV5")?;
             let n = u32_at(body, 4)? as usize;
             let cols = body.get(12..12 + n * 2)?;
-            // Resample 150 cols/sec down to the GUI's 20 bins/sec.
-            let bins = n * BANDS_PER_SEC as usize / SCROLL_PER_SEC as usize;
+            let ex2 = std::fs::read(dat_path.with_extension("2EX")).unwrap_or_default();
+            let cols7 = find_section(&ex2, b"PWV7").and_then(|b| {
+                let m = u32_at(b, 4)? as usize;
+                b.get(12..12 + m * 3)
+            });
+            // Linear 0–127 back to the sqrt-companded bytes the GUI's bands
+            // carry (the inverse of the writer's `band3_col` decompand).
+            let compand = |v: u8| ((v.min(127) as f64 / 127.0).sqrt() * 255.0).round() as u8;
+            let scale3 = |c: u16| ((c & 7) * 255 / 7) as u8;
+            let scroll = SCROLL_PER_SEC as usize;
+            let per = BANDS_PER_SEC as usize;
+            let bins = n * per / scroll;
             let mut out = Vec::with_capacity(bins * 4);
             for j in 0..bins {
-                let i = (j * SCROLL_PER_SEC as usize / BANDS_PER_SEC as usize).min(n - 1);
-                let v = u16::from_be_bytes([cols[i * 2], cols[i * 2 + 1]]);
-                let scale3 = |c: u16| ((c & 7) * 255 / 7) as u8;
-                out.push(scale3(v >> 13));
-                out.push(scale3(v >> 10));
-                out.push(scale3(v >> 7));
-                out.push((((v >> 2) & 0x1F) << 3) as u8);
+                let lo = j * scroll / per;
+                let hi = ((j + 1) * scroll / per).clamp(lo + 1, n);
+                let mut col = [0u8; 4];
+                for i in lo..hi {
+                    let v = u16::from_be_bytes([cols[i * 2], cols[i * 2 + 1]]);
+                    match cols7.and_then(|c| c.get(i * 3..i * 3 + 3)) {
+                        Some(c) => {
+                            for k in 0..3 {
+                                col[k] = col[k].max(compand(c[k]));
+                            }
+                        }
+                        None => {
+                            col[0] = col[0].max(scale3(v >> 13));
+                            col[1] = col[1].max(scale3(v >> 10));
+                            col[2] = col[2].max(scale3(v >> 7));
+                        }
+                    }
+                }
+                out.extend_from_slice(&col);
+            }
+            // The energy byte: the GUI stores its hybrid loudness as a cube
+            // root normalised to the track's loudest bin (see core
+            // `color_bands`) and draws it through a gamma-3 curve. PWV5's
+            // 32-step RMS height sits pinned on a mastered track and coloured
+            // the player's overview in flat blocks; the loudest band's level
+            // against the track max, shaped the same way, keeps the structure.
+            let peak: Vec<f64> = out
+                .chunks(4)
+                .map(|q| (q[0].max(q[1]).max(q[2]) as f64 / 255.0).powi(2))
+                .collect();
+            let top = peak.iter().cloned().fold(0.0, f64::max).max(1e-6);
+            for (q, p) in out.chunks_mut(4).zip(&peak) {
+                q[3] = ((p / top).powf(1.2).cbrt() * 255.0).round() as u8;
             }
             Some(out)
         })
@@ -1110,6 +1153,7 @@ mod tests {
         let dat = dir.join("ANLZ0000.DAT");
         std::fs::write(&dat, build_dat(&inp)).unwrap();
         std::fs::write(dir.join("ANLZ0000.EXT"), build_ext(&inp)).unwrap();
+        std::fs::write(dir.join("ANLZ0000.2EX"), build_2ex(&inp)).unwrap();
 
         let got = read_waveforms(&dat).expect("waveforms read back");
         assert_eq!(got.preview.len(), 400);
@@ -1125,6 +1169,9 @@ mod tests {
         assert_eq!(got.bands.len() % 4, 0);
         assert!(!got.bands.is_empty());
         assert!(got.bands.iter().any(|&v| v > 0));
+        // Through PWV7 the bands come back at 128 levels, not PWV5's eight.
+        let levels: std::collections::HashSet<u8> = got.bands.chunks(4).map(|q| q[0]).collect();
+        assert!(levels.len() > 8, "band levels {}", levels.len());
 
         // The beatgrid reads back beat-for-beat.
         let grid = read_beatgrid(&dat);

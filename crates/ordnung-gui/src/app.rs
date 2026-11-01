@@ -271,6 +271,7 @@ impl App {
             row_screen_rects: Vec::new(),
             table_screen_rect: None,
             playlist_screen_rects: Vec::new(),
+            playlist_selection: Default::default(),
             nav_screen_rect: None,
             cover_drop: None,
             tags_editing: false,
@@ -346,6 +347,7 @@ impl App {
             confirm_bulk_write: false,
             confirm_delete: None,
             confirm_usb_delete: None,
+            confirm_usb_playlist_delete: None,
             confirm_usb_convert: None,
             #[cfg(feature = "usb-export")]
             confirm_usb_update: None,
@@ -1470,6 +1472,38 @@ impl App {
         }
     }
 
+    /// Delete a playlist (or folder and subtree) from the stick. If the
+    /// deleted node, or one under it, was open, fall back to the
+    /// whole-device view.
+    pub(crate) fn usb_delete_playlist(&mut self, id: u32) {
+        self.usb_playlist_edit(edit::PlaylistOp::Delete { id });
+        if let LibraryView::Usb(vol, Some(sel)) = self.view.clone() {
+            if !self.usb_playlists.iter().any(|p| p.id == sel) {
+                self.view = LibraryView::Usb(vol, None);
+            }
+        }
+    }
+
+    /// Device rows that only the playlist `id` (or the folder's subtree)
+    /// lists: deleting the playlist leaves them in no playlist at all.
+    pub(crate) fn usb_playlist_orphans(&self, id: u32) -> Vec<Id> {
+        let mut subtree = vec![id];
+        let mut i = 0;
+        while i < subtree.len() {
+            let cur = subtree[i];
+            i += 1;
+            subtree.extend(self.usb_playlists.iter().filter(|p| p.parent_id == cur).map(|p| p.id));
+        }
+        let (inside, outside): (Vec<_>, Vec<_>) = self
+            .usb_playlist_tracks
+            .iter()
+            .partition(|(pid, _)| subtree.contains(pid));
+        let kept: HashSet<usize> = outside.into_iter().flat_map(|(_, v)| v.iter().copied()).collect();
+        let orphans: HashSet<usize> =
+            inside.into_iter().flat_map(|(_, v)| v.iter().copied()).filter(|i| !kept.contains(i)).collect();
+        orphans.into_iter().map(usb_track_id).collect()
+    }
+
     /// Device tracks dropped on one of the device's own playlists, or taken
     /// out of it from the row menu: resolve the synthetic ids to paths
     /// relative to the volume root and apply `op` (`AddTracks` or
@@ -1907,8 +1941,8 @@ impl App {
     /// unique track count, playlist count). Folders count their descendant
     /// playlists, not themselves.
     #[cfg(feature = "usb-export")]
-    pub(crate) fn playlist_export_scope(&self, id: Id) -> (Vec<Id>, String, usize, usize) {
-        let mut nodes = vec![id];
+    pub(crate) fn playlist_export_scope(&self, ids: &[Id]) -> (Vec<Id>, String, usize, usize) {
+        let mut nodes = ids.to_vec();
         let mut i = 0;
         while i < nodes.len() {
             let cur = nodes[i];
@@ -1934,21 +1968,23 @@ impl App {
                 }
             }
         }
-        let node = self.playlists.iter().find(|p| p.id == id);
+        let node = self.playlists.iter().find(|p| ids.first() == Some(&p.id));
         let name = node.map(|p| p.name.clone()).unwrap_or_default();
-        let label = if node.is_some_and(|p| p.is_folder) {
+        let label = if ids.len() > 1 {
+            "the selection".to_string()
+        } else if node.is_some_and(|p| p.is_folder) {
             format!("folder \u{201C}{name}\u{201D}")
         } else {
             format!("playlist \u{201C}{name}\u{201D}")
         };
-        (vec![id], label, n_tracks, n_playlists)
+        (ids.to_vec(), label, n_tracks, n_playlists)
     }
 
     /// Raise the export confirmation for a playlist (and, for a folder, its
     /// descendants): the one export that can replace a stick, so it asks.
     #[cfg(feature = "usb-export")]
-    pub(crate) fn confirm_playlist_export(&mut self, id: Id, dest: PathBuf) {
-        let (playlist_ids, scope, n_tracks, n_playlists) = self.playlist_export_scope(id);
+    pub(crate) fn confirm_playlist_export(&mut self, ids: Vec<Id>, dest: PathBuf) {
+        let (playlist_ids, scope, n_tracks, n_playlists) = self.playlist_export_scope(&ids);
         self.export_confirm = Some(ExportConfirm {
             dest,
             playlist_ids,
@@ -2068,7 +2104,7 @@ impl App {
     /// The export doesn't exist in this build (see the `usb-export` feature):
     /// nothing offers it, so nothing reaches here.
     #[cfg(not(feature = "usb-export"))]
-    pub(crate) fn confirm_playlist_export(&mut self, _: Id, _: PathBuf) {}
+    pub(crate) fn confirm_playlist_export(&mut self, _: Vec<Id>, _: PathBuf) {}
 
     #[cfg(not(feature = "usb-export"))]
     pub(crate) fn add_to_stick(&mut self, _: &egui::Context, _: Vec<Id>, _: PathBuf, _: Option<u32>) {}
@@ -4089,6 +4125,7 @@ impl App {
                                     let all = self.playlists.clone();
                                     let volumes = self.usb_volumes.clone();
                                     let mut drop_rects = Vec::new();
+                                    let view_before = self.view.clone();
                                     // The PLAYLISTS and TAGS captions, each
                                     // laid out in place and, once its rows
                                     // have scrolled under the panel's top,
@@ -4128,6 +4165,7 @@ impl App {
                                             &mut self.renaming,
                                             &mut sidebar_action,
                                             &mut drop_rects,
+                                            &mut self.playlist_selection,
                                         );
                                     }
                                     // The tags, under the playlists: the
@@ -4169,6 +4207,14 @@ impl App {
                                         drop_rects.retain(|(_, r)| !r.intersects(pinned));
                                     }
                                     self.playlist_screen_rects = drop_rects;
+                                    // Going anywhere but a playlist drops the
+                                    // Cmd/Shift pick; a plain playlist click
+                                    // already made itself the selection.
+                                    if self.view != view_before
+                                        && !matches!(self.view, LibraryView::Playlist(_))
+                                    {
+                                        self.playlist_selection.ids.clear();
+                                    }
                                 }
                             });
                     });
@@ -4183,8 +4229,8 @@ impl App {
             Some(SidebarAction::ImportUsbTracks(ids)) => {
                 self.usb_add_to_library(ctx.clone(), ids);
             }
-            Some(SidebarAction::ExportPlaylist(id, dest)) => {
-                self.confirm_playlist_export(id, dest);
+            Some(SidebarAction::ExportPlaylist(ids, dest)) => {
+                self.confirm_playlist_export(ids, dest);
             }
             Some(SidebarAction::ExportTracks(ids, dest, pl)) => {
                 self.add_to_stick(ctx, ids, dest, pl);
@@ -4247,13 +4293,13 @@ impl App {
                 self.usb_playlist_edit(edit::PlaylistOp::Rename { id, name });
             }
             Some(SidebarAction::DeleteUsbPlaylist(id)) => {
-                self.usb_playlist_edit(edit::PlaylistOp::Delete { id });
-                // If the deleted playlist (or a descendant of the deleted
-                // folder) was open, fall back to the whole-device view.
-                if let LibraryView::Usb(vol, Some(sel)) = self.view.clone() {
-                    if !self.usb_playlists.iter().any(|p| p.id == sel) {
-                        self.view = LibraryView::Usb(vol, None);
-                    }
+                // Tracks only this playlist held leave the device with it,
+                // as rekordbox does; that is a file delete, so it asks.
+                let orphans = self.usb_playlist_orphans(id);
+                if orphans.is_empty() {
+                    self.usb_delete_playlist(id);
+                } else {
+                    self.confirm_usb_playlist_delete = Some((id, orphans));
                 }
             }
             Some(SidebarAction::AddUsbTracksToPlaylist(pid, ids)) => {
@@ -4742,6 +4788,7 @@ impl App {
         self.draw_bulk_write_confirm(ctx);
         self.draw_delete_confirm(ctx);
         self.draw_usb_delete_confirm(ctx);
+        self.draw_usb_playlist_delete_confirm(ctx);
         self.draw_usb_convert_confirm(ctx);
         #[cfg(feature = "usb-export")]
         self.draw_usb_update_confirm(ctx);

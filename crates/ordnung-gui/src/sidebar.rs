@@ -299,6 +299,65 @@ fn nav_tile_pill(
     resp
 }
 
+/// The playlists picked with Cmd and Shift clicks, the way table rows are:
+/// a plain click still opens one playlist, and that one is the selection;
+/// Cmd adds or drops a row, Shift takes the run from the anchor in tree
+/// order. A row's menu then acts on the whole set (export to a device).
+#[derive(Default)]
+pub(crate) struct NavSelection {
+    pub ids: HashSet<Id>,
+    pub anchor: Option<Id>,
+}
+
+impl NavSelection {
+    /// The modifier click on playlist `id` (Cmd or Shift held).
+    fn click(&mut self, id: Id, mods: egui::Modifiers, all: &[Playlist]) {
+        if mods.shift {
+            let order = leaf_order(all, None);
+            let a = self.anchor.and_then(|a| order.iter().position(|x| *x == a));
+            let b = order.iter().position(|x| *x == id);
+            self.ids = match (a, b) {
+                (Some(a), Some(b)) => order[a.min(b)..=a.max(b)].iter().copied().collect(),
+                _ => std::iter::once(id).collect(),
+            };
+        } else {
+            if !self.ids.remove(&id) {
+                self.ids.insert(id);
+            }
+            self.anchor = Some(id);
+        }
+    }
+
+    /// The plain click: just this one.
+    fn set(&mut self, id: Id) {
+        self.ids = std::iter::once(id).collect();
+        self.anchor = Some(id);
+    }
+
+    /// What a row's menu acts on: the set when the row is part of it, else
+    /// the row alone, as a track row's menu does.
+    pub(crate) fn targets(&self, id: Id, all: &[Playlist]) -> Vec<Id> {
+        if self.ids.len() > 1 && self.ids.contains(&id) {
+            leaf_order(all, None).into_iter().filter(|i| self.ids.contains(i)).collect()
+        } else {
+            vec![id]
+        }
+    }
+}
+
+/// The playlists (not folders) in the order the tree lists them.
+fn leaf_order(all: &[Playlist], parent: Option<Id>) -> Vec<Id> {
+    let mut out = Vec::new();
+    for p in all.iter().filter(|p| p.parent == parent) {
+        if p.is_folder {
+            out.extend(leaf_order(all, Some(p.id)));
+        } else {
+            out.push(p.id);
+        }
+    }
+    out
+}
+
 /// Render the children of `parent` in the sidebar tree, recursing into folders.
 /// Folders are collapsible; playlists are selectable rows that double as
 /// drag-and-drop targets for table rows. Plain-field state (`view`, `renaming`)
@@ -316,6 +375,7 @@ pub(crate) fn draw_playlist_nodes(
     renaming: &mut Option<Renaming>,
     action: &mut Option<SidebarAction>,
     drop_rects: &mut Vec<(Id, egui::Rect)>,
+    sel: &mut NavSelection,
 ) {
     for p in all.iter().filter(|p| p.parent == parent) {
         // While this entry is being (re)named, show the inline editor in place
@@ -343,6 +403,7 @@ pub(crate) fn draw_playlist_nodes(
                         renaming,
                         action,
                         drop_rects,
+                        sel,
                     )
                 };
                 if renaming_this {
@@ -398,13 +459,14 @@ pub(crate) fn draw_playlist_nodes(
                     renaming,
                     action,
                     drop_rects,
+                    sel,
                 );
             })
             .header_response;
             crate::ui::menu::context(&header, |ui| folder_context_menu(ui, p, volumes, renaming, action));
             playlist_row_gap(ui, density);
         } else {
-            draw_playlist_leaf(ui, density, p, volumes, view, renaming, action, drop_rects);
+            draw_playlist_leaf(ui, density, p, all, volumes, view, renaming, action, drop_rects, sel);
         }
     }
 }
@@ -802,13 +864,15 @@ pub(crate) fn draw_playlist_leaf(
     ui: &mut egui::Ui,
     density: NavDensity,
     p: &Playlist,
+    all: &[Playlist],
     volumes: &[ordnung_core::usb::UsbVolume],
     view: &mut LibraryView,
     renaming: &mut Option<Renaming>,
     action: &mut Option<SidebarAction>,
     drop_rects: &mut Vec<(Id, egui::Rect)>,
+    sel: &mut NavSelection,
 ) {
-    let selected = *view == LibraryView::Playlist(p.id);
+    let selected = *view == LibraryView::Playlist(p.id) || sel.ids.contains(&p.id);
     let resp = playlist_row(
         ui,
         density,
@@ -838,11 +902,17 @@ pub(crate) fn draw_playlist_leaf(
         }
     }
     if resp.clicked() {
-        *view = LibraryView::Playlist(p.id);
+        let mods = ui.input(|i| i.modifiers);
+        if mods.shift || mods.command || mods.mac_cmd {
+            sel.click(p.id, mods, all);
+        } else {
+            sel.set(p.id);
+            *view = LibraryView::Playlist(p.id);
+        }
     }
     crate::ui::menu::context(&resp, |ui| {
         if let Some(dest) = export_menu_items(ui, volumes, false) {
-            *action = Some(SidebarAction::ExportPlaylist(p.id, dest));
+            *action = Some(SidebarAction::ExportPlaylist(sel.targets(p.id, all), dest));
         }
         if ui
             .button("Save track list…")
@@ -967,7 +1037,7 @@ pub(crate) fn draw_usb_playlist_nodes(
                 }
                 if ui
                     .button("Delete folder")
-                    .on_hover_note("Removes this folder and everything in it from the device")
+                    .on_hover_note("Removes this folder and everything in it from the device, with the tracks only it holds")
                     .clicked()
                 {
                     *action = Some(SidebarAction::DeleteUsbPlaylist(p.id));
@@ -1040,7 +1110,7 @@ pub(crate) fn draw_usb_playlist_nodes(
                 }
                 if ui
                     .button("Delete")
-                    .on_hover_note("Removes this playlist from the device. Files stay")
+                    .on_hover_note("Removes this playlist from the device, with the tracks only it holds")
                     .clicked()
                 {
                     *action = Some(SidebarAction::DeleteUsbPlaylist(p.id));
@@ -1691,7 +1761,7 @@ pub(crate) fn folder_context_menu(
     }
     ui.separator();
     if let Some(dest) = export_menu_items(ui, volumes, false) {
-        *action = Some(SidebarAction::ExportPlaylist(p.id, dest));
+        *action = Some(SidebarAction::ExportPlaylist(vec![p.id], dest));
     }
     ui.separator();
     if ui.button("Rename").clicked() {

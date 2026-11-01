@@ -1792,6 +1792,8 @@ struct App {
     /// highlight the playlist under a hovering Finder drag and, on drop, to
     /// add the imported tracks to it. Cleared at the top of every frame.
     playlist_screen_rects: Vec<(Id, egui::Rect)>,
+    /// The playlists picked with Cmd/Shift clicks in the sidebar.
+    playlist_selection: sidebar::NavSelection,
     /// Screen-space rect of the left navigation panel this frame. A Finder
     /// drag over it shows nothing and a drop there is ignored, except on a
     /// playlist row (see `playlist_screen_rects`). Cleared every frame.
@@ -2034,6 +2036,9 @@ struct App {
     confirm_delete: Option<Vec<Id>>,
     /// Device track ids pending a "delete from device?" confirmation.
     confirm_usb_delete: Option<Vec<Id>>,
+    /// A device playlist pending deletion, with the device rows only it
+    /// holds: confirming removes both.
+    confirm_usb_playlist_delete: Option<(u32, Vec<Id>)>,
     /// A stick and the paths (relative to its root) of the tracks pending a
     /// "convert for older players?" confirmation.
     confirm_usb_convert: Option<(PathBuf, Vec<String>)>,
@@ -2465,9 +2470,10 @@ enum SidebarAction {
     /// Device rows dropped on the Library source tab: copy their files into
     /// the library and import them.
     ImportUsbTracks(Vec<Id>),
-    /// Right-click on a local playlist/folder: export it (and, for a folder,
-    /// its descendants) to the given mounted volume as a rekordbox stick.
-    ExportPlaylist(Id, PathBuf),
+    /// Right-click on a local playlist/folder: export it (the selected
+    /// playlists, when the row is one of several; a folder's descendants
+    /// with it) to the given mounted volume as a rekordbox stick.
+    ExportPlaylist(Vec<Id>, PathBuf),
     /// Library rows dropped onto a stick's source tab, or onto one of the
     /// stick's playlists in the panel under it: add just those tracks to its
     /// export (track ids, volume, the playlist to put them in).
