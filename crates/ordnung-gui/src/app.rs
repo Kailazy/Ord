@@ -2028,7 +2028,11 @@ impl App {
                 return;
             }
         };
-        let ids = shared_track_ids(on_stick.tracks.values().map(|t| t.file_path.as_str()), &paths);
+        let stick = on_stick.tracks.values().map(|t| {
+            let size = std::fs::metadata(vol.join(t.file_path.trim_start_matches('/'))).map_or(0, |m| m.len());
+            (t.file_path.as_str(), size)
+        });
+        let ids = shared_track_ids(stick, &paths);
         if ids.is_empty() {
             self.status = "None of this device's tracks are in the library.".into();
             return;
@@ -4869,23 +4873,30 @@ pub(crate) fn read_usb_pdb(vol: &Path) -> Option<UsbScan> {
 
 /// The library tracks a stick holds, by file name lowercased (the stick is
 /// FAT32), the key the exporter matches on. A name two library tracks share
-/// can't say which one is on the stick, and exporting both would copy a
-/// second file: skipped.
+/// goes to the one whose file size equals the stick file's; when none or
+/// several do, nothing says which one is on the stick, and exporting both
+/// would copy a second file: skipped.
 #[cfg(feature = "usb-export")]
 fn shared_track_ids<'a>(
-    stick_paths: impl Iterator<Item = &'a str>,
-    library: &[(Id, String)],
+    stick: impl Iterator<Item = (&'a str, u64)>,
+    library: &[(Id, String, u64)],
 ) -> Vec<Id> {
     let name_of = |p: &str| Path::new(p).file_name().map(|n| n.to_string_lossy().to_lowercase());
-    let mut by_name: HashMap<String, Option<Id>> = HashMap::new();
-    for (id, path) in library {
+    let mut by_name: HashMap<String, Vec<(Id, u64)>> = HashMap::new();
+    for (id, path, size) in library {
         if let Some(name) = name_of(path) {
-            by_name.entry(name).and_modify(|e| *e = None).or_insert(Some(*id));
+            by_name.entry(name).or_default().push((*id, *size));
         }
     }
-    let mut ids: Vec<Id> = stick_paths
-        .filter_map(name_of)
-        .filter_map(|n| by_name.get(&n).copied().flatten())
+    let mut ids: Vec<Id> = stick
+        .filter_map(|(path, size)| Some((name_of(path)?, size)))
+        .filter_map(|(name, size)| match by_name.get(&name)?.as_slice() {
+            [(id, _)] => Some(*id),
+            many => match many.iter().filter(|(_, s)| *s == size).collect::<Vec<_>>().as_slice() {
+                [(id, _)] => Some(*id),
+                _ => None,
+            },
+        })
         .collect();
     ids.sort_unstable();
     ids.dedup();
@@ -5136,23 +5147,27 @@ mod stick_update_tests {
     use super::*;
 
     /// A stick row finds its library track by file name whatever the case
-    /// (FAT32), a name two library tracks share is skipped, and a track only
-    /// on the stick matches nothing.
+    /// (FAT32); a name two library tracks share goes to the one of the
+    /// stick file's size, or is skipped when that doesn't settle it; a
+    /// track only on the stick matches nothing.
     #[test]
-    fn shared_tracks_match_by_file_name_and_skip_ambiguous_names() {
+    fn shared_tracks_match_by_file_name_and_size_breaks_ties() {
         let library = vec![
-            (1, "/lib/A/one.mp3".to_string()),
-            (2, "/lib/B/Two.aiff".to_string()),
-            (3, "/lib/C/dup.mp3".to_string()),
-            (4, "/lib/D/dup.mp3".to_string()),
+            (1, "/lib/A/one.mp3".to_string(), 10),
+            (2, "/lib/B/Two.aiff".to_string(), 20),
+            (3, "/lib/C/dup.mp3".to_string(), 30),
+            (4, "/lib/D/dup.mp3".to_string(), 31),
+            (5, "/lib/E/twin.mp3".to_string(), 40),
+            (6, "/lib/F/twin.mp3".to_string(), 40),
         ];
         let stick = [
-            "/Contents/ONE.mp3",
-            "/Contents/two.aiff",
-            "/Contents/dup.mp3",
-            "/Contents/only-here.mp3",
+            ("/Contents/ONE.mp3", 10),
+            ("/Contents/two.aiff", 999),
+            ("/Contents/dup.mp3", 31),
+            ("/Contents/twin.mp3", 40),
+            ("/Contents/only-here.mp3", 1),
         ];
-        assert_eq!(shared_track_ids(stick.iter().copied(), &library), vec![1, 2]);
+        assert_eq!(shared_track_ids(stick.iter().copied(), &library), vec![1, 2, 4]);
         assert!(shared_track_ids(std::iter::empty(), &library).is_empty());
     }
 }

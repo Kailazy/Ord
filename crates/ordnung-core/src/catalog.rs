@@ -2336,12 +2336,14 @@ impl Catalog {
             .collect())
     }
 
-    /// Every track's id and source path, nothing else: for matching files by
-    /// name (the device update) without loading tags.
-    pub fn track_paths(&self) -> Result<Vec<(Id, String)>> {
-        let mut stmt = self.conn.prepare("SELECT id, source_path FROM tracks")?;
+    /// Every track's id, source path and file size, nothing else: for
+    /// matching files by name (the device update) without loading tags.
+    pub fn track_paths(&self) -> Result<Vec<(Id, String, u64)>> {
+        let mut stmt = self.conn.prepare("SELECT id, source_path, src_size FROM tracks")?;
         let rows = stmt
-            .query_map([], |r| Ok((r.get::<_, i64>(0)? as Id, r.get::<_, String>(1)?)))?
+            .query_map([], |r| {
+                Ok((r.get::<_, i64>(0)? as Id, r.get::<_, String>(1)?, r.get::<_, Option<i64>>(2)?.unwrap_or(0) as u64))
+            })?
             .collect::<rusqlite::Result<Vec<_>>>()?;
         Ok(rows)
     }
