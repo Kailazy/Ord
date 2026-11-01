@@ -209,8 +209,8 @@ pub(crate) struct PdbTables {
     pub keys: Vec<(u32, String)>,
     pub artwork: Vec<(u32, String)>,
     pub playlists: Vec<RbPlaylist>,
-    /// `(entry_index, track_id, playlist_id)` — entry_index is 0-based within
-    /// its playlist, matching rekordbox.
+    /// `(entry_index, track_id, playlist_id)` — entry_index counts from 1
+    /// within its playlist, matching rekordbox.
     pub playlist_entries: Vec<(u32, u32, u32)>,
     /// `YYYY-MM-DD` stamp for the type-19 summary row.
     pub created_date: String,

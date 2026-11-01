@@ -540,11 +540,25 @@ pub fn lint(data: &[u8]) -> Result<(), String> {
     let ps = tables.page_size;
     let pages = (data.len() / ps) as u32;
     let sequence = u32_at(data, 0x14).unwrap_or(0);
+    let next_unused = u32_at(data, 0x0C).unwrap_or(0);
     if tables.dir.len() != 20 || tables.dir.iter().enumerate().any(|(i, d)| d.0 != i as u32) {
         return Err("tables 0..19 are not all present in order".into());
     }
+    let candidates: Vec<u32> = (0..tables.dir.len())
+        .map(|slot| u32_at(data, 0x1C + slot * 16 + 4).unwrap_or(0))
+        .collect();
     for (slot, &(ty, first, last)) in tables.dir.iter().enumerate() {
-        let candidate = u32_at(data, 0x1C + slot * 16 + 4).unwrap_or(0);
+        let candidate = candidates[slot];
+        // Every table owns its empty candidate; two tables sharing one made
+        // rekordbox 7 call the device corrupted.
+        if candidates.iter().filter(|&&c| c == candidate).count() > 1 {
+            return Err(format!("table {ty}: empty candidate page {candidate} is shared with another table"));
+        }
+        // ... and lies below the header's next_unused_page, or rekordbox 7
+        // calls the device corrupted.
+        if candidate >= next_unused {
+            return Err(format!("table {ty}: empty candidate page {candidate} is not below next_unused_page {next_unused}"));
+        }
         let chain = table_pages(data, ps, first, last);
         let Some(&head) = chain.first() else {
             return Err(format!("table {ty}: first page {first} is outside the file"));
@@ -585,6 +599,16 @@ pub fn lint(data: &[u8]) -> Result<(), String> {
             if u32_at(data, off + 0x10).unwrap_or(0) > sequence {
                 return Err(format!("table {ty}: page {idx} is newer than the file's sequence {sequence}"));
             }
+        }
+        // Playlist entries count from 1; a 0 made rekordbox 7 call the
+        // device corrupted.
+        if ty == TYPE_PLAYLIST_ENTRIES
+            && chain[1..]
+                .iter()
+                .flat_map(|&off| page_rows(data, ps, off, ty))
+                .any(|row| u32_at(data, row) == Some(0))
+        {
+            return Err("a playlist entry is numbered 0".into());
         }
         let tail_next = u32_at(data, chain[chain.len() - 1] + 0x0C).unwrap_or(0);
         if tail_next != candidate {

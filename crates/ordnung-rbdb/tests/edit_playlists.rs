@@ -261,8 +261,9 @@ fn dlp_database_mirrors_every_edit() {
         vec!["/Contents/Loopmasters/UnknownAlbum/Demo Track 2.mp3".to_string()]
     );
 
-    // sequenceNo counts from 1 like rekordbox's own rows; a 0 made
+    // Both stores number entries from 1 like rekordbox's own rows; a 0 made
     // rekordbox 7 call the device corrupted.
+    ordnung_rbdb::pdb::lint(&std::fs::read(pdb_path(&root)).unwrap()).expect("pdb lint");
     {
         let conn = rusqlite::Connection::open(&db).unwrap();
         conn.execute_batch(

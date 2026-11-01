@@ -942,8 +942,9 @@ fn relink_playlist_tables(
     }
 
     // Encode the replacement rows. Entries are grouped per playlist in tree
-    // order with 0-based indices — the shape rekordbox writes and the shape
-    // the full-export writer produces.
+    // order and numbered from 1, like rekordbox and the full-export writer;
+    // rekordbox 7 refuses a stick whose entries count from 0 ("Device
+    // library is corrupted").
     let tree_rows: Vec<Vec<u8>> = playlists
         .iter()
         .map(|p| pdbw::pad4(pdbw::playlist_tree_row(p)))
@@ -952,7 +953,7 @@ fn relink_playlist_tables(
     for p in playlists.iter().filter(|p| !p.is_folder) {
         if let Some(tracks) = entries.get(&p.id) {
             for (i, tid) in tracks.iter().enumerate() {
-                entry_rows.push(pdbw::pad4(pdbw::playlist_entry_row(i as u32, *tid, p.id)));
+                entry_rows.push(pdbw::pad4(pdbw::playlist_entry_row(i as u32 + 1, *tid, p.id)));
             }
         }
     }
@@ -1018,13 +1019,16 @@ fn relink_playlist_tables(
             fresh,
         });
     }
-    let total = next_free;
-    if data.len() < total as usize * page_size {
-        data.resize(total as usize * page_size, 0);
+    // Every table gets its own empty-candidate page past the end of the
+    // file, the way rekordbox leaves them; two tables sharing one candidate
+    // made rekordbox 7 call the device corrupted.
+    if data.len() < next_free as usize * page_size {
+        data.resize(next_free as usize * page_size, 0);
     }
 
     // Second pass: write pages, relink chains, update the directory.
-    for t in &tables {
+    for (k, t) in tables.iter().enumerate() {
+        let blank = next_free + k as u32;
         let need = t.chunks.len();
         let used: Vec<u32> = t
             .reusable
@@ -1033,9 +1037,17 @@ fn relink_playlist_tables(
             .take(need)
             .chain(t.fresh.iter().copied())
             .collect();
+        // The chain ends at the directory's empty candidate: the table's own
+        // page past the end, or, for a table that emptied, its first freed
+        // page.
+        let first_data = used.first().copied();
+        let candidate = match first_data {
+            Some(_) => blank,
+            None => t.reusable.first().copied().unwrap_or(blank),
+        };
         for (i, chunk) in t.chunks.iter().enumerate() {
             let idx = used[i];
-            let next = if i + 1 < need { used[i + 1] } else { total };
+            let next = if i + 1 < need { used[i + 1] } else { candidate };
             let page = pdbw::data_page(idx, t.ty, next, chunk);
             let o = idx as usize * page_size;
             data[o..o + page_size].copy_from_slice(&page);
@@ -1047,16 +1059,9 @@ fn relink_playlist_tables(
             let o = idx as usize * page_size;
             data[o..o + page_size].fill(0);
         }
-        // The chain ends at the directory's empty candidate: one past the end
-        // like the full writer, or, for a table that emptied, its first freed
-        // page. The kept sentinel links to the first data page (else straight
-        // to the candidate) and its index body names the first data page
-        // (else none), the way rekordbox leaves an empty table.
-        let first_data = used.first().copied();
-        let candidate = match first_data {
-            Some(_) => total,
-            None => t.reusable.first().copied().unwrap_or(total),
-        };
+        // The kept sentinel links to the first data page (else straight to
+        // the candidate) and its index body names the first data page (else
+        // none), the way rekordbox leaves an empty table.
         if let Some(sentinel) = t.keep_first {
             let s = sentinel as usize * page_size;
             data[s + 0x0C..s + 0x10].copy_from_slice(&first_data.unwrap_or(candidate).to_le_bytes());
@@ -1070,10 +1075,12 @@ fn relink_playlist_tables(
         data[base + 12..base + 16].copy_from_slice(&last.to_le_bytes());
     }
 
-    // Header: next_unused_page covers the appended pages; the sequence number
-    // records that the database changed, as rekordbox does on every write.
+    // Header: next_unused_page covers the appended pages and every empty
+    // candidate (rekordbox 7 calls a device corrupted when a candidate lies
+    // at or past it); the sequence number records that the database
+    // changed, as rekordbox does on every write.
     let seq = u32_at(data, 0x14).unwrap_or(0).wrapping_add(1);
-    data[0x0C..0x10].copy_from_slice(&total.to_le_bytes());
+    data[0x0C..0x10].copy_from_slice(&(next_free + tables.len() as u32).to_le_bytes());
     data[0x14..0x18].copy_from_slice(&seq.to_le_bytes());
     Ok(())
 }
