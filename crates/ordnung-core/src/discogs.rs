@@ -2206,15 +2206,24 @@ impl Client {
         }
 
         if let Some(t) = title {
-            for key in ["artist", "q"] {
-                let hits = self.search_release(&[
-                    (key, artist),
-                    ("track", t),
-                    ("type", "release"),
-                    ("per_page", "10"),
-                ])?.results;
-                if !hits.is_empty() {
-                    return Ok(hits);
+            // A download bought from a label's own Bandcamp account tags the
+            // label as the artist and the song as `Artist - B1 - Title`,
+            // which the fields as tagged never find: last, the halves read
+            // off such a title stand in for them.
+            let credited = split_credited_title(t);
+            let pairs = std::iter::once((artist, t))
+                .chain(credited.iter().map(|(a, t)| (a.as_str(), t.as_str())));
+            for (artist, t) in pairs {
+                for key in ["artist", "q"] {
+                    let hits = self.search_release(&[
+                        (key, artist),
+                        ("track", t),
+                        ("type", "release"),
+                        ("per_page", "10"),
+                    ])?.results;
+                    if !hits.is_empty() {
+                        return Ok(hits);
+                    }
                 }
             }
         }
@@ -2540,6 +2549,19 @@ fn split_artist_title(combined: &str) -> (String, String) {
         Some((a, t)) => (a.trim().to_string(), t.trim().to_string()),
         None => (String::new(), combined.trim().to_string()),
     }
+}
+
+/// The artist and song halves of a title tagged `Artist - B1 - Title` (the
+/// position dropped), the shape a label's own Bandcamp account gives its
+/// downloads. `None` for a title with nothing to split on.
+fn split_credited_title(title: &str) -> Option<(String, String)> {
+    let mut segs = title
+        .split(" - ")
+        .map(str::trim)
+        .filter(|s| !s.is_empty() && !is_position_title(s));
+    let head = segs.next()?.to_string();
+    let tail = segs.collect::<Vec<_>>().join(" - ");
+    (!tail.is_empty()).then_some((head, tail))
 }
 
 /// One search hit as a [`ReleaseCandidate`]: the joined label kept whole
@@ -4583,6 +4605,23 @@ mod tests {
         let (a, t) = split_artist_title("Untitled");
         assert_eq!(a, "");
         assert_eq!(t, "Untitled");
+    }
+
+    /// A label-account Bandcamp download names the song `Artist - B1 -
+    /// Title`: the position goes, later dashes stay part of the title, and
+    /// a title with nothing to split on reads as no credit at all.
+    #[test]
+    fn split_credited_title_drops_the_position_and_keeps_later_dashes() {
+        assert_eq!(
+            split_credited_title("Joe Davies - B1 - Something On My Mind"),
+            Some(("Joe Davies".into(), "Something On My Mind".into()))
+        );
+        assert_eq!(
+            split_credited_title("Theo Parrish - Summertime Is Here - Remixes"),
+            Some(("Theo Parrish".into(), "Summertime Is Here - Remixes".into()))
+        );
+        assert_eq!(split_credited_title("Something On My Mind"), None);
+        assert_eq!(split_credited_title("Untitled - A1"), None);
     }
 
     #[test]
