@@ -1238,15 +1238,37 @@ impl App {
     /// Start a stopped record from [`VinylSheet::start_row`]: the song it was
     /// opened on when that one can play, else the first row that can.
     fn play_sheet_from_start(&mut self, frame: &eframe::Frame) {
-        let first = self.vinyl_sheet.as_ref().and_then(|s| s.start_row());
-        if let Some(row) = first {
-            self.play_sheet_row(row, frame);
+        let Some(sheet) = self.vinyl_sheet.as_ref() else {
+            return;
+        };
+        match sheet.start_row() {
+            Some(row) => self.play_sheet_row(row, frame),
+            // A sheet on screen shows why nothing sounds; one unseen has
+            // only the status bar to say so.
+            None if sheet.hidden => {
+                let why = sheet.error.clone().unwrap_or_else(|| "Discogs lists no video for it".to_string());
+                self.fail(format!("Couldn't play {} – {}: {why}", sheet.artist, sheet.title));
+            }
+            None => {}
         }
     }
 
     /// Draw the open record sheet. Returns nothing — every action is applied
     /// before it returns, so the caller just calls it once per frame.
     pub(crate) fn draw_vinyl_sheet(&mut self, ctx: &egui::Context, frame: &eframe::Frame) {
+        // A play started from the grid or a tracklist line waits here for the
+        // tracklist to arrive. Before the hidden check: a tracklist line's ▶
+        // plays its record from the bar, sheet unseen.
+        let start_now = self.vinyl_sheet.as_mut().is_some_and(|s| {
+            let go = s.pending_play && !s.loading;
+            if go {
+                s.pending_play = false;
+            }
+            go
+        });
+        if start_now {
+            self.play_sheet_from_start(frame);
+        }
         if self.vinyl_sheet.as_ref().is_none_or(|s| s.hidden) {
             return;
         }
@@ -1270,17 +1292,6 @@ impl App {
             if sheet.playing_video.is_some() && !webview::is_open() {
                 sheet.playing_video = None;
             }
-        }
-        // A play started from the grid waits here for the tracklist to arrive.
-        let start_now = self.vinyl_sheet.as_mut().is_some_and(|s| {
-            let go = s.pending_play && !s.loading;
-            if go {
-                s.pending_play = false;
-            }
-            go
-        });
-        if start_now {
-            self.play_sheet_from_start(frame);
         }
         self.preload_sheet_start(ctx);
 
@@ -2670,8 +2681,9 @@ impl App {
         };
         // The bar is the record playing; once the record stops (the video
         // ended, or the panel was closed from its own title bar) there is
-        // nothing to stand in for and the hidden sheet goes with it.
-        if sheet.playing_video.is_none() || !webview::is_open() {
+        // nothing to stand in for and the hidden sheet goes with it. A
+        // record still fetching its tracklist for a play is on its way.
+        if !sheet.pending_play && (sheet.playing_video.is_none() || !webview::is_open()) {
             self.vinyl_sheet = None;
             return;
         }

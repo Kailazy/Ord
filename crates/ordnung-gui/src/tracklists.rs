@@ -41,6 +41,8 @@ enum LineAct {
     SearchDiscogs(usize),
     NotThis(usize),
     PlayLocal(usize),
+    /// Play this song off its record, without opening the record.
+    Play(usize),
     /// Look this one line up again, whatever it holds.
     Retry(usize),
     /// Put the song in the crate of liked songs, or take it out.
@@ -125,14 +127,14 @@ fn fmt_clock(secs: u32) -> String {
 }
 
 /// The row table's columns: #, cover, the two text columns at their
-/// narrowest, and the badge column (pip, OWNED, FILE, +, ↻). The badge
+/// narrowest, and the badge column (pip, OWNED, FILE, ▶, +, ↻). The badge
 /// column is the window's outer bound: the window never shrinks, and the
 /// side panel never widens, past where it would push the ↻ out of view.
 const COL_INDEX: f32 = 30.0;
 const THUMB: f32 = 36.0;
 const COL_COVER: f32 = THUMB + 6.0;
 const COL_TEXT_MIN: f32 = 150.0;
-const COL_BADGES: f32 = 180.0;
+const COL_BADGES: f32 = 206.0;
 /// The side panel at its narrowest.
 const SIDE_MIN: f32 = 150.0;
 /// egui's own inner margin on a central panel, each side.
@@ -695,7 +697,7 @@ impl App {
             // different x. Clipped, the two always share the space evenly.
             .column(Column::remainder().at_least(COL_TEXT_MIN).clip(true))
             .column(Column::remainder().at_least(COL_TEXT_MIN).clip(true))
-            // Wide enough for the fullest row (pip, OWNED, FILE, +, ↻) so it
+            // Wide enough for the fullest row (pip, OWNED, FILE, ▶, +, ↻) so it
             // never has to grow either. See `table_min_width`.
             .column(Column::exact(COL_BADGES).clip(true))
             .body(|mut body| {
@@ -795,6 +797,16 @@ impl App {
                                     if crate::ui::button::like_mark(ui, self.is_liked(&artist, &title, e.release_id, None), side).clicked() {
                                         line_act = Some(LineAct::Like(i));
                                     }
+                                }
+                                // ▶ plays the song off its record, so hearing
+                                // a mix's songs is one click a line, not a
+                                // sheet to open and a row to find.
+                                if e.release_id.is_some()
+                                    && crate::ui::button::icon(ui, crate::ui::phosphor_icons::named(icons::PLAY), true)
+                                        .on_hover_note("Play this song from the record")
+                                        .clicked()
+                                {
+                                    line_act = Some(LineAct::Play(i));
                                 }
                             }
                             ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
@@ -902,7 +914,7 @@ impl App {
         let Some(act) = line_act else { return };
         let Some(e) = self.tracklist_entries.get(match act {
             LineAct::Open(i) | LineAct::Want(i) | LineAct::Dig(i) | LineAct::Buy(i) | LineAct::Pick(i)
-            | LineAct::SearchDiscogs(i) | LineAct::NotThis(i) | LineAct::PlayLocal(i) | LineAct::Retry(i)
+            | LineAct::SearchDiscogs(i) | LineAct::NotThis(i) | LineAct::PlayLocal(i) | LineAct::Play(i) | LineAct::Retry(i)
             | LineAct::Like(i) | LineAct::AddToCrate(i, _) | LineAct::SetTag(i, _, _) => i,
         }).cloned() else { return };
         let rel_artist = e.rel_artist.clone().unwrap_or_default();
@@ -957,6 +969,22 @@ impl App {
                     match Catalog::open(&self.db_path).and_then(|c| c.get_track(tid)) {
                         Ok(t) => self.play_track(tid, PathBuf::from(t.source_path)),
                         Err(e) => self.fail(format!("Couldn't find that track: {e}")),
+                    }
+                }
+            }
+            LineAct::Play(_) => {
+                if let Some(r) = e.release_id {
+                    // The record plays through its sheet (see
+                    // `pending_play`), which stays out of sight unless a
+                    // sheet is already up: the record is then the bar at
+                    // the window's bottom, and the tracklist keeps the front.
+                    let hidden = self.vinyl_sheet.as_ref().is_none_or(|s| s.hidden);
+                    self.open_release_sheet(r, rel_artist, rel_title, record_sub(&e), e.rel_thumb.clone(), ctx);
+                    if let Some(sheet) = self.vinyl_sheet.as_mut().filter(|s| s.release_id == r) {
+                        sheet.mark = e.rel_track.clone().or_else(|| e.title.clone());
+                        sheet.cursor = None;
+                        sheet.pending_play = true;
+                        sheet.hidden = hidden;
                     }
                 }
             }
