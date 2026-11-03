@@ -519,6 +519,29 @@ fn update_recopies_a_same_size_change_and_add_does_not() {
     let _ = std::fs::remove_dir_all(&usb);
 }
 
+/// A stick whose current library cannot be kept for Restore previous
+/// library is refused before any database is placed, as it was.
+#[test]
+fn export_refuses_when_the_previous_library_cannot_be_kept() {
+    let src = temp_root("noway-src");
+    let usb = temp_root("noway-usb");
+    let a = audio_file(&src, "a.mp3", 3_000);
+    let b = audio_file(&src, "b.mp3", 3_000);
+    let cancel = AtomicBool::new(false);
+    export_usb_with(&usb, &[track(1, &a, Format::Mp3, "A", "A")], &[], ExportOptions::default(), &mut |_| {}, &cancel).unwrap();
+    let rb = usb.join("PIONEER/rekordbox");
+    let names = ["export.pdb", "exportExt.pdb", "exportLibrary.db"];
+    let before = names.map(|n| std::fs::read(rb.join(n)).unwrap());
+    // A directory squatting the pdb's `.prev` name: the copy fails.
+    std::fs::create_dir(rb.join("export.pdb.prev")).unwrap();
+    let merge = ExportOptions { mode: ExportMode::Merge, ..Default::default() };
+    let err = export_usb_with(&usb, &[track(2, &b, Format::Mp3, "B", "B")], &[], merge, &mut |_| {}, &cancel).unwrap_err();
+    assert!(matches!(err, ExportError::NoWayBack(_)), "{err}");
+    assert_eq!(names.map(|n| std::fs::read(rb.join(n)).unwrap()), before, "the databases are as they were");
+    let _ = std::fs::remove_dir_all(&src);
+    let _ = std::fs::remove_dir_all(&usb);
+}
+
 #[test]
 fn export_refuses_empty_and_missing_dest() {
     let usb = temp_root("empty");

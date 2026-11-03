@@ -64,6 +64,8 @@ pub enum ExportError {
     DeviceChanged,
     #[error("the library keeps {0} on the device, and replacing the device would delete it; add to the device instead")]
     Conflict(PathBuf),
+    #[error("couldn't keep a copy of the device's current library to go back to ({0}); nothing was changed")]
+    NoWayBack(std::io::Error),
 }
 
 type Result<T> = std::result::Result<T, ExportError>;
@@ -160,20 +162,18 @@ pub(crate) const DB_NAMES: [&str; 3] = ["exportLibrary.db", "exportExt.pdb", "ex
 /// replacing the last set, for [`crate::edit::restore_previous`]. All or
 /// nothing: a copy that fails (a nearly full stick, right after the audio)
 /// takes every `.prev` with it, so a restore can never place a truncated
-/// pdb or an old pdb beside a new DLP. Best-effort like the first-edit
-/// `.orig`: the export goes on, it only leaves no way back.
-fn keep_previous_set(rb_dir: &Path) {
+/// pdb or an old pdb beside a new DLP, and the failure is returned so the
+/// export can refuse rather than go on with no way back.
+fn keep_previous_set(rb_dir: &Path) -> std::io::Result<()> {
     let prev = |name: &str| sibling(&rb_dir.join(name), ".prev");
     drop_previous_set(rb_dir);
-    let kept = DB_NAMES
+    DB_NAMES
         .iter()
         .filter(|name| rb_dir.join(name).is_file())
         .try_for_each(|name| {
             std::fs::copy(rb_dir.join(name), prev(name)).and_then(|_| sync_existing(&prev(name)))
-        });
-    if kept.is_err() {
-        drop_previous_set(rb_dir);
-    }
+        })
+        .inspect_err(|_| drop_previous_set(rb_dir))
 }
 
 /// Remove the `.prev` set: there is no library to go back to.
@@ -274,13 +274,21 @@ impl VolumeGuard {
 
 /// Bytes we expect to add to the destination for `audio` bytes of tracks the
 /// export will write, plus a fractional margin for the databases, ANLZ files
-/// and artwork the export also writes. The caller sums the true u64 file
-/// lengths of the tracks whose copy is due (the `TrackRow.file_size` field
-/// is clamped to u32, so it must not be used here).
-fn estimated_bytes_needed(audio: u64) -> u64 {
+/// and artwork the export also writes, plus twice the databases already on
+/// the stick, so both their `.prev` copies and their replacements fit. The
+/// caller sums the true u64 file lengths of the tracks whose copy is due
+/// (the `TrackRow.file_size` field is clamped to u32, so it must not be
+/// used here).
+fn estimated_bytes_needed(audio: u64, dest_root: &Path) -> u64 {
+    let rb_dir = crate::pdb::rb_dir(dest_root);
+    let databases: u64 = DB_NAMES
+        .iter()
+        .filter_map(|name| std::fs::metadata(rb_dir.join(name)).ok())
+        .map(|m| m.len())
+        .sum();
     // ANLZ + artwork + databases run well under a fifth of the audio in
     // practice; a 25% margin comfortably covers them and FAT slack.
-    audio + audio / 4 + 8 * 1024 * 1024
+    audio + audio / 4 + 2 * databases + 8 * 1024 * 1024
 }
 
 /// Free bytes on the filesystem holding `path`. `None` when it can't be
@@ -1268,7 +1276,7 @@ fn export_impl(
     // Refuse before touching the stick if the selection can't fit, rather than
     // half-writing it. Sum the bytes of the audio we'd actually write.
     let audio: u64 = resolved.iter().filter(|t| t.copy_needed).map(|t| t.expected_bytes).sum();
-    let need = estimated_bytes_needed(audio);
+    let need = estimated_bytes_needed(audio, dest_root);
     if let Some(free) = free_space(dest_root) {
         if free < need {
             return Err(ExportError::NotEnoughSpace {
@@ -1617,12 +1625,18 @@ fn export_impl(
     // interrupted write leaves the previous complete file, never a torn one.
     // What the stick held before this export is kept as `.prev` siblings for
     // "Restore previous library" (`edit::restore_previous`): the one way
-    // back when a player or rekordbox rejects what this export wrote.
+    // back when a player or rekordbox rejects what this export wrote. A
+    // stick with a library whose copy fails is refused here, nothing placed.
     // The device is confirmed before the `.prev` set and before each
     // placement: a stick that went away during the build must not get its
     // databases written into the empty mount point.
     guard.check()?;
-    keep_previous_set(&rb_dir);
+    if let Err(source) = keep_previous_set(&rb_dir) {
+        if rb_dir.join("export.pdb").is_file() {
+            crate::dlp::remove_scratch(&dlp_tmp);
+            return Err(ExportError::NoWayBack(source));
+        }
+    }
     let placed = crate::dlp::place_library(&dlp_tmp, &rb_dir.join("exportLibrary.db"));
     crate::dlp::remove_scratch(&dlp_tmp);
     placed.map_err(|e| ExportError::Dlp(e.to_string()))?;
@@ -1823,7 +1837,7 @@ mod tests {
         std::fs::write(dir.join("exportLibrary.db"), b"dlp").unwrap();
         std::fs::write(dir.join("export.pdb"), b"pdb").unwrap();
         std::fs::write(dir.join("exportExt.pdb.prev"), b"stale").unwrap();
-        keep_previous_set(&dir);
+        keep_previous_set(&dir).unwrap();
         assert_eq!(std::fs::read(dir.join("export.pdb.prev")).unwrap(), b"pdb");
         assert_eq!(std::fs::read(dir.join("exportLibrary.db.prev")).unwrap(), b"dlp");
         // A stale copy of a database the stick no longer has is dropped.
@@ -1832,8 +1846,21 @@ mod tests {
         // the whole set with it, so no restore can mix generations.
         std::fs::remove_file(dir.join("export.pdb.prev")).unwrap();
         std::fs::create_dir(dir.join("export.pdb.prev")).unwrap();
-        keep_previous_set(&dir);
+        assert!(keep_previous_set(&dir).is_err());
         assert!(!dir.join("exportLibrary.db.prev").exists());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn estimate_counts_the_sticks_databases_twice() {
+        let dir = std::env::temp_dir().join(format!("ordnung-space-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let rb = crate::pdb::rb_dir(&dir);
+        std::fs::create_dir_all(&rb).unwrap();
+        let bare = estimated_bytes_needed(100, &dir);
+        std::fs::write(rb.join("export.pdb"), vec![0u8; 1_000]).unwrap();
+        std::fs::write(rb.join("exportLibrary.db"), vec![0u8; 500]).unwrap();
+        assert_eq!(estimated_bytes_needed(100, &dir), bare + 2 * 1_500);
         let _ = std::fs::remove_dir_all(&dir);
     }
 
