@@ -555,7 +555,8 @@ pub fn convert_stick_track(
         .tracks
         .get(&track_id)
         .ok_or(ReadError::Format("no such track row"))?;
-    let src = volume_root.join(track.file_path.trim_start_matches('/'));
+    let src = crate::export::on_volume(volume_root, &track.file_path)
+        .map_err(ReadError::io(Path::new(&track.file_path)))?;
     let convert_err = |msg: String| ReadError::Convert {
         path: src.clone(),
         msg,
@@ -687,6 +688,11 @@ pub fn relink_converted_track(
         row.strings[20] = new_path.clone();
     })?;
     check_pdb(&pdb_path, &data)?;
+    // The analysis files name the audio they describe; a row whose analysis
+    // path leaves the device is refused before either database changes.
+    let dat = (!anlz.is_empty())
+        .then(|| crate::export::on_volume(volume_root, &anlz).map_err(ReadError::io(Path::new(&anlz))))
+        .transpose()?;
     let dlp_path = dir.join("exportLibrary.db");
     if dlp_path.is_file() {
         with_local_dlp(&dlp_path, |conn| {
@@ -719,13 +725,9 @@ pub fn relink_converted_track(
             Ok(())
         })?;
     }
-    // The analysis files name the audio they describe.
-    if !anlz.is_empty() {
-        let dat = volume_root.join(anlz.trim_start_matches('/'));
-        if dat.is_file() {
-            backup_anlz(&dat);
-            crate::anlz::write_path(&dat, &new_path).map_err(ReadError::io(&dat))?;
-        }
+    if let Some(dat) = dat.filter(|d| d.is_file()) {
+        backup_anlz(&dat);
+        crate::anlz::write_path(&dat, &new_path).map_err(ReadError::io(&dat))?;
     }
     write_pdb(&pdb_path, &data)
 }

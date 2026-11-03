@@ -19,7 +19,7 @@
 
 use std::collections::{HashMap, HashSet};
 use std::os::unix::fs::MetadataExt;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -135,6 +135,22 @@ pub(crate) fn sibling(path: &Path, suffix: &str) -> PathBuf {
     PathBuf::from(s)
 }
 
+/// A path a stick database stores (`/Contents/…`, `/PIONEER/USBANLZ/…`)
+/// joined onto the volume root. A row is data read off the stick, so a
+/// path that would leave the volume (empty, or with a `..`, root or prefix
+/// component) is refused: every file the export or an edit removes,
+/// rewrites or converts is found through here.
+pub(crate) fn on_volume(volume_root: &Path, rel: &str) -> std::io::Result<PathBuf> {
+    let rel = Path::new(rel.trim_start_matches('/'));
+    if rel.as_os_str().is_empty() || rel.components().any(|c| !matches!(c, Component::Normal(_))) {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "the path leaves the device",
+        ));
+    }
+    Ok(volume_root.join(rel))
+}
+
 /// The three databases an export places, in placement order: the pdb a
 /// player reads first lands last. [`crate::edit::restore_previous`] walks
 /// them the same way.
@@ -170,7 +186,7 @@ fn drop_previous_set(rb_dir: &Path) {
 /// Remove a track's analysis files (`.DAT`, `.EXT`, `.2EX` and their
 /// first-edit `.orig` copies) and their directory once it is empty.
 pub(crate) fn remove_anlz_files(volume_root: &Path, analyze_path: &str) {
-    let dat = volume_root.join(analyze_path.trim_start_matches('/'));
+    let Ok(dat) = on_volume(volume_root, analyze_path) else { return };
     for kind in ["DAT", "EXT", "2EX", "DAT.orig", "EXT.orig"] {
         let _ = std::fs::remove_file(dat.with_extension(kind));
     }
@@ -184,15 +200,17 @@ pub(crate) fn remove_anlz_files(volume_root: &Path, analyze_path: &str) {
 /// (`still_used` holds their artwork ids), its artwork, all four files
 /// (`aN`, `aN_m`, `bN`, `bN_m`). Best-effort, and always after the rows: a
 /// row that outlives its file is a missing track on the player, a file that
-/// outlives its row only a stray on the stick.
+/// outlives its row only a stray on the stick. A path [`on_volume`] refuses
+/// is left alone.
 pub(crate) fn remove_track_files(volume_root: &Path, t: &RbTrack, still_used: &HashSet<u32>) {
-    let on_stick = |p: &str| volume_root.join(p.trim_start_matches('/'));
-    let _ = std::fs::remove_file(on_stick(&t.file_path));
+    if let Ok(audio) = on_volume(volume_root, &t.file_path) {
+        let _ = std::fs::remove_file(audio);
+    }
     if let Some(anlz) = &t.analyze_path {
         remove_anlz_files(volume_root, anlz);
     }
     if t.artwork_id != 0 && !still_used.contains(&t.artwork_id) {
-        if let Some(art) = t.artwork_path.as_deref().map(on_stick) {
+        if let Some(art) = t.artwork_path.as_deref().and_then(|p| on_volume(volume_root, p).ok()) {
             let _ = std::fs::remove_file(&art);
             let n = art
                 .file_name()
@@ -263,7 +281,8 @@ impl VolumeGuard {
 fn estimated_bytes_needed(sources: &[(u64, String)], dest_root: &Path) -> u64 {
     let mut audio: u64 = 0;
     for (src_len, rel) in sources {
-        let already = std::fs::metadata(dest_root.join(rel))
+        let already = on_volume(dest_root, rel)
+            .and_then(std::fs::metadata)
             .map(|m| m.len())
             .unwrap_or(0);
         if already != *src_len {
@@ -624,8 +643,8 @@ fn read_existing(
             ..Default::default()
         };
         // Re-fetch file size from the stick so the row stays truthful.
-        let on_disk = dest_root.join(t.file_path.trim_start_matches('/'));
-        row.file_size = std::fs::metadata(&on_disk)
+        row.file_size = on_volume(dest_root, &t.file_path)
+            .and_then(std::fs::metadata)
             .map(|m| m.len().min(u32::MAX as u64) as u32)
             .unwrap_or(0);
         tracks.push(ExistingTrack {
@@ -733,8 +752,7 @@ fn validate_export(
     // Every track's analysis file must actually be on the stick.
     for t in export.tracks.values() {
         if let Some(rel) = t.analyze_path.as_deref() {
-            let on_disk = dest_root.join(rel.trim_start_matches('/'));
-            if !on_disk.is_file() {
+            if !on_volume(dest_root, rel).is_ok_and(|p| p.is_file()) {
                 return Err(format!(
                     "track {:?} references a missing ANLZ file {rel}",
                     t.title
@@ -1158,7 +1176,7 @@ fn export_impl(
             raw: None,
         };
         report.placed.push((t.id, row.file_path.clone()));
-        let dest = dest_root.join(row.file_path.trim_start_matches('/'));
+        let dest = on_volume(dest_root, &row.file_path).map_err(io_err(PathBuf::from(&row.file_path)))?;
         // A byte copy is current when the sizes agree; a conversion's size
         // isn't known ahead, so any non-empty output on the stick stands.
         let copy_needed = match std::fs::metadata(&dest) {
@@ -1295,7 +1313,8 @@ fn export_impl(
         });
         // The row's own path: `/Contents/<file>`, or wherever a stick
         // rekordbox wrote already keeps a re-selected track.
-        let dest = dest_root.join(tr.row.file_path.trim_start_matches('/'));
+        let dest = on_volume(dest_root, &tr.row.file_path)
+            .map_err(io_err(PathBuf::from(&tr.row.file_path)))?;
         match tr.transcode {
             // Already on the stick (a merge re-selecting it): nothing to copy.
             _ if !tr.copy_needed => {}
@@ -1743,6 +1762,69 @@ mod tests {
         assert!(matches!(guard.check(), Err(ExportError::DeviceChanged)));
         let _ = std::fs::remove_dir_all(&dir);
         let _ = std::fs::remove_dir_all(&moved);
+    }
+
+    #[test]
+    fn a_row_whose_path_leaves_the_device_is_never_removed() {
+        assert!(on_volume(Path::new("/v"), "").is_err());
+        assert!(on_volume(Path::new("/v"), "/").is_err());
+        assert!(on_volume(Path::new("/v"), "/Contents/../../x.aiff").is_err());
+        assert_eq!(on_volume(Path::new("/v"), "/Contents/x.aiff").unwrap(), Path::new("/v/Contents/x.aiff"));
+
+        // The stick sits two levels under the test root, so the row's
+        // `/Contents/../../escape.aiff` names a file beside its parent.
+        let root = std::env::temp_dir().join(format!("ordnung-escape-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let usb = root.join("a").join("b");
+        let rb = crate::pdb::rb_dir(&usb);
+        std::fs::create_dir_all(&rb).unwrap();
+        let escape = root.join("a").join("escape.aiff");
+        std::fs::write(&escape, b"not yours").unwrap();
+        let escape_dat = root.join("a").join("escape.DAT");
+        std::fs::write(&escape_dat, b"nor this").unwrap();
+        let mut tables = PdbTables { created_date: "2026-01-01".into(), ..Default::default() };
+        tables.tracks.push(TrackRow {
+            id: 1,
+            title: "Escape".into(),
+            filename: "escape.aiff".into(),
+            file_path: "/Contents/../../escape.aiff".into(),
+            analyze_path: "/PIONEER/USBANLZ/../../../escape.DAT".into(),
+            ..Default::default()
+        });
+        let pdb_bytes = pdbw::build_export_pdb(&tables);
+        std::fs::write(rb.join("export.pdb"), &pdb_bytes).unwrap();
+
+        // Delete from device: the row goes, the files it points at stay.
+        let n = crate::edit::delete_stick_tracks(&usb, &["Contents/../../escape.aiff".into()]).unwrap();
+        assert_eq!(n, 1);
+        assert_eq!(std::fs::read(&escape).unwrap(), b"not yours");
+        assert_eq!(std::fs::read(&escape_dat).unwrap(), b"nor this");
+
+        // A Replace over a stick still listing the row sweeps nothing outside it.
+        std::fs::write(rb.join("export.pdb"), &pdb_bytes).unwrap();
+        let src = root.join("src");
+        std::fs::create_dir_all(&src).unwrap();
+        std::fs::write(src.join("a.mp3"), vec![0x5Au8; 4_000]).unwrap();
+        let t = Track {
+            id: 1,
+            source_path: src.join("a.mp3").to_string_lossy().into_owned(),
+            format: Format::Mp3,
+            properties: Some(ordnung_core::model::AudioProperties {
+                sample_rate_hz: 44_100,
+                bit_depth: Some(16),
+                channels: 2,
+                duration_ms: 4_000,
+                bitrate_kbps: Some(320),
+            }),
+            tags: Default::default(),
+            analysis: None,
+            cues: Vec::new(),
+        };
+        export_usb_with(&usb, &[t], &[], ExportOptions::default(), &mut |_| {}, &AtomicBool::new(false)).unwrap();
+        assert!(usb.join("Contents").join("a.mp3").is_file());
+        assert_eq!(std::fs::read(&escape).unwrap(), b"not yours");
+        assert_eq!(std::fs::read(&escape_dat).unwrap(), b"nor this");
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]
