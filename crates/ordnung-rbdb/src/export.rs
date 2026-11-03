@@ -18,6 +18,7 @@
 //! and cancellation through an [`AtomicBool`], per the architecture rules.
 
 use std::collections::{HashMap, HashSet};
+use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -59,6 +60,8 @@ pub enum ExportError {
     NeedsFfmpeg { n: usize },
     #[error("converting {path} for the player failed: {msg}")]
     Transcode { path: PathBuf, msg: String },
+    #[error("the device is no longer the one the export started on")]
+    DeviceChanged,
 }
 
 type Result<T> = std::result::Result<T, ExportError>;
@@ -215,6 +218,37 @@ pub(crate) fn remove_track_files(volume_root: &Path, t: &RbTrack, still_used: &H
 pub(crate) fn sync_dir(dir: &Path) {
     if let Ok(f) = std::fs::File::open(dir) {
         let _ = f.sync_all();
+    }
+}
+
+/// The volume a long stick write started on, held open for the whole run.
+/// Between two file copies nothing else holds the stick open, so an eject
+/// mid-export used to go through and the exporter carried on into the empty
+/// `/Volumes/<name>` left behind on the boot disk, recreating its tree
+/// there. The open handle makes Finder refuse the eject as in use, and a
+/// stick pulled anyway (or swapped for another) no longer matches the
+/// device and inode recorded here, so [`VolumeGuard::check`] fails the run
+/// before its next write. Compared by `(dev, ino)`, never by path.
+pub(crate) struct VolumeGuard {
+    _root: std::fs::File,
+    path: PathBuf,
+    dev_ino: (u64, u64),
+}
+
+impl VolumeGuard {
+    pub(crate) fn open(root: &Path) -> std::io::Result<Self> {
+        let file = std::fs::File::open(root)?;
+        let m = file.metadata()?;
+        Ok(Self { _root: file, path: root.to_path_buf(), dev_ino: (m.dev(), m.ino()) })
+    }
+
+    /// Still the directory that was opened: a stale or unreadable root is
+    /// [`ExportError::DeviceChanged`].
+    pub(crate) fn check(&self) -> Result<()> {
+        match std::fs::metadata(&self.path) {
+            Ok(m) if (m.dev(), m.ino()) == self.dev_ino => Ok(()),
+            _ => Err(ExportError::DeviceChanged),
+        }
     }
 }
 
@@ -837,11 +871,12 @@ fn export_impl(
     if !dest_root.is_dir() {
         return Err(ExportError::BadDestination(dest_root.to_path_buf()));
     }
+    let guard = VolumeGuard::open(dest_root).map_err(io_err(dest_root))?;
     let check = |c: &AtomicBool| {
         if c.load(Ordering::Relaxed) {
             Err(ExportError::Canceled)
         } else {
-            Ok(())
+            guard.check()
         }
     };
 
@@ -1561,6 +1596,10 @@ fn export_impl(
     // What the stick held before this export is kept as `.prev` siblings for
     // "Restore previous library" (`edit::restore_previous`): the one way
     // back when a player or rekordbox rejects what this export wrote.
+    // The device is confirmed before the `.prev` set and before each
+    // placement: a stick that went away during the build must not get its
+    // databases written into the empty mount point.
+    guard.check()?;
     keep_previous_set(&rb_dir);
     let placed = crate::dlp::place_library(&dlp_tmp, &rb_dir.join("exportLibrary.db"));
     crate::dlp::remove_scratch(&dlp_tmp);
@@ -1571,8 +1610,10 @@ fn export_impl(
     // and gets the empty one.
     let ext_pdb = rb_dir.join("exportExt.pdb");
     if mode == ExportMode::Replace || !ext_pdb.is_file() {
+        guard.check()?;
         write_atomic(&ext_pdb, &pdbw::build_export_ext_pdb()).map_err(io_err(ext_pdb))?;
     }
+    guard.check()?;
     let pdb = rb_dir.join("export.pdb");
     write_atomic(&pdb, &pdb_bytes).map_err(io_err(pdb))?;
 
@@ -1584,6 +1625,7 @@ fn export_impl(
     // Replace: the files of tracks the old export listed and the new
     // databases don't, and the old analysis files of a track that moved.
     if !swept.is_empty() {
+        guard.check()?;
         let live_paths: HashSet<String> = tables.tracks.iter().map(|r| path_key(&r.file_path)).collect();
         let live_anlz: HashSet<&str> = tables.tracks.iter().map(|r| r.analyze_path.as_str()).collect();
         let live_art: HashSet<u32> = tables.artwork.iter().map(|(id, _)| *id).collect();
@@ -1668,6 +1710,24 @@ mod tests {
         // The stick is left as it was, garbage included, for the user to look at.
         assert_eq!(std::fs::read(rb.join("export.pdb")).unwrap(), b"not a database");
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn volume_guard_tells_a_swapped_root_apart() {
+        let dir = std::env::temp_dir().join(format!("ordnung-guard-{}", std::process::id()));
+        let moved = sibling(&dir, ".moved");
+        let _ = std::fs::remove_dir_all(&dir);
+        let _ = std::fs::remove_dir_all(&moved);
+        std::fs::create_dir_all(&dir).unwrap();
+        let guard = VolumeGuard::open(&dir).unwrap();
+        guard.check().unwrap();
+        // The same path, another directory: what an ejected stick leaves.
+        std::fs::rename(&dir, &moved).unwrap();
+        assert!(matches!(guard.check(), Err(ExportError::DeviceChanged)));
+        std::fs::create_dir_all(&dir).unwrap();
+        assert!(matches!(guard.check(), Err(ExportError::DeviceChanged)));
+        let _ = std::fs::remove_dir_all(&dir);
+        let _ = std::fs::remove_dir_all(&moved);
     }
 
     #[test]

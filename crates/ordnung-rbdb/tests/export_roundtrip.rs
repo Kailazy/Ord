@@ -650,6 +650,50 @@ fn cancel_aborts_before_completion() {
     let _ = std::fs::remove_dir_all(&usb);
 }
 
+/// A stick that goes away mid-export (ejected between two copies, or
+/// swapped) leaves an empty `/Volumes/<name>` on the boot disk at the same
+/// path; the export must stop at the next check rather than build the rest
+/// of the stick there.
+#[test]
+fn a_swapped_destination_ends_the_export_before_the_next_write() {
+    let src = temp_root("swap-src");
+    let usb = temp_root("swap-usb");
+    let moved = usb.with_extension("moved");
+    let _ = std::fs::remove_dir_all(&moved);
+    let a = audio_file(&src, "one.mp3", 2_000);
+    let b = audio_file(&src, "two.mp3", 3_000);
+    let tracks = vec![
+        track(1, &a, Format::Mp3, "One", "A"),
+        track(2, &b, Format::Mp3, "Two", "B"),
+    ];
+    let mut swapped = false;
+    let err = export_usb_with(
+        &usb,
+        &tracks,
+        &[],
+        ExportOptions::default(),
+        &mut |p| {
+            // After the first file lands: the stick is gone, an empty
+            // directory of the same name is in its place.
+            if p.landed.is_some() && !swapped {
+                swapped = true;
+                std::fs::rename(&usb, &moved).unwrap();
+                std::fs::create_dir(&usb).unwrap();
+            }
+        },
+        &AtomicBool::new(false),
+    )
+    .unwrap_err();
+    assert!(swapped);
+    assert!(matches!(err, ExportError::DeviceChanged), "{err}");
+    let left: Vec<_> = std::fs::read_dir(&usb).unwrap().flatten().map(|e| e.file_name()).collect();
+    assert!(left.is_empty(), "written into the stale path: {left:?}");
+    assert!(moved.join("Contents/one.mp3").is_file());
+    let _ = std::fs::remove_dir_all(&src);
+    let _ = std::fs::remove_dir_all(&usb);
+    let _ = std::fs::remove_dir_all(&moved);
+}
+
 /// The GUI's "Set up for rekordbox" button runs an empty Merge export to turn
 /// a plain volume into a rekordbox device without touching its files. That
 /// only works if an empty selection yields a valid, empty device — and one a

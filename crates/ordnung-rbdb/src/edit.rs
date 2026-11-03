@@ -593,6 +593,11 @@ pub fn convert_stick_track(
             )));
         }
     }
+    // Held open through the encode, the other long stick write: an eject
+    // meanwhile is refused, and a stick gone anyway is caught before the
+    // file is placed and before the databases are touched.
+    let guard = crate::export::VolumeGuard::open(volume_root).map_err(ReadError::io(volume_root))?;
+    let still_there = || guard.check().map_err(|e| convert_err(e.to_string()));
     // The source's own tags and cover ride along: ffmpeg carries only some
     // of them into an AIFF, and while the player reads the row, the file
     // should stay a complete file.
@@ -610,12 +615,14 @@ pub fn convert_stick_track(
             let _ = ordnung_core::tag::embed_full(&tmp, &tags, cover.as_ref());
             crate::export::sync_existing(&tmp).map_err(ReadError::io(&tmp))
         })
+        .and_then(|_| still_there())
         .and_then(|_| std::fs::rename(&tmp, &dest).map_err(ReadError::io(&dest)));
     if let Err(e) = placed {
         let _ = std::fs::remove_file(&tmp);
         return Err(e);
     }
     let relinked = (|| {
+        still_there()?;
         let props = ordnung_core::scan::scan_file(&dest)
             .map_err(|e| convert_err(e.to_string()))?
             .properties;
