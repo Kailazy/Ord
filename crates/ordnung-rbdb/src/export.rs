@@ -398,6 +398,14 @@ fn sanitize_fat(name: &str) -> String {
     }
 }
 
+/// A stick file name of at most 120 bytes (rbxport's limit, for rekordbox
+/// parity; FAT itself allows 255 UTF-16 units): the stem gives way on a
+/// char boundary, the extension and a `(n)` suffix stay whole.
+fn stick_name(stem: &str, suffix: &str, ext: &str) -> String {
+    let cut = stem.floor_char_boundary(120usize.saturating_sub(suffix.len() + ext.len()));
+    format!("{}{suffix}{ext}", &stem[..cut])
+}
+
 /// Today as `YYYY-MM-DD` in local time (rekordbox stamps its export with the
 /// local date; a UTC date lands on "tomorrow" for an evening export in the
 /// Americas). Falls back to UTC arithmetic where local time isn't available.
@@ -1027,7 +1035,7 @@ fn export_impl(
             report.skipped.push((t.id, "larger than FAT32 allows (4 GB)".into()));
             continue;
         }
-        let base = format!("{stem}{ext}");
+        let base = stick_name(&stem, "", &ext);
         // Is this track on the stick already: at `/Contents/<base>`, or, on
         // a stick rekordbox wrote, as the one file of that name under its
         // artist and album folders?
@@ -1066,7 +1074,7 @@ fn export_impl(
                 let mut name = base.clone();
                 let mut n = 2;
                 while !taken.insert(path_key(&name)) {
-                    name = format!("{stem} ({n}){ext}");
+                    name = stick_name(&stem, &format!(" ({n})"), &ext);
                     n += 1;
                 }
                 let id = next_id;
@@ -1710,6 +1718,19 @@ mod tests {
         assert_eq!(sanitize_fat("  spaced.aif  "), "spaced.aif");
         assert_eq!(sanitize_fat("dots..."), "dots");
         assert_eq!(sanitize_fat(""), "track");
+    }
+
+    #[test]
+    fn stick_names_stay_within_120_bytes() {
+        let stem = "x".repeat(300);
+        let name = stick_name(&stem, "", ".mp3");
+        assert!(name.len() <= 120 && name.ends_with(".mp3"), "{name}");
+        let name = stick_name(&stem, " (2)", ".mp3");
+        assert!(name.len() <= 120 && name.ends_with("x (2).mp3"), "{name}");
+        // The cut lands on a char boundary.
+        let name = stick_name(&"é".repeat(300), "", ".aiff");
+        assert!(name.len() <= 120 && name.ends_with("é.aiff"), "{name}");
+        assert_eq!(stick_name("short", " (2)", ".mp3"), "short (2).mp3");
     }
 
     #[test]

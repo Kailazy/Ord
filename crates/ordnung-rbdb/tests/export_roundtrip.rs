@@ -542,6 +542,31 @@ fn export_refuses_when_the_previous_library_cannot_be_kept() {
     let _ = std::fs::remove_dir_all(&usb);
 }
 
+/// Two library files of one long name land as two stick names of at most
+/// 120 bytes each, the second with its `(2)` intact.
+#[test]
+fn long_names_are_cut_to_120_bytes_with_the_collision_suffix_kept() {
+    let src = temp_root("long-src");
+    let usb = temp_root("long-usb");
+    let name = format!("{}.mp3", "é".repeat(120)); // 244 bytes, under APFS's 255
+    std::fs::create_dir_all(src.join("one")).unwrap();
+    std::fs::create_dir_all(src.join("two")).unwrap();
+    let a = audio_file(&src.join("one"), &name, 3_000);
+    let b = audio_file(&src.join("two"), &name, 4_000);
+    let tracks = vec![track(1, &a, Format::Mp3, "One", "A"), track(2, &b, Format::Mp3, "Two", "B")];
+    let cancel = AtomicBool::new(false);
+    let report = export_usb_with(&usb, &tracks, &[], ExportOptions::default(), &mut |_| {}, &cancel).unwrap();
+    let placed: Vec<&str> = report.placed.iter().map(|(_, p)| p.rsplit('/').next().unwrap()).collect();
+    assert_eq!(placed.len(), 2);
+    assert!(placed.iter().all(|n| n.len() <= 120 && n.ends_with(".mp3")), "{placed:?}");
+    assert!(placed.iter().any(|n| n.ends_with("é (2).mp3")), "{placed:?}");
+    for n in &placed {
+        assert!(usb.join("Contents").join(n).is_file(), "{n}");
+    }
+    let _ = std::fs::remove_dir_all(&src);
+    let _ = std::fs::remove_dir_all(&usb);
+}
+
 #[test]
 fn export_refuses_empty_and_missing_dest() {
     let usb = temp_root("empty");
