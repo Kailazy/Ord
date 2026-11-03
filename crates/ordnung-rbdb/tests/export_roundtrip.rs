@@ -399,6 +399,27 @@ fn merge_adds_to_an_existing_export_without_clobbering_it() {
     let dlp = dlp::read_playlists(&usb.join("PIONEER/rekordbox/exportLibrary.db")).unwrap();
     assert_eq!(dlp.playlists.len(), 2);
 
+    // Merging a playlist whose name the stick has (case aside) keeps the
+    // stick's entries in their order and appends the tracks it lacks.
+    let set_a_again = vec![Playlist {
+        id: 3,
+        name: "Set A".into(),
+        parent: None,
+        is_folder: false,
+        track_ids: vec![12, 10],
+        icon: None,
+        color: None,
+    }];
+    export_usb_with(&usb, &tracks_b, &set_a_again, as_lib_99, &mut |_| {}, &cancel).unwrap();
+    let export = pdb::read_export(&usb.join("PIONEER/rekordbox/export.pdb")).unwrap();
+    assert_eq!(export.playlists.len(), 2, "no second node for the same name");
+    let a_pl = export.playlists.iter().find(|p| p.name.eq_ignore_ascii_case("set a")).unwrap();
+    let a_titles: Vec<&str> = export.entries[&a_pl.id]
+        .iter()
+        .map(|id| export.tracks[id].title.as_str())
+        .collect();
+    assert_eq!(a_titles, ["Alpha", "Beta", "Gamma"], "union, the stick's order first");
+
     let _ = std::fs::remove_dir_all(&src);
     let _ = std::fs::remove_dir_all(&usb);
 }

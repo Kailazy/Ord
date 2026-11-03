@@ -503,8 +503,8 @@ pub enum ExportMode {
     /// Add this selection to whatever the stick already carries. Tracks
     /// already present (matched by `/Contents` path) keep their existing id,
     /// filename and ANLZ files; genuinely new tracks are appended. Playlists
-    /// merge by name — an incoming playlist with an existing name replaces
-    /// that one's membership, a new name is added.
+    /// merge by name — an incoming playlist with an existing name adds the
+    /// tracks that one doesn't list yet after its own, a new name is added.
     Merge,
 }
 
@@ -1493,26 +1493,18 @@ fn export_impl(
         .collect();
 
     // Build the export playlist tree. In Merge mode we start from the existing
-    // tree (preserving ids and existing memberships) and layer the incoming
-    // playlists on by name: an incoming name that already exists replaces that
-    // node's membership; a new name is appended. In Replace mode the existing
-    // tree is empty, so this reduces to numbering the incoming playlists 1..M.
+    // tree (preserving ids and memberships) and layer the incoming playlists
+    // on by name, case-insensitively: an incoming name that already exists
+    // keeps that node's entries in their order and takes the incoming tracks
+    // it doesn't list yet after them; a new name is appended. In Replace mode
+    // the existing tree is empty, so this reduces to numbering the incoming
+    // playlists 1..M.
     let mut playlist_rows: Vec<RbPlaylist> = existing_playlists.clone();
     let mut entries: Vec<(u32, u32, u32)> = Vec::new();
     // Existing memberships are read straight back onto their (unchanged) track
-    // ids, except for any node an incoming playlist is about to replace.
+    // ids.
     let mut next_pl_id = playlist_rows.iter().map(|p| p.id).max().unwrap_or(0) + 1;
-    // Incoming names that will replace an existing node (so we drop its old
-    // membership below).
-    let incoming_names: HashSet<String> = playlists
-        .iter()
-        .filter(|p| !p.is_folder)
-        .map(|p| clamp(&p.name, 300).to_lowercase())
-        .collect();
-    for p in &playlist_rows {
-        if p.is_folder || incoming_names.contains(&p.name.to_lowercase()) {
-            continue;
-        }
+    for p in playlist_rows.iter().filter(|p| !p.is_folder) {
         if let Some(ids) = existing_entries.get(&p.id) {
             for (i, tid) in ids.iter().enumerate() {
                 entries.push((i as u32 + 1, *tid, p.id));
@@ -1526,7 +1518,7 @@ fn export_impl(
         // Reuse an existing node of the same name+kind, else mint a new id.
         let id = playlist_rows
             .iter()
-            .find(|e| e.name == clamped && e.is_folder == p.is_folder)
+            .find(|e| e.name.to_lowercase() == clamped.to_lowercase() && e.is_folder == p.is_folder)
             .map(|e| e.id)
             .unwrap_or_else(|| {
                 let id = next_pl_id;
@@ -1557,11 +1549,15 @@ fn export_impl(
             }),
         }
         if !p.is_folder {
-            let mut idx = 1u32;
+            // The node's entries so far (the stick's, on a merge), then the
+            // incoming tracks it doesn't list yet.
+            let mut listed: Vec<u32> = entries.iter().filter(|e| e.2 == id).map(|e| e.1).collect();
             for tid in &p.track_ids {
                 if let Some(&track) = by_catalog.get(tid) {
-                    entries.push((idx, track, id));
-                    idx += 1;
+                    if !listed.contains(&track) {
+                        listed.push(track);
+                        entries.push((listed.len() as u32, track, id));
+                    }
                 }
             }
         }
