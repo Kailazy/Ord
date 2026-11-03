@@ -1,0 +1,28 @@
+name: Tests
+
+# Runs the test suites and nothing else: no bundle, no DMG, no release. A
+# release is cut only when Kai asks for one (the Release and Promote
+# workflows); this job never builds or publishes anything.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    # Hosted macOS: hdiutil for the FAT32 export test, free minutes on a
+    # public repo.
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # rustup picks the channel up from rust-toolchain.toml on first use.
+      - uses: Swatinem/rust-cache@v2
+
+      # ordnung-gui's tests read gitignored sample audio
+      # (testdata/seeker-sample), so they stay local. The conversion tests
+      # skip themselves when ffmpeg is not installed.
+      - run: cargo test -p ordnung-core -p ordnung-rbdb
