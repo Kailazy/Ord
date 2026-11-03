@@ -2478,7 +2478,8 @@ Everything already on it stays as it is."
             ctx,
             "Update from library?",
             &format!("Update {n} track{} on {name} from the library?", if n == 1 { "" } else { "s" }),
-            "Their tags, key, grid and cues on the device are replaced with the              library's; cues or grids set on the device are lost.",
+            "Their tags, key, grid and cues on the device are replaced with the \
+             library's, including cues and grids set on a player.",
             Choice::primary("Update"),
         );
         if answer.is_some() {

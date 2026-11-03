@@ -1663,7 +1663,12 @@ to finish it."
             ));
         }
         Err(e) => {
-            let _ = tx.send(JobMsg::Failed(format!("Export failed: {e}")));
+            // The stick still holds its previous databases as `.prev`: say
+            // where the way back is.
+            let back = ordnung_rbdb::edit::has_previous(&dest)
+                .then_some(" Restore previous library is on the device's menu.")
+                .unwrap_or("");
+            let _ = tx.send(JobMsg::Failed(format!("Export failed: {e}{back}")));
         }
     }
     ctx.request_repaint();
