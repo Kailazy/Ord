@@ -124,6 +124,23 @@ fn tmp_sibling(path: &Path) -> PathBuf {
     path.with_file_name(format!(".{name}.tmp"))
 }
 
+/// Remove the temp files an export or edit killed mid-way left under `dir`
+/// and its subdirectories (a rekordbox stick nests its audio, the analysis
+/// files sit two levels down): `.<name>.tmp` ([`tmp_sibling`]) and
+/// `<stem>.ordnung-tmp.aiff` (a conversion mid-encode). Ord's own names
+/// only, best effort.
+fn sweep_temps(dir: &Path) {
+    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    for e in entries.flatten() {
+        let name = e.file_name().to_string_lossy().into_owned();
+        if e.file_type().is_ok_and(|t| t.is_dir()) {
+            sweep_temps(&e.path());
+        } else if (name.starts_with('.') && name.ends_with(".tmp")) || name.ends_with(".ordnung-tmp.aiff") {
+            let _ = std::fs::remove_file(e.path());
+        }
+    }
+}
+
 /// fsync a file that was produced by `fs::copy`.
 pub(crate) fn sync_existing(path: &Path) -> std::io::Result<()> {
     std::fs::File::open(path)?.sync_all()
@@ -910,6 +927,7 @@ fn export_impl(
     let anlz_root = dest_root.join("PIONEER").join("USBANLZ");
     for d in [&contents, &rb_dir, &anlz_root] {
         std::fs::create_dir_all(d).map_err(io_err(d.clone()))?;
+        sweep_temps(d);
     }
 
     let mut report = ExportReport::default();
@@ -1869,6 +1887,39 @@ mod tests {
         std::fs::create_dir(dir.join("export.pdb.prev")).unwrap();
         assert!(keep_previous_set(&dir).is_err());
         assert!(!dir.join("exportLibrary.db.prev").exists());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn an_export_sweeps_its_own_stale_temps_and_nothing_else() {
+        let dir = std::env::temp_dir().join(format!("ordnung-temps-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let contents = dir.join("Contents");
+        let nested = contents.join("Artist").join("Album");
+        let rb = crate::pdb::rb_dir(&dir);
+        let anlz = dir.join("PIONEER").join("USBANLZ").join("P000").join("00000001");
+        for d in [&nested, &rb, &anlz] {
+            std::fs::create_dir_all(d).unwrap();
+        }
+        let stale = [
+            contents.join(".track.mp3.tmp"),
+            nested.join(".track.mp3.tmp"),
+            contents.join("track.ordnung-tmp.aiff"),
+            rb.join(".export.pdb.tmp"),
+            anlz.join(".ANLZ0000.DAT.tmp"),
+        ];
+        let kept = [
+            contents.join(".hidden"),
+            contents.join("._track.mp3"),
+            contents.join("track.mp3"),
+            anlz.join("ANLZ0000.DAT"),
+        ];
+        for p in stale.iter().chain(&kept) {
+            std::fs::write(p, b"x").unwrap();
+        }
+        setup_device(&dir, &AtomicBool::new(false)).unwrap();
+        assert!(stale.iter().all(|p| !p.exists()), "temps left: {stale:?}");
+        assert!(kept.iter().all(|p| p.is_file()), "a neighbour went: {kept:?}");
         let _ = std::fs::remove_dir_all(&dir);
     }
 
