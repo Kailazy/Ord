@@ -4838,7 +4838,7 @@ impl App {
 fn usb_anlz_waveforms(vol: &Path, t: &ordnung_rbdb::pdb::RbTrack) -> (Vec<u8>, Vec<u8>) {
     t.analyze_path
         .as_deref()
-        .and_then(|ap| ordnung_rbdb::anlz::read_waveforms(&vol.join(ap.trim_start_matches('/'))))
+        .and_then(|ap| ordnung_rbdb::anlz::read_waveforms(&ordnung_rbdb::export::on_volume(vol, ap).ok()?))
         .map(|w| (w.preview, w.bands))
         .unwrap_or_default()
 }
@@ -4860,7 +4860,9 @@ pub(crate) fn read_usb_pdb(vol: &Path) -> Option<UsbScan> {
     let mut index_by_id: HashMap<u32, usize> = HashMap::new();
     for id in ids {
         let t = &export.tracks[&id];
-        let abs = vol.join(t.file_path.trim_start_matches('/'));
+        // A row whose path leaves the device (a corrupt pdb) gets no row
+        // here: nothing to play, and no stick write can reach it.
+        let Ok(abs) = ordnung_rbdb::export::on_volume(vol, &t.file_path) else { continue };
         let mut tags = ordnung_core::model::Tags::default();
         tags.title = (!t.title.is_empty()).then(|| t.title.clone());
         tags.artist = t.artist.clone();
@@ -4995,15 +4997,15 @@ fn usb_playlist_tracks(
 impl UsbPdbInfo {
     /// What the pdb row `id` of a stick at `vol` says about its track.
     fn from_row(vol: &Path, id: u32, t: &ordnung_rbdb::pdb::RbTrack) -> Self {
-        let on_stick = |p: &String| vol.join(p.trim_start_matches('/'));
+        let on_stick = |p: &String| ordnung_rbdb::export::on_volume(vol, p).ok();
         let (waveform, waveform_bands) = usb_anlz_waveforms(vol, t);
         UsbPdbInfo {
             bpm: t.bpm(),
             key: t.key.clone(),
-            artwork_path: t.artwork_path.as_ref().map(on_stick),
+            artwork_path: t.artwork_path.as_ref().and_then(on_stick),
             waveform,
             waveform_bands,
-            anlz_path: t.analyze_path.as_ref().map(on_stick),
+            anlz_path: t.analyze_path.as_ref().and_then(on_stick),
             pdb_id: Some(id),
             added_at: crate::util::ymd_to_unix(&t.date_added),
         }

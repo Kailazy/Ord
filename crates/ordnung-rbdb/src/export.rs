@@ -159,7 +159,7 @@ pub(crate) fn sibling(path: &Path, suffix: &str) -> PathBuf {
 /// path that would leave the volume (empty, or with a `..`, root or prefix
 /// component) is refused: every file the export or an edit removes,
 /// rewrites or converts is found through here.
-pub(crate) fn on_volume(volume_root: &Path, rel: &str) -> std::io::Result<PathBuf> {
+pub fn on_volume(volume_root: &Path, rel: &str) -> std::io::Result<PathBuf> {
     let rel = Path::new(rel.trim_start_matches('/'));
     if rel.as_os_str().is_empty() || rel.components().any(|c| !matches!(c, Component::Normal(_))) {
         return Err(std::io::Error::new(
