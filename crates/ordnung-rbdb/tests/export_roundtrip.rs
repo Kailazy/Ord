@@ -939,3 +939,32 @@ fn classic_player_target_converts_flac_and_high_rates_to_aiff() {
         let _ = std::fs::remove_dir_all(d);
     }
 }
+
+/// A conversion that fails on an Update (a library file gone bad) ends the
+/// export with the stick's current AIFF and databases exactly as they were:
+/// the encode goes to a temp name and only a finished one replaces the old.
+#[test]
+fn failed_conversion_on_update_keeps_the_sticks_file() {
+    let src = temp_root("reconvert-src");
+    let usb = temp_root("reconvert-usb");
+    let Some(flac) = tone_file(&src.join("tone.flac"), 44_100) else {
+        eprintln!("ffmpeg not available; skipping");
+        return;
+    };
+    let tracks = vec![track_with_rate(1, &flac, Format::Flac, "Flac", 44_100)];
+    let cancel = AtomicBool::new(false);
+    let classic = ExportOptions { player: PlayerTarget::Classic, ..Default::default() };
+    export_usb_with(&usb, &tracks, &[], classic, &mut |_| {}, &cancel).unwrap();
+    let aiff = usb.join("Contents/tone.aiff");
+    let pdb_path = usb.join("PIONEER/rekordbox/export.pdb");
+    let (aiff_was, pdb_was) = (std::fs::read(&aiff).unwrap(), std::fs::read(&pdb_path).unwrap());
+
+    std::fs::write(&flac, b"not a flac at all").unwrap();
+    let update = ExportOptions { mode: ExportMode::Merge, refresh_existing: true, ..classic };
+    let err = export_usb_with(&usb, &tracks, &[], update, &mut |_| {}, &cancel).unwrap_err();
+    assert!(matches!(err, ExportError::Transcode { .. }), "{err}");
+    assert_eq!(std::fs::read(&aiff).unwrap(), aiff_was, "the stick's AIFF keeps its bytes");
+    assert_eq!(std::fs::read(&pdb_path).unwrap(), pdb_was, "the database is untouched");
+    let _ = std::fs::remove_dir_all(&src);
+    let _ = std::fs::remove_dir_all(&usb);
+}

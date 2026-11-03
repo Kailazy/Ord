@@ -1315,14 +1315,13 @@ fn export_impl(
             }
             Some((spec, rate)) => {
                 // Encode to a sibling temp name (real extension last so ffmpeg
-                // picks the muxer), then move into place: an interrupted
-                // conversion never leaves a half file under the track's name.
+                // picks the muxer), then move into place: an interrupted or
+                // failed conversion never leaves a half file under the track's
+                // name, and the stick's current file stands until the new one
+                // is whole.
                 let stem = tr.row.filename.trim_end_matches(".aiff");
                 let tmp = dest.with_file_name(format!("{stem}.ordnung-tmp.aiff"));
                 let _ = std::fs::remove_file(&tmp);
-                if dest.exists() {
-                    std::fs::remove_file(&dest).map_err(io_err(dest.clone()))?;
-                }
                 ordnung_core::convert::convert_file_resampled(&tr.source, &spec, &tmp, false, rate)
                     .map_err(|e| ExportError::Transcode {
                         path: tr.source.clone(),
