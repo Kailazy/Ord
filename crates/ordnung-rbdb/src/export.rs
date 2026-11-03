@@ -62,6 +62,8 @@ pub enum ExportError {
     Transcode { path: PathBuf, msg: String },
     #[error("the device is no longer the one the export started on")]
     DeviceChanged,
+    #[error("the library keeps {0} on the device, and replacing the device would delete it; add to the device instead")]
+    Conflict(PathBuf),
 }
 
 type Result<T> = std::result::Result<T, ExportError>;
@@ -954,6 +956,9 @@ fn export_impl(
     // Selected tracks the stick already holds and an Add leaves alone:
     // catalog id → their existing row id, for the playlist entries.
     let mut kept: Vec<(Id, u32)> = Vec::new();
+    // Canonical, so a source reached through a symlink still counts as on
+    // the device.
+    let device = std::fs::canonicalize(dest_root).map_err(io_err(dest_root))?;
 
     for t in tracks {
         let source = PathBuf::from(&t.source_path);
@@ -965,6 +970,16 @@ fn export_impl(
             report
                 .skipped
                 .push((t.id, "format not CDJ-playable".into()));
+            continue;
+        }
+        // A source on the device itself: the library keeps its only copy
+        // there, so nothing is copied over it, and a Replace, whose sweep
+        // would take it, is refused outright.
+        if std::fs::canonicalize(&source).is_ok_and(|p| p.starts_with(&device)) {
+            if mode == ExportMode::Replace {
+                return Err(ExportError::Conflict(source));
+            }
+            report.skipped.push((t.id, "the library keeps this file on the device".into()));
             continue;
         }
 

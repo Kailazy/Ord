@@ -694,6 +694,36 @@ fn a_swapped_destination_ends_the_export_before_the_next_write() {
     let _ = std::fs::remove_dir_all(&moved);
 }
 
+/// A library that keeps a file on the device itself: a Replace would sweep
+/// the only copy, so it is refused before anything is copied; a Merge leaves
+/// that file alone and exports the rest.
+#[test]
+fn a_source_on_the_device_is_refused_by_replace_and_skipped_by_merge() {
+    let src = temp_root("ondev-src");
+    let usb = temp_root("ondev-usb");
+    let contents = usb.join("Contents");
+    std::fs::create_dir_all(&contents).unwrap();
+    let a = audio_file(&src, "a.mp3", 2_000);
+    let on_device = audio_file(&contents, "b.mp3", 3_000);
+    let tracks = vec![
+        track(1, &a, Format::Mp3, "A", "A"),
+        track(2, &on_device, Format::Mp3, "B", "B"),
+    ];
+    let cancel = AtomicBool::new(false);
+    let err = export_usb_with(&usb, &tracks, &[], ExportOptions::default(), &mut |_| {}, &cancel).unwrap_err();
+    assert!(matches!(&err, ExportError::Conflict(p) if p.ends_with("b.mp3")), "{err}");
+    assert!(!contents.join("a.mp3").exists(), "copied before the refusal");
+    assert!(!usb.join("PIONEER/rekordbox/export.pdb").exists());
+
+    let opts = ExportOptions { mode: ExportMode::Merge, ..Default::default() };
+    let report = export_usb_with(&usb, &tracks, &[], opts, &mut |_| {}, &cancel).unwrap();
+    assert_eq!(report.tracks_exported, 1);
+    assert_eq!(report.skipped, vec![(2, "the library keeps this file on the device".to_string())]);
+    assert_eq!(std::fs::metadata(&on_device).unwrap().len(), 3_000);
+    let _ = std::fs::remove_dir_all(&src);
+    let _ = std::fs::remove_dir_all(&usb);
+}
+
 /// The GUI's "Set up for rekordbox" button runs an empty Merge export to turn
 /// a plain volume into a rekordbox device without touching its files. That
 /// only works if an empty selection yields a valid, empty device — and one a
