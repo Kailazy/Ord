@@ -858,6 +858,20 @@ impl App {
                                         ui.add_space(14.0);
                                         ui.separator();
                                         ui.add_space(10.0);
+                                        ui.label(
+                                            egui::RichText::new("Double-click a song").strong(),
+                                        );
+                                        ui.add_space(4.0);
+                                        for action in config::DoubleClick::ALL {
+                                            let mut on = self.config.double_click_does(action);
+                                            if ui.checkbox(&mut on, action.label()).changed() {
+                                                self.config.set_double_click(action, on);
+                                                self.save_config();
+                                            }
+                                        }
+                                        ui.add_space(14.0);
+                                        ui.separator();
+                                        ui.add_space(10.0);
                                         ui.horizontal(|ui| {
                                             ui.label(egui::RichText::new("Tags").strong());
                                             crate::ui::info_note(

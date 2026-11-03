@@ -60,6 +60,10 @@ nav_collapsed = [
 ]
 inspector_density = "narrow"
 inspector_open = true
+double_click = [
+    "play",
+    "release",
+]
 startup_view = "recent"
 auto_analyze = false
 cue_bar_open = true

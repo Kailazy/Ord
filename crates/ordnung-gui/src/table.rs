@@ -845,6 +845,10 @@ impl App {
     pub(crate) fn draw_table(&mut self, ui: &mut egui::Ui) {
         let mut open_convert_for: Option<Id> = None;
         let mut open_inspector = false;
+        // What a double-click on a row does: the Settings choice, any mix.
+        let dbl_plays = self.config.double_click_does(config::DoubleClick::Play);
+        let dbl_inspects = self.config.double_click_does(config::DoubleClick::Inspector);
+        let dbl_releases = self.config.double_click_does(config::DoubleClick::Release);
         // Keyboard: ↑ ↓ (and W S) move the selection one row through the
         // table as shown, ⏎ plays the selected song. The move is a plain
         // click on that row, so the inspector and the sidebar follow the way
@@ -2412,11 +2416,17 @@ impl App {
                                     // Device rows: double-click previews the file.
                                     preview_request = Some((r.id, r.source_path.clone()));
                                 } else {
-                                    // A double-click opens the track's details
-                                    // in the inspector, the way a double-click
-                                    // in Finder opens the thing. Converting is a
-                                    // menu action, not what most opens mean.
-                                    open_inspector = true;
+                                    // Library rows: whatever Settings says a
+                                    // double-click does, in any combination.
+                                    if dbl_plays {
+                                        preview_request = Some((r.id, r.source_path.clone()));
+                                    }
+                                    if dbl_inspects {
+                                        open_inspector = true;
+                                    }
+                                    if dbl_releases {
+                                        menu_action = Some(TrackMenuAction::ViewRelease(r.id));
+                                    }
                                 }
                             }
                         });

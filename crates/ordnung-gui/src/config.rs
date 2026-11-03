@@ -142,6 +142,11 @@ pub struct Config {
     /// default (and for older configs that predate the field): a fresh install
     /// opens on the full-width table, with the pull tab there to discover.
     pub inspector_open: bool,
+    /// What a double-click on a library row does, as stable [`DoubleClick`]
+    /// keys; any combination may be on. `["inspector"]` by default (and for
+    /// older configs that predate the field): the drawer opens, as it always
+    /// did. Empty means a double-click only selects the row.
+    pub double_click: Vec<String>,
     /// Which section the app opens on: `"library"` (Library, the default),
     /// `"vinyl"` (the vinyl collection), or `"recent"` (new imports). Unknown
     /// values fall back to `"library"`. See `StartupView`.
@@ -557,6 +562,43 @@ impl ReleaseMedium {
     ];
 }
 
+/// One thing a double-click on a library row can do. Stored in
+/// `Config::double_click` by key, like [`ReleaseMedium`], so several can be
+/// on at once.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DoubleClick {
+    Play,
+    Inspector,
+    Release,
+}
+
+impl DoubleClick {
+    /// Stable lowercase key stored in the config TOML.
+    pub fn key(self) -> &'static str {
+        match self {
+            DoubleClick::Play => "play",
+            DoubleClick::Inspector => "inspector",
+            DoubleClick::Release => "release",
+        }
+    }
+
+    /// Label shown next to the setting's checkbox.
+    pub fn label(self) -> &'static str {
+        match self {
+            DoubleClick::Play => "Plays the song",
+            DoubleClick::Inspector => "Opens the track inspector",
+            DoubleClick::Release => "Shows the release",
+        }
+    }
+
+    /// All actions, in the order the settings list shows them.
+    pub const ALL: [DoubleClick; 3] = [
+        DoubleClick::Play,
+        DoubleClick::Inspector,
+        DoubleClick::Release,
+    ];
+}
+
 /// Which section the app selects on launch. Parsed from `Config::startup_view`;
 /// presentation policy, so it lives in the GUI boundary.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -695,6 +737,7 @@ impl Default for Config {
             nav_collapsed: Vec::new(),
             inspector_density: crate::inspector::InspectorDensity::Expanded,
             inspector_open: false,
+            double_click: vec![DoubleClick::Inspector.key().to_string()],
             startup_view: StartupView::Library,
             auto_analyze: true,
             cue_bar_open: false,
@@ -786,6 +829,20 @@ impl Config {
         self.hidden_release_mediums.retain(|k| k != medium.key());
         if !shown {
             self.hidden_release_mediums.push(medium.key().to_string());
+        }
+    }
+
+    /// Whether a double-click on a library row does `action`.
+    pub fn double_click_does(&self, action: DoubleClick) -> bool {
+        self.double_click.iter().any(|k| k == action.key())
+    }
+
+    /// Turn one double-click action on or off. Caller persists with
+    /// [`Config::save`].
+    pub fn set_double_click(&mut self, action: DoubleClick, on: bool) {
+        self.double_click.retain(|k| k != action.key());
+        if on {
+            self.double_click.push(action.key().to_string());
         }
     }
 
@@ -952,6 +1009,17 @@ mod tests {
     }
 
     #[test]
+    fn double_click_set_toggles_one_key_without_duplicates() {
+        let mut cfg = Config::default();
+        cfg.set_double_click(DoubleClick::Play, true);
+        cfg.set_double_click(DoubleClick::Play, true);
+        cfg.set_double_click(DoubleClick::Inspector, false);
+        assert!(cfg.double_click_does(DoubleClick::Play));
+        assert!(!cfg.double_click_does(DoubleClick::Inspector));
+        assert_eq!(cfg.double_click, vec!["play".to_string()]);
+    }
+
+    #[test]
     fn skipping_a_field_leaves_only_that_field_out() {
         let mut cfg = Config::default();
         assert!(cfg.skipped_fill_fields().is_empty());
@@ -1095,6 +1163,7 @@ mod tests {
             nav_collapsed: ["playlists", "crates", "tags"].map(String::from).to_vec(),
             inspector_density: InspectorDensity::Compact,
             inspector_open: true,
+            double_click: ["play", "release"].map(String::from).to_vec(),
             startup_view: StartupView::Recent,
             auto_analyze: false,
             cue_bar_open: true,
@@ -1211,6 +1280,9 @@ mod tests {
         assert!(TableColumn::from_key(&c.default_sort).is_none());
         assert!(Status::hidden(&c.graph_hide).is_empty());
         assert!(c.shows_release_format("CD, Album"));
+        // No `double_click` field: the drawer opens, as before the setting.
+        assert!(c.double_click_does(DoubleClick::Inspector));
+        assert!(!c.double_click_does(DoubleClick::Play));
         assert_eq!(
             c.column_order
                 .iter()
