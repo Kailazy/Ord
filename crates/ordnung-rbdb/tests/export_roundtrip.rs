@@ -491,6 +491,34 @@ fn merge_finds_a_track_a_rekordbox_stick_nests_under_contents() {
     let _ = std::fs::remove_dir_all(&usb);
 }
 
+/// Update from library re-copies a selected track the stick already holds
+/// even when the library file kept its length (retagged, re-rendered); an
+/// Add keeps today's size check and leaves the stick's file alone.
+#[test]
+fn update_recopies_a_same_size_change_and_add_does_not() {
+    let src = temp_root("refresh-src");
+    let usb = temp_root("refresh-usb");
+    let a = audio_file(&src, "same.mp3", 5_000);
+    let tracks = vec![track(1, &a, Format::Mp3, "Same", "A")];
+    let cancel = AtomicBool::new(false);
+    export_usb_with(&usb, &tracks, &[], ExportOptions::default(), &mut |_| {}, &cancel).unwrap();
+    let on_stick = usb.join("Contents/same.mp3");
+    assert_eq!(std::fs::read(&on_stick).unwrap(), vec![0xA5u8; 5_000]);
+
+    // The library file changes without changing length.
+    std::fs::write(&a, vec![0x3Cu8; 5_000]).unwrap();
+    let add = ExportOptions { mode: ExportMode::Merge, ..Default::default() };
+    let report = export_usb_with(&usb, &tracks, &[], add, &mut |_| {}, &cancel).unwrap();
+    assert_eq!(report.bytes_copied, 0, "an Add leaves a same-size file alone");
+    assert_eq!(std::fs::read(&on_stick).unwrap(), vec![0xA5u8; 5_000]);
+    let update = ExportOptions { refresh_existing: true, ..add };
+    let report = export_usb_with(&usb, &tracks, &[], update, &mut |_| {}, &cancel).unwrap();
+    assert_eq!(report.bytes_copied, 5_000, "an Update re-copies it");
+    assert_eq!(std::fs::read(&on_stick).unwrap(), vec![0x3Cu8; 5_000]);
+    let _ = std::fs::remove_dir_all(&src);
+    let _ = std::fs::remove_dir_all(&usb);
+}
+
 #[test]
 fn export_refuses_empty_and_missing_dest() {
     let usb = temp_root("empty");

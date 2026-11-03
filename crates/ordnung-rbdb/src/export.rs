@@ -272,23 +272,12 @@ impl VolumeGuard {
     }
 }
 
-/// Bytes we expect to add to the destination for `sources` not already present
-/// at the right size, plus a fractional margin for the databases, ANLZ files
-/// and artwork the export also writes. Summed from the true u64 file lengths
-/// (the `TrackRow.file_size` field is clamped to u32, so it must not be used
-/// here). Paths are the rows' own, relative to `dest_root`, to skip files
-/// already copied.
-fn estimated_bytes_needed(sources: &[(u64, String)], dest_root: &Path) -> u64 {
-    let mut audio: u64 = 0;
-    for (src_len, rel) in sources {
-        let already = on_volume(dest_root, rel)
-            .and_then(std::fs::metadata)
-            .map(|m| m.len())
-            .unwrap_or(0);
-        if already != *src_len {
-            audio += src_len;
-        }
-    }
+/// Bytes we expect to add to the destination for `audio` bytes of tracks the
+/// export will write, plus a fractional margin for the databases, ANLZ files
+/// and artwork the export also writes. The caller sums the true u64 file
+/// lengths of the tracks whose copy is due (the `TrackRow.file_size` field
+/// is clamped to u32, so it must not be used here).
+fn estimated_bytes_needed(audio: u64) -> u64 {
     // ANLZ + artwork + databases run well under a fifth of the audio in
     // practice; a 25% margin comfortably covers them and FAT slack.
     audio + audio / 4 + 8 * 1024 * 1024
@@ -1179,11 +1168,14 @@ fn export_impl(
         let dest = on_volume(dest_root, &row.file_path).map_err(io_err(PathBuf::from(&row.file_path)))?;
         // A byte copy is current when the sizes agree; a conversion's size
         // isn't known ahead, so any non-empty output on the stick stands.
-        let copy_needed = match std::fs::metadata(&dest) {
-            Ok(m) if transcode.is_some() => m.len() == 0,
-            Ok(m) => m.len() != expected_bytes,
-            Err(_) => true,
-        };
+        // An Update rewrites every selected track from the library: a file
+        // re-rendered or retagged to the same length must reach the stick.
+        let copy_needed = opts.refresh_existing
+            || match std::fs::metadata(&dest) {
+                Ok(m) if transcode.is_some() => m.len() == 0,
+                Ok(m) => m.len() != expected_bytes,
+                Err(_) => true,
+            };
         resolved.push(ExportTrack {
             catalog_id: t.id,
             row,
@@ -1275,11 +1267,8 @@ fn export_impl(
     // ---- free-space precheck ----------------------------------------------
     // Refuse before touching the stick if the selection can't fit, rather than
     // half-writing it. Sum the bytes of the audio we'd actually write.
-    let sources: Vec<(u64, String)> = resolved
-        .iter()
-        .map(|t| (t.expected_bytes, t.row.file_path.trim_start_matches('/').to_string()))
-        .collect();
-    let need = estimated_bytes_needed(&sources, dest_root);
+    let audio: u64 = resolved.iter().filter(|t| t.copy_needed).map(|t| t.expected_bytes).sum();
+    let need = estimated_bytes_needed(audio);
     if let Some(free) = free_space(dest_root) {
         if free < need {
             return Err(ExportError::NotEnoughSpace {
@@ -1867,28 +1856,6 @@ mod tests {
             .filter(|n| n.ends_with(".tmp"))
             .collect();
         assert!(leftover.is_empty(), "temp not cleaned: {leftover:?}");
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    #[test]
-    fn estimated_bytes_skips_files_already_present_at_size() {
-        let dir = std::env::temp_dir().join(format!("ordnung-space-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        let contents = dir.join("Contents");
-        std::fs::create_dir_all(&contents).unwrap();
-        let src = dir.join("a.mp3");
-        std::fs::write(&src, vec![0u8; 1000]).unwrap();
-        let sources = vec![(1000u64, "Contents/a.mp3".to_string())];
-        // Nothing on the stick yet: the 1000 bytes count (plus margin).
-        let need_fresh = estimated_bytes_needed(&sources, &dir);
-        assert!(need_fresh >= 1000);
-        // Same-size file already present: its bytes drop out of the estimate.
-        std::fs::write(contents.join("a.mp3"), vec![0u8; 1000]).unwrap();
-        let need_present = estimated_bytes_needed(&sources, &dir);
-        assert!(
-            need_present < need_fresh,
-            "an already-copied file must not be re-counted"
-        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 
