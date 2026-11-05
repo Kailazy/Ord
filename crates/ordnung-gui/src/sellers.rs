@@ -730,7 +730,10 @@ impl App {
         const MAX_COVER: f32 = 170.0;
         /// Caption budget under each cover: artist, title, price line.
         const CAPTION_H: f32 = 58.0;
-        const ROW_H: f32 = 54.0;
+        /// List rows run taller than the wall's: a shop is read one row at a
+        /// time against a column of prices, and the thumb has to carry the
+        /// sleeve on its own.
+        const ROW_H: f32 = 72.0;
         let avail = ui.available_width();
         let cols = if list_mode {
             1
@@ -1399,7 +1402,7 @@ impl App {
     /// scans the way a wall of cards can't. Same actions as the card — click
     /// opens the record, right-click buys, wantlists or digs.
     fn seller_row(&mut self, ui: &mut egui::Ui, idx: usize, row_h: f32) -> Option<SellerAct> {
-        const THUMB: f32 = 44.0;
+        const THUMB: f32 = 60.0;
         // Snapshot the row's strings before `dig_cover` needs `self` mutably
         // (same dance as the card).
         let (listing_id, release_id, artist, title, sub, price_line, thumb, owned, wanted, viewed) = {
@@ -1471,7 +1474,7 @@ impl App {
             egui::pos2(rect.left() + 4.0, rect.center().y - THUMB / 2.0),
             egui::vec2(THUMB, THUMB),
         );
-        crate::ui::cover::paint_at(ui, thumb_rect, tex.as_ref(), 4.0, Some(18.0));
+        crate::ui::cover::paint_at(ui, thumb_rect, tex.as_ref(), 4.0, Some(24.0));
         // Sale terms on the right edge, then the membership chip to their
         // left — a record already on a shelf changes what the price means.
         // The marker column starts where the painted text actually ends, not
@@ -1481,7 +1484,7 @@ impl App {
             egui::pos2(rect.right() - 10.0, rect.center().y),
             egui::Align2::RIGHT_CENTER,
             &price_line,
-            crate::ui::tokens::font::callout(),
+            crate::ui::tokens::font::body(),
             crate::ui::tokens::color::POSITIVE,
         );
         let mut right_edge = terms.left() - 10.0;
@@ -1546,10 +1549,13 @@ impl App {
         }
         right_edge = cart_rect.left() - 8.0;
         // Artist over title · year · format, truncated between the thumb and
-        // the terms column.
+        // the terms column and centred on the thumb.
+        let artist_font = crate::ui::tokens::font::headline();
+        let line2_font = crate::ui::tokens::font::body();
+        let text_h = ui.fonts(|f| f.row_height(&artist_font) + 1.0 + f.row_height(&line2_font));
         let text_rect = egui::Rect::from_min_max(
-            egui::pos2(thumb_rect.right() + 10.0, rect.top() + 8.0),
-            egui::pos2(right_edge - 6.0, rect.bottom() - 6.0),
+            egui::pos2(thumb_rect.right() + 12.0, rect.center().y - text_h / 2.0),
+            egui::pos2(right_edge - 6.0, rect.bottom()),
         );
         let mut text_ui = ui.new_child(
             egui::UiBuilder::new()
@@ -1558,13 +1564,15 @@ impl App {
                 .id_salt(("seller-row-text", listing_id)),
         );
         text_ui.spacing_mut().item_spacing.y = 1.0;
-        text_ui.add(egui::Label::new(egui::RichText::new(&artist).strong()).truncate());
+        text_ui.add(
+            egui::Label::new(egui::RichText::new(&artist).font(artist_font).strong()).truncate(),
+        );
         let line2 = if sub.is_empty() {
             title.clone()
         } else {
             format!("{title} · {sub}")
         };
-        text_ui.add(egui::Label::new(egui::RichText::new(line2).weak()).truncate());
+        text_ui.add(egui::Label::new(egui::RichText::new(line2).font(line2_font).weak()).truncate());
 
         let resp = resp.on_hover_note("Open the record to listen, want or buy");
         if resp.clicked() && !cart_clicked {
