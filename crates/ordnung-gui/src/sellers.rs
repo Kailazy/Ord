@@ -1405,7 +1405,7 @@ impl App {
         const THUMB: f32 = 60.0;
         // Snapshot the row's strings before `dig_cover` needs `self` mutably
         // (same dance as the card).
-        let (listing_id, release_id, artist, title, sub, price_line, thumb, owned, wanted, viewed) = {
+        let (listing_id, release_id, artist, title, sub, genres, price_line, thumb, owned, wanted, viewed) = {
             let l = self.seller_listings.get(idx)?;
             let sub = match (l.year, l.format.as_deref()) {
                 (Some(y), Some(f)) => format!("{y} · {f}"),
@@ -1429,6 +1429,10 @@ impl App {
                 l.artist.clone(),
                 l.title.clone(),
                 sub,
+                self.seller_genres
+                    .get(&l.release_id)
+                    .map(|tags| tags.join(" · "))
+                    .unwrap_or_default(),
                 price_line,
                 l.thumb_url.clone(),
                 self.vinyl_owned.contains(&l.release_id),
@@ -1548,14 +1552,33 @@ impl App {
             }
         }
         right_edge = cart_rect.left() - 8.0;
+        // Genre tags in the row's middle column, the sheet's "Electronic ·
+        // House" line: the credit keeps the left part of the row, the tags
+        // start at a fixed share of its width so they line up down the list.
+        let mid = rect.left() + avail * 0.42;
+        let mut text_right = right_edge - 6.0;
+        if !genres.is_empty() {
+            let ink = ui.visuals().weak_text_color();
+            let g = crate::ui::text::truncated(
+                ui,
+                genres,
+                crate::ui::tokens::font::body(),
+                ink,
+                right_edge - 6.0 - mid,
+                false,
+            );
+            ui.painter()
+                .galley(egui::pos2(mid, rect.center().y - g.size().y / 2.0), g, ink);
+            text_right = mid - 16.0;
+        }
         // Artist over title · year · format, truncated between the thumb and
-        // the terms column and centred on the thumb.
+        // the genre column and centred on the thumb.
         let artist_font = crate::ui::tokens::font::headline();
         let line2_font = crate::ui::tokens::font::body();
         let text_h = ui.fonts(|f| f.row_height(&artist_font) + 1.0 + f.row_height(&line2_font));
         let text_rect = egui::Rect::from_min_max(
             egui::pos2(thumb_rect.right() + 12.0, rect.center().y - text_h / 2.0),
-            egui::pos2(right_edge - 6.0, rect.bottom()),
+            egui::pos2(text_right, rect.bottom()),
         );
         let mut text_ui = ui.new_child(
             egui::UiBuilder::new()
