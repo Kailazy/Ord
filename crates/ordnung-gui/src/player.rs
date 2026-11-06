@@ -276,13 +276,11 @@ impl App {
                 self.now_playing.as_mut().unwrap().hires_requested = true;
                 let tx = self.hires_tx.clone();
                 let ctx = ctx.clone();
-                let low_hz = self.config.waveform_low_hz;
-                let mid_hz = self.config.waveform_mid_hz;
                 thread::spawn(move || {
                     // `pcm()` only hands out a finished buffer, so the read
                     // guard held for this (long) computation blocks no writer.
                     let hires =
-                        pcm.with(|samples| compute_hires_bands(samples, ch, sr, low_hz, mid_hz));
+                        pcm.with(|samples| compute_hires_bands(samples, ch, sr));
                     let _ = tx.send((np_id, hires));
                     ctx.request_repaint();
                 });
@@ -2745,10 +2743,9 @@ pub(crate) fn clear_smooth_cache() {
 
 /// Default span (seconds) shown in the zoomed detail lane.
 pub(crate) const DEFAULT_ZOOM_SECS: f32 = 16.0;
-/// Tightest zoom. The zoom lane draws the [`HIRES_BINS_PER_SEC`] envelope, so this
-/// is the point where its bins stretch past ~1 per pixel and there's no more
-/// detail to reveal — half a second is roughly a single beat, transients spread
-/// right across the lane.
+/// Tightest zoom: half a second is roughly a single beat, transients spread
+/// right across the lane, and the [`HIRES_BINS_PER_SEC`] columns are already
+/// stretched a dozen pixels wide.
 const MIN_ZOOM_SECS: f32 = 0.5;
 /// Widest zoom before the lane is essentially the full-track overview again.
 const MAX_ZOOM_SECS: f32 = 90.0;
@@ -2797,143 +2794,27 @@ const PANEL_TOP_GAP: f32 = 6.0;
 /// Gap between the lane and the artwork row, and under the row.
 const LANE_ROW_GAP: f32 = 4.0;
 
-/// Buckets per second for the high-res zoom envelope. ~100× the stored preview's
-/// ~20/sec — well past rekordbox's detailed waveform, so even the tightest
-/// [`MIN_ZOOM_SECS`] view stays ~1 bin/pixel and resolves individual transients.
-/// Cost is a one-off pass over the PCM; memory is ~`secs * this * 4` bytes/track
-/// (~5 MB for a 10-min track), freed when the track changes.
-const HIRES_BINS_PER_SEC: f32 = 2000.0;
+/// Buckets per second for the zoom envelope: the exported waveform's own
+/// column rate, so the lane shows exactly what a player draws from the stick.
+const HIRES_BINS_PER_SEC: f32 = analysis::waveform::SCROLL_COLS_PER_SEC as f32;
 
-/// Transient sharpening strength for the hi-res envelope (see [`sharpen_peaks`]).
-/// A percussive hit's decay bleeds into the bins after the attack, so a kick or
-/// snare reads as a rounded hump. An unsharp mask pushes each band's peak up where
-/// it stands above its local neighbors and eases the shoulders down, so the attack
-/// rises to a sharper point. `0` disables; higher is pointier.
-const TRANSIENT_SHARPEN: f32 = 0.85;
-/// Transient sharpening for the **low** band specifically. Nudged above the shared
-/// [`TRANSIENT_SHARPEN`] so a kick's attack spikes harder and its sustained tail —
-/// lingering sub/bass — gets pulled down faster: the unsharp mask lifts the peak
-/// where it stands above the local mean and eases the shoulders down more, which
-/// reads as a sharper attack with a faster release than the mid/high bands.
-const LOW_TRANSIENT_SHARPEN: f32 = 1.15;
-/// Half-window (in hi-res bins) of the unsharp-mask reference blur. At
-/// [`HIRES_BINS_PER_SEC`] this spans ~3 ms each side — the timescale of a
-/// percussive attack's shoulders, so the blur tracks the hump the peak sits on
-/// without reaching across to neighboring hits.
-const SHARPEN_RADIUS: usize = 6;
-
-/// Sharpen a band's per-bin peak track in place with an unsharp mask:
-/// `out = peak + amount·(peak − local_mean)`, clamped at 0. Where a bin stands
-/// above the local mean (a transient attack) it's pushed higher and its lower
-/// shoulders are pulled down, so the peak narrows to a point; flat sustained
-/// sections (peak ≈ mean) are left essentially unchanged. The reference mean is an
-/// O(n) prefix-sum moving average of half-window `radius`.
-fn sharpen_peaks(peaks: &mut [f32], radius: usize, amount: f32) {
-    let n = peaks.len();
-    if n == 0 || radius == 0 || amount <= 0.0 {
-        return;
-    }
-    let mut prefix = vec![0f32; n + 1];
-    for i in 0..n {
-        prefix[i + 1] = prefix[i] + peaks[i];
-    }
-    let mut out = vec![0f32; n];
-    for i in 0..n {
-        let lo = i.saturating_sub(radius);
-        let hi = (i + radius + 1).min(n);
-        let mean = (prefix[hi] - prefix[lo]) / (hi - lo) as f32;
-        out[i] = (peaks[i] + amount * (peaks[i] - mean)).max(0.0);
-    }
-    peaks.copy_from_slice(&out);
-}
-
-/// Build a high-resolution `[low, mid, high, loudness]` band envelope (4 bytes per
-/// bucket — the same layout as core `color_bands`/`waveform_bands`, so the normal
-/// [`draw_waveform`] renders it unchanged) directly from the decoded PCM. One
-/// streaming pass mixes to mono, splits it into three bands with one-pole filters,
-/// and records each bucket's per-band peak plus its RMS loudness. At
-/// [`HIRES_BINS_PER_SEC`] the zoom lane resolves individual transients; the column
-/// view keeps scaling down the coarse stored preview (it's only a few px tall).
-pub(crate) fn compute_hires_bands(
-    samples: &[f32],
-    channels: u16,
-    sample_rate: u32,
-    low_hz: f32,
-    mid_hz: f32,
-) -> Vec<u8> {
+/// The zoom lane's `[low, mid, high, loudness]` envelope (4 bytes per bucket,
+/// the layout of core `color_bands`/`waveform_bands`, so [`draw_waveform`]
+/// renders it unchanged), built from the decoded PCM by the export's own
+/// column engine (`waveform::scroll_bands`): rekordbox's band split, per-band
+/// peak with its release and level trim, at [`HIRES_BINS_PER_SEC`]. The bands
+/// stay linear so a kick towers over the mids the way it does on a player;
+/// the loudness byte is the column's RMS.
+pub(crate) fn compute_hires_bands(samples: &[f32], channels: u16, sample_rate: u32) -> Vec<u8> {
     let ch = channels.max(1) as usize;
-    let total_frames = samples.len() / ch;
-    if total_frames == 0 || sample_rate == 0 {
+    if samples.len() < ch || sample_rate == 0 {
         return Vec::new();
     }
-    let sr = sample_rate as f32;
-    let secs = total_frames as f32 / sr;
-    let bins = ((secs * HIRES_BINS_PER_SEC).ceil() as usize)
-        .max(1)
-        .min(total_frames);
-
-    // One-pole low-pass coefficients (a = 1 - e^{-2π fc/sr}). The `low_hz` pole peels
-    // off the lows; the `mid_hz` pole peels off everything below the highs; the gap
-    // between the two poles is the mid band. The low pole defaults to 120 Hz (kick
-    // fundamental + sub) so low-mid energy that isn't part of a DJ's kick/bass cue
-    // stays out of the low band; both are settable from the waveform settings.
-    let low_hz = low_hz.clamp(20.0, sr * 0.5);
-    let mid_hz = mid_hz.clamp(low_hz, sr * 0.5);
-    let a_low = 1.0 - (-std::f32::consts::TAU * low_hz / sr).exp();
-    let a_mid = 1.0 - (-std::f32::consts::TAU * mid_hz / sr).exp();
-
-    let mut peak_lo = vec![0f32; bins];
-    let mut peak_md = vec![0f32; bins];
-    let mut peak_hi = vec![0f32; bins];
-    let mut sumsq = vec![0f32; bins];
-    let mut count = vec![0u32; bins];
-
-    let (mut lp_low, mut lp_mid) = (0f32, 0f32);
-    for f in 0..total_frames {
-        let base = f * ch;
-        let mut s = 0.0;
-        for c in 0..ch {
-            s += samples[base + c];
-        }
-        s /= ch as f32;
-
-        lp_low += a_low * (s - lp_low);
-        lp_mid += a_mid * (s - lp_mid);
-        let lo = lp_low;
-        let md = lp_mid - lp_low;
-        let hi = s - lp_mid;
-
-        let b = (((f as u64) * bins as u64) / total_frames as u64) as usize;
-        let b = b.min(bins - 1);
-        peak_lo[b] = peak_lo[b].max(lo.abs());
-        peak_md[b] = peak_md[b].max(md.abs());
-        peak_hi[b] = peak_hi[b].max(hi.abs());
-        sumsq[b] += s * s;
-        count[b] += 1;
-    }
-
-    // Sharpen each band's peak track so percussive attacks read as pointed spikes
-    // rather than the rounded humps their decay would otherwise smear them into.
-    sharpen_peaks(&mut peak_lo, SHARPEN_RADIUS, LOW_TRANSIENT_SHARPEN);
-    sharpen_peaks(&mut peak_md, SHARPEN_RADIUS, TRANSIENT_SHARPEN);
-    sharpen_peaks(&mut peak_hi, SHARPEN_RADIUS, TRANSIENT_SHARPEN);
-
-    // Quantize to bytes with sqrt companding — lifts the quiet detail off the floor
-    // the same way core's preview does, so the existing render gains look right.
-    let q = |v: f32| (v.clamp(0.0, 1.0).sqrt() * 255.0) as u8;
-    let mut out = vec![0u8; bins * 4];
-    for i in 0..bins {
-        let rms = if count[i] > 0 {
-            (sumsq[i] / count[i] as f32).sqrt()
-        } else {
-            0.0
-        };
-        out[i * 4] = q(peak_lo[i]);
-        out[i * 4 + 1] = q(peak_md[i]);
-        out[i * 4 + 2] = q(peak_hi[i]);
-        out[i * 4 + 3] = q(rms);
-    }
-    out
+    let mono: Vec<f32> = samples.chunks_exact(ch).map(|f| f.iter().sum::<f32>() / ch as f32).collect();
+    analysis::waveform::scroll_bands(&mono, sample_rate)
+        .chunks_exact(analysis::waveform::SCROLL_STRIDE)
+        .flat_map(|c| [c[0] * 2, c[1] * 2, c[2] * 2, c[5]])
+        .collect()
 }
 
 /// Paint a colored waveform: one vertical bar per screen column. With
