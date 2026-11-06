@@ -14,6 +14,9 @@
 //!
 //! * artist and title both fold the way [`crate::catalog::song_key`]
 //!   folds (case, accents, punctuation, `(2)`, `(Original Mix)`);
+//! * a file credited to `Various Artists` is the song its `Artist - Title`
+//!   title names (a compilation bought on Bandcamp), see
+//!   [`crate::discogs::credited_song`];
 //! * a song with an artist matches a track credited to exactly that
 //!   artist, or one whose joint credit names them (`A & B`, `A feat. B`)
 //!   when the title leaves one such track;
@@ -62,20 +65,23 @@ impl LibraryIndex {
         let mut rows: Vec<(Id, &str, &str)> = tracks.into_iter().collect();
         rows.sort_by_key(|r| r.0);
         for (id, artist, title) in rows {
-            let key = song_key(artist, title, None, None);
+            // A `Various Artists` file names its act in the title; that
+            // reading is the song it is.
+            let (artist, title) = crate::discogs::credited_song(artist, title);
+            let key = song_key(&artist, &title, None, None);
             if key.is_empty() {
                 continue;
             }
             index.ids.insert(id);
             index.by_song.entry(key).or_insert(id);
-            let t = fold_title(title);
+            let t = fold_title(&title);
             if t.is_empty() {
                 continue;
             }
             index.by_title.entry(t).or_default().push(Entry {
                 id,
-                artist: norm_match(artist),
-                credits: credit_names(artist)
+                artist: norm_match(&artist),
+                credits: credit_names(&artist)
                     .iter()
                     .map(|n| norm_match(n))
                     .filter(|n| !n.is_empty())
@@ -211,6 +217,20 @@ mod tests {
         );
         assert_eq!(ix.track_for(&SongRef::new("Someone", "")), None);
         assert_eq!(ix.track_for(&SongRef::new("", "")), None);
+    }
+
+    #[test]
+    fn a_various_artists_file_is_the_song_its_title_credits() {
+        let ix = LibraryIndex::build([(1, "Various Artists", "A. Wild - Situation Subterranean")]);
+        // The record's own row, and the file's own tags, both find it.
+        assert_eq!(ix.track_for(&SongRef::new("A.Wild", "Situation Subterranean")), Some(1));
+        assert_eq!(
+            ix.track_for(&SongRef::new("Various Artists", "A. Wild - Situation Subterranean")),
+            Some(1)
+        );
+        assert_eq!(ix.track_for(&SongRef::new("", "Situation Subterranean")), Some(1));
+        // A row credited to nobody still claims nothing by title alone.
+        assert_eq!(ix.track_for(&SongRef::new("Various Artists", "Situation Subterranean")), None);
     }
 
     #[test]

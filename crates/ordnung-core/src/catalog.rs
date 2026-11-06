@@ -395,7 +395,7 @@ const RECENTLY_ADDED_WINDOW_SECS: i64 = 24 * 60 * 60;
 ///
 /// Schema 21 re-keys `liked_songs`: `song_key` gained the `(Original Mix)`
 /// and `(2)` folding, so every stored key is recomputed (see
-/// [`Catalog::rekey_liked_songs`]).
+/// [`Catalog::rekey_song_pins`]).
 ///
 /// Schema 22 adds the crates (`crates`, `crate_songs`): named sets of
 /// songs on records, the vinyl side's playlists (see [`CrateSet`]).
@@ -408,7 +408,11 @@ const RECENTLY_ADDED_WINDOW_SECS: i64 = 24 * 60 * 60;
 ///
 /// Schema 27 adds `notes` to the vinyl tables: the user's own Discogs note
 /// on a want or a collection copy.
-const SCHEMA_VERSION: i64 = 27;
+///
+/// Schema 28 re-keys `liked_songs` and `crate_songs`: `song_key` reads the
+/// act off a `Various Artists` file's `Artist - Title` title (see
+/// [`crate::discogs::credited_song`]), so every stored key is recomputed.
+const SCHEMA_VERSION: i64 = 28;
 
 /// The columns of the two vinyl list tables (`vinyl_collection`,
 /// `vinyl_wantlist`), shared so both are created alike and so an older
@@ -1215,45 +1219,52 @@ impl Catalog {
             )?;
         }
 
-        // Schema v21: `song_key` folds more than it did (the `(Original
-        // Mix)` marker, a Discogs `(2)`), so the keys the crate of liked
-        // songs is addressed by have to be recomputed or an old like can't
-        // be unliked.
-        if version < 21 {
-            self.rekey_liked_songs()?;
+        // Schema v21 and v28: `song_key` folds more than it did — the
+        // `(Original Mix)` marker and a Discogs `(2)` (v21), the act read
+        // off a `Various Artists` file's `Artist - Title` title (v28, see
+        // `discogs::credited_song`) — so the keys the liked songs and the
+        // crates are addressed by are recomputed, or an old pin can't be
+        // removed.
+        if version < 28 {
+            self.rekey_song_pins("liked_songs", "0", "liked_at")?;
+            self.rekey_song_pins("crate_songs", "crate_id", "added_at")?;
         }
         Ok(())
     }
 
-    /// Recompute `song_key` for every liked song from its artist, title,
-    /// record and position. Two rows whose keys now agree are one song:
-    /// the earlier like stays, the later one goes. Runs inside the schema
-    /// upgrade's transaction; the keys are parked on a temporary form
-    /// first so no rewrite trips the UNIQUE index part-way.
-    fn rekey_liked_songs(&self) -> Result<()> {
-        let rows: Vec<(i64, String, String, Option<i64>, Option<String>)> = {
-            let mut stmt = self.conn.prepare(
-                "SELECT id, artist, title, release_id, position FROM liked_songs
-                 ORDER BY liked_at ASC, id ASC",
-            )?;
+    /// Recompute `song_key` for every pin in `table` (the liked songs or
+    /// the crates) from its artist, title, record and position. Two rows
+    /// whose keys now agree within one `scope` (a crate; `0` for the one
+    /// list of likes) are one song: the pin made first (by `since`, then
+    /// rowid) stays, the later one goes. Runs inside the schema upgrade's
+    /// transaction; the keys are parked on a temporary form first so no
+    /// rewrite trips the key index part-way.
+    fn rekey_song_pins(&self, table: &str, scope: &str, since: &str) -> Result<()> {
+        let rows: Vec<(i64, i64, String, String, Option<i64>, Option<String>)> = {
+            let mut stmt = self.conn.prepare(&format!(
+                "SELECT rowid, {scope}, artist, title, release_id, position FROM {table}
+                 ORDER BY {since} ASC, rowid ASC"
+            ))?;
             let rows = stmt
-                .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)))?
+                .query_map([], |r| {
+                    Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?))
+                })?
                 .collect::<rusqlite::Result<Vec<_>>>()?;
             rows
         };
         self.conn
-            .execute("UPDATE liked_songs SET song_key = 'rekey:' || id", [])?;
+            .execute(&format!("UPDATE {table} SET song_key = 'rekey:' || rowid"), [])?;
         let mut seen = std::collections::HashSet::new();
-        for (id, artist, title, release_id, position) in rows {
+        for (rowid, scope, artist, title, release_id, position) in rows {
             let key = song_key(&artist, &title, release_id.map(|r| r as u64), position.as_deref());
-            if key.is_empty() || !seen.insert(key.clone()) {
+            if key.is_empty() || !seen.insert((scope, key.clone())) {
                 self.conn
-                    .execute("DELETE FROM liked_songs WHERE id = ?1", params![id])?;
+                    .execute(&format!("DELETE FROM {table} WHERE rowid = ?1"), params![rowid])?;
                 continue;
             }
             self.conn.execute(
-                "UPDATE liked_songs SET song_key = ?2 WHERE id = ?1",
-                params![id, key],
+                &format!("UPDATE {table} SET song_key = ?2 WHERE rowid = ?1"),
+                params![rowid, key],
             )?;
         }
         Ok(())
@@ -1702,7 +1713,7 @@ impl Catalog {
                 continue;
             }
             let rartist = norm_match(&rec.artist);
-            let various = rartist == "various" || rartist == "various artists";
+            let various = crate::discogs::is_various(&rec.artist);
             let album_rows = by_album.get(rtitle.as_str()).into_iter().flatten();
             let title_rows = by_title.get(rtitle.as_str()).into_iter().flatten();
             for &i in album_rows {
@@ -4972,7 +4983,10 @@ pub(crate) fn norm_match(s: &str) -> String {
 /// linked to records ([`norm_match`]) — the artist without a Discogs `(2)`
 /// disambiguator, the title without an `(Original Mix)` marker, so a tag,
 /// a Discogs listing and a pasted line for one song agree — joined by a
-/// newline so an artist ending where a title begins can't collide. A title that
+/// newline so an artist ending where a title begins can't collide. A file
+/// credited to `Various Artists` is keyed by the act and song its title
+/// names ([`crate::discogs::credited_song`]), so a compilation download
+/// and its record's own row agree too. A title that
 /// names nothing ("Untitled", "Track 2", "B") is told apart by the record
 /// and position it was liked at, when known: a white label's four Untitled
 /// sides are four songs, not one. Empty when neither side has a word in
@@ -5008,8 +5022,11 @@ pub fn song_key(
     release_id: Option<u64>,
     position: Option<&str>,
 ) -> String {
-    let a = norm_match(crate::discogs::strip_discogs_number(artist));
-    let t = norm_match(crate::discogs::strip_original_mix(title));
+    // A compilation file credited to `Various Artists` names its act in
+    // the title; that reading is the song.
+    let (artist, title) = crate::discogs::credited_song(artist, title);
+    let a = norm_match(crate::discogs::strip_discogs_number(&artist));
+    let t = norm_match(crate::discogs::strip_original_mix(&title));
     if a.is_empty() && t.is_empty() {
         return String::new();
     }
@@ -7046,6 +7063,47 @@ mod tests {
         assert_eq!(crate::discogs::strip_discogs_number("Nobody (Yet)"), "Nobody (Yet)");
         assert_eq!(crate::discogs::strip_discogs_number("Nobody ()"), "Nobody ()");
         assert!(song_key("", "", None, None).is_empty());
+        // A compilation file credited to Various Artists is the song its
+        // title names, so it keys like the record's own row.
+        assert_eq!(
+            song_key("Various Artists", "A. Wild - Situation Subterranean", None, None),
+            song_key("A.Wild", "Situation Subterranean", None, None)
+        );
+    }
+
+    #[test]
+    fn schema_28_rekeys_the_pins_of_a_various_artists_file() {
+        let path = temp_db_path("va_rekey");
+        let cat = Catalog::open(&path).unwrap();
+        let crate_id = cat.create_crate_set("Comps", CrateKind::Crate).unwrap();
+        // The same song pinned twice, once from a compilation file's raw
+        // tags, under the keys stored before `song_key` read the credit.
+        cat.conn
+            .execute_batch(&format!(
+                "INSERT INTO liked_songs (song_key, artist, title, liked_at)
+                 VALUES ('old:1', 'Various Artists', 'A. Wild - Situation Subterranean', 10),
+                        ('old:2', 'A.Wild', 'Situation Subterranean', 20);
+                 INSERT INTO crate_songs (crate_id, song_key, ord, artist, title, added_at)
+                 VALUES ({crate_id}, 'old:1', 1, 'Various Artists', 'A. Wild - Situation Subterranean', 10),
+                        ({crate_id}, 'old:2', 2, 'A.Wild', 'Situation Subterranean', 20);
+                 PRAGMA user_version = 27;"
+            ))
+            .unwrap();
+        drop(cat);
+        let cat = Catalog::open(&path).unwrap();
+        // One song: the earlier pin stays, under a key the record's own
+        // row can address.
+        let liked = cat.list_liked_songs().unwrap();
+        assert_eq!(liked.len(), 1);
+        assert_eq!(liked[0].added_at, 10);
+        assert!(cat.unlike_song("A.Wild", "Situation Subterranean", None, None).unwrap());
+        let songs = cat.list_crate_songs(crate_id).unwrap();
+        assert_eq!(songs.len(), 1);
+        assert_eq!(songs[0].added_at, 10);
+        assert!(cat
+            .remove_crate_song(crate_id, "A.Wild", "Situation Subterranean", None, None)
+            .unwrap());
+        assert!(cat.list_crate_songs(crate_id).unwrap().is_empty());
     }
 
     #[test]

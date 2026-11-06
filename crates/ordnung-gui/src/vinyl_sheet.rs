@@ -47,7 +47,9 @@ pub(crate) enum SheetSource {
 fn sheet_local(cat: &Catalog, id: Id) -> Option<SheetLocal> {
     let t = cat.get_track(id).ok()?;
     let analysis = cat.get_analysis(id).ok().flatten();
-    let title = t.tags.title.clone().filter(|s| !s.trim().is_empty())?;
+    // The song's title, not the tag's: a `Various Artists` file is placed
+    // on its row by the name after the credit.
+    let title = Some(t.song().title).filter(|s| !s.trim().is_empty())?;
     Some(SheetLocal {
         id,
         title,

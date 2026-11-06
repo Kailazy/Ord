@@ -2564,6 +2564,32 @@ fn split_credited_title(title: &str) -> Option<(String, String)> {
     (!tail.is_empty()).then_some((head, tail))
 }
 
+/// Whether an artist credit names nobody: the `Various` / `Various Artists`
+/// (`VA`, `V/A`) a compilation is credited to.
+pub fn is_various(artist: &str) -> bool {
+    let a = artist.trim();
+    ["various", "various artists", "va", "v.a.", "v/a"]
+        .iter()
+        .any(|v| a.eq_ignore_ascii_case(v))
+}
+
+/// The song a file credited to nobody really is. A compilation bought on
+/// Bandcamp tags every track `Various Artists` and names the act in the
+/// title, `A. Wild - Situation Subterranean`; the artist and song read off
+/// that title are the song, and every place a file's tags become its
+/// identity (`song_key`, the library index, `Track::song`) reads them so.
+/// The tags as given when they name an artist or the title has nothing
+/// to split.
+pub fn credited_song<'a>(
+    artist: &'a str,
+    title: &'a str,
+) -> (std::borrow::Cow<'a, str>, std::borrow::Cow<'a, str>) {
+    match is_various(artist).then(|| split_credited_title(title)).flatten() {
+        Some((a, t)) => (a.into(), t.into()),
+        None => (artist.into(), title.into()),
+    }
+}
+
 /// One search hit as a [`ReleaseCandidate`]: the joined label kept whole
 /// for display, the artist split off it for matching.
 /// See [`ReleaseCandidate::variant_rank`]. Matched on the comma-separated
@@ -4622,6 +4648,29 @@ mod tests {
         );
         assert_eq!(split_credited_title("Something On My Mind"), None);
         assert_eq!(split_credited_title("Untitled - A1"), None);
+    }
+
+    /// A compilation file credited to nobody is the song its title names;
+    /// a file that names its artist keeps a dashed title whole.
+    #[test]
+    fn a_various_artists_file_is_the_song_its_title_credits() {
+        assert_eq!(
+            credited_song("Various Artists", "A. Wild - Situation Subterranean"),
+            ("A. Wild".into(), "Situation Subterranean".into())
+        );
+        assert_eq!(
+            credited_song("V/A", "Joe Davies - B1 - Something On My Mind"),
+            ("Joe Davies".into(), "Something On My Mind".into())
+        );
+        assert_eq!(
+            credited_song("Various", "Situation Subterranean"),
+            ("Various".into(), "Situation Subterranean".into())
+        );
+        assert_eq!(
+            credited_song("Theo Parrish", "Summertime Is Here - Remixes"),
+            ("Theo Parrish".into(), "Summertime Is Here - Remixes".into())
+        );
+        assert!(is_various(" various artists ") && is_various("VA") && !is_various("Vanessa"));
     }
 
     #[test]

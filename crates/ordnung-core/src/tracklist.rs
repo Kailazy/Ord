@@ -1183,7 +1183,7 @@ pub fn confidence_for(score: i32) -> Confidence {
 pub fn score_candidate(line: &TracklistLine, c: &ReleaseCandidate) -> i32 {
     let mut score = 0i32;
     let hit_artist = fold_name(&c.artist);
-    let various = hit_artist == "various" || hit_artist == "various artists";
+    let various = crate::discogs::is_various(&c.artist);
     if let Some(a) = line.artist.as_deref() {
         if artist_agrees(a, &c.artist) {
             score += 40;

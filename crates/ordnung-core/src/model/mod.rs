@@ -335,13 +335,15 @@ pub struct Track {
 }
 
 impl Track {
-    /// Which song this file is, as its tags say. Empty tags make an empty
-    /// song, which nothing matches.
+    /// Which song this file is, as its tags say — or, credited to `Various
+    /// Artists`, as its title says (see [`crate::discogs::credited_song`]).
+    /// Empty tags make an empty song, which nothing matches.
     pub fn song(&self) -> SongRef {
-        SongRef::new(
-            self.tags.artist.clone().unwrap_or_default(),
-            self.tags.title.clone().unwrap_or_default(),
-        )
+        let (artist, title) = crate::discogs::credited_song(
+            self.tags.artist.as_deref().unwrap_or_default(),
+            self.tags.title.as_deref().unwrap_or_default(),
+        );
+        SongRef::new(artist, title)
     }
 }
 

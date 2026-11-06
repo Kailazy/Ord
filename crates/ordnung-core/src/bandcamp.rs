@@ -158,7 +158,7 @@ fn agrees(hit: &SearchHit, names: &[&str], title: &str) -> bool {
         return false;
     }
     let artist = fold_name(&hit.artist);
-    let various = |s: &str| s == "various" || s == "various artists";
+    let various = crate::discogs::is_various;
     let names: Vec<String> = names.iter().map(|n| fold_name(n)).filter(|n| !n.is_empty()).collect();
     let credited = names.iter().any(|n| *n == artist || (various(n) && various(&artist)));
     let got = title_key(&hit.title);
