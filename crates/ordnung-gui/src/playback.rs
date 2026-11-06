@@ -250,9 +250,10 @@ impl App {
     }
 
     /// Where the video on air is on its way to, as a fraction of its
-    /// length, while its mid-song jump is still unconfirmed, or while the
+    /// length, while its mid-song jump is still unconfirmed, while the
     /// page has yet to report a video at all (then the jump is still to
-    /// come). `None` once it is playing where it should. A scrubber holds
+    /// come), or while the video it has is still buffering where it was
+    /// put. `None` once it is playing where it should. A scrubber holds
     /// its playhead here rather than following the page through the jump.
     pub(crate) fn video_held_start(&self) -> Option<f32> {
         if !webview::is_open() {
@@ -266,16 +267,17 @@ impl App {
                 0.0
             });
         }
-        if !self.config.mid_start_videos {
-            return None;
+        // Ready with a length but the jump not yet sent (this frame's
+        // `mid_start_video` sends it) or not yet confirmed: the knob waits
+        // at the jump's target.
+        let settled = |id: String| self.video_mid_start.as_ref().is_some_and(|v| v.id == id && v.settled);
+        if self.config.mid_start_videos && webview::on_air().is_some_and(|id| !settled(id)) {
+            return Some(MID_START_FRACTION);
         }
-        let id = webview::on_air()?;
-        match self.video_mid_start.as_ref() {
-            Some(v) if v.id == id => (!v.settled).then_some(MID_START_FRACTION),
-            // Ready with a length, jump not yet sent: this frame's
-            // `mid_start_video` sends it.
-            _ => Some(MID_START_FRACTION),
-        }
+        // Set going but not yet moving: still buffering at the top, or
+        // where a seek put it. The knob waits there rather than running
+        // ahead of a clock that has yet to start.
+        (t.playing && !t.rolling).then(|| (t.position / t.duration).clamp(0.0, 1.0))
     }
 
     /// Move whatever is loaded by `delta` seconds: the video if the

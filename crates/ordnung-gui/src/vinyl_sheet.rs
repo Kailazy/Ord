@@ -1422,8 +1422,10 @@ impl App {
                     duration: a.duration(),
                     playing: matches!(record_play, RecordPlay::Playing(_)),
                     ready: true,
-                    // The engine's own clock: nothing assumed.
+                    // The engine's own clock: nothing assumed, and
+                    // `held_start` says when it is on its way.
                     reported: true,
+                    rolling: true,
                 })
             }
             _ => None,

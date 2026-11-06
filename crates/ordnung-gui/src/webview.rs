@@ -83,6 +83,15 @@ pub struct Transport {
     /// side last wrote to it (a seek, a pause flip). False while it is still
     /// what that write assumed: the seek's target, not yet seen honoured.
     pub reported: bool,
+    /// True while the page says its video has the data to move on from where
+    /// it is and is not mid-seek. A `<video>` reports `playing` the moment
+    /// play() is called, while it still buffers at the top, and again after
+    /// every seek while it buffers at the target: `position` only runs
+    /// forward between polls while this is set, and a scrubber holds its
+    /// playhead meanwhile, so the knob stands still until the video moves
+    /// instead of creeping ahead and snapping back on every tick. False
+    /// right after a load or a seek, until the page's first answer since.
+    pub rolling: bool,
 }
 
 #[cfg(not(target_os = "macos"))]
@@ -220,6 +229,11 @@ mod imp {
         position: f32,
         duration: f32,
         reported_at: Instant,
+        /// Whether the page last said its video can move on from where it
+        /// is (see [`Transport::rolling`]). Cleared by every local write
+        /// that moves the clock (a load, a seek, a swap), since the page
+        /// buffers afresh after each.
+        rolling: bool,
         /// When this side last wrote the page's state itself (a seek, a
         /// pause flip, a load). An answer the page was asked for *before*
         /// that write describes the state it replaced, so [`ask_state`]
@@ -246,6 +260,7 @@ mod imp {
                 state: String::new(),
                 position: 0.0,
                 duration: 0.0,
+                rolling: false,
                 reported_at: Instant::now(),
                 local_at: Instant::now(),
                 loaded_at: Instant::now(),
@@ -279,6 +294,7 @@ mod imp {
             // for the frame or two before the page answers.
             self.position = 0.0;
             self.duration = 0.0;
+            self.rolling = false;
             self.reported_at = Instant::now();
             self.local_at = Instant::now();
             self.loaded_at = Instant::now();
@@ -299,6 +315,7 @@ mod imp {
             self.state.clear();
             self.position = 0.0;
             self.duration = 0.0;
+            self.rolling = false;
             self.local_at = Instant::now();
             blank(&self.web);
         }
@@ -530,7 +547,7 @@ mod imp {
             // so the playhead moves every frame rather than once per poll. The
             // next answer corrects it, and the drift in between is bounded by
             // the poll interval.
-            let position = if playing {
+            let position = if playing && page.rolling {
                 page.position + page.reported_at.elapsed().as_secs_f32()
             } else {
                 page.position
@@ -548,6 +565,7 @@ mod imp {
                 // A local write stamps both clocks alike; only an answer
                 // taken since moves `reported_at` past `local_at`.
                 reported: page.reported_at > page.local_at,
+                rolling: page.rolling,
             }
         })
     }
@@ -576,6 +594,7 @@ mod imp {
             // Same reason as the pause flip: the scrubber must land where it
             // was dropped, not snap back until the page catches up.
             page.position = secs;
+            page.rolling = false;
             page.reported_at = Instant::now();
             page.local_at = page.reported_at;
         });
@@ -910,6 +929,7 @@ mod imp {
             page.state = "playing".into();
         }
         page.position = 0.0;
+        page.rolling = false;
         page.reported_at = Instant::now();
         page.local_at = page.reported_at;
         // Ask at once, so the transport reads the real state within a tick.
@@ -1043,7 +1063,8 @@ mod imp {
                var s=v.ended?'ended':(v.paused?'paused':'playing');\
                var d=isFinite(v.duration)?v.duration:0;\
                var id=new URLSearchParams(location.search).get('v')||'';\
-               return s+'|'+v.currentTime+'|'+d+'|'+id;\
+               var m=(v.readyState>=3&&!v.seeking)?1:0;\
+               return s+'|'+v.currentTime+'|'+d+'|'+id+'|'+m;\
              }})()",
             inject = inject_js()
         );
@@ -1060,14 +1081,15 @@ mod imp {
                 let s: Retained<NSString> = unsafe { objc2::msg_send_id![obj, description] };
                 s.to_string()
             };
-            // `state|position|duration|id` since the transport landed; a bare
-            // word (`novideo`, or an empty answer from a page mid-navigation)
-            // still parses, leaving the clock where it was.
+            // `state|position|duration|id|moving` since the transport landed;
+            // a bare word (`novideo`, or an empty answer from a page
+            // mid-navigation) still parses, leaving the clock where it was.
             let mut parts = state.split('|');
             let word = parts.next().unwrap_or_default().to_string();
             let pos = parts.next().and_then(|s| s.parse::<f32>().ok());
             let dur = parts.next().and_then(|s| s.parse::<f32>().ok());
             let id = parts.next().map(str::to_string);
+            let moving = parts.next() == Some("1");
             // WebKit runs completion handlers on the main thread, which is the
             // thread that owns `PANEL`. The answer is for whichever page was
             // asked, wherever it has been moved to since — or for none, when
@@ -1110,6 +1132,7 @@ mod imp {
                         page.position = p;
                         page.reported_at = Instant::now();
                     }
+                    page.rolling = moving;
                 }
             });
         });
