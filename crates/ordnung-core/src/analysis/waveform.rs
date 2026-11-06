@@ -339,35 +339,38 @@ impl Biquad {
     }
 }
 
-/// Half-width, in columns, of the band RMS smoothing window (±2 cols ≈ 33 ms
-/// at 150 col/s): wide enough to hold a full bass cycle, so the low band
-/// reads as a stable envelope instead of dipping to zero mid-cycle, and to
-/// dilute hi-hat transients so the high band stops towering as spikes.
-const SCROLL_SMOOTH: usize = 2;
-/// Per-band display gains after global normalization, tuned against golden
-/// rekordbox PWV7 percentiles for the same audio.
-const SCROLL_GAIN: [f32; 3] = [1.4, 2.2, 0.75];
+/// Per-column release of each band's envelope, as a factor per column
+/// (150 col/s): a band column is the larger of its own peak and the previous
+/// column's value times this. rekordbox's `PWV7` bands follow the band peak
+/// with an instant attack and a steady release: fitted on eight reference
+/// tracks, the low band releases over ~16 columns (0.94), the mid band
+/// faster (0.90), and the high band not at all (a hi-hat is one white tick).
+const SCROLL_RELEASE: [f32; 3] = [0.94, 0.90, 0.0];
+/// Per-band level trim after the release, fitted on the same tracks so each
+/// band's mean sits on rekordbox's.
+const SCROLL_GAIN: [f32; 3] = [1.15, 1.1, 0.8];
 
 /// Rekordbox-style detailed 3-band waveform: `[low, mid, high, amp, peak,
-/// rms]` per column at [`SCROLL_COLS_PER_SEC`]. `low`/`mid`/`high` are windowed RMS
-/// amplitudes of the band-filtered signal (split at 200 Hz / 2 kHz — low sits
-/// a little wider than [`color_bands`]' 120 Hz so the blue band carries the
-/// kick's punch), smoothed over ±[`SCROLL_SMOOTH`] columns, 0–127 like
-/// rekordbox's `PWV7`; `amp` is the unfiltered column peak, 0–255. All
-/// linear (no companding), normalized to the loudest smoothed band column,
-/// then trimmed per band by [`SCROLL_GAIN`] — matching golden rekordbox
-/// exports' per-band percentile profile, so a kick pulses per beat and
-/// breakdowns dip without the columns collapsing to zero between beats.
-/// `peak` and `rms` are the column's *absolute* (un-normalized) sample peak
-/// and RMS, 0–255 for 0–1.0 full scale: rekordbox's monochrome overview
-/// heights are a fixed function of absolute level, not of the track's own
-/// maximum, so the writer needs the real numbers.
+/// rms]` per column at [`SCROLL_COLS_PER_SEC`]. `low`/`mid`/`high` are the
+/// column's peak absolute amplitudes of the band-filtered signal (split at
+/// 200 Hz / 2 kHz — low sits a little wider than [`color_bands`]' 120 Hz so
+/// the blue band carries the kick's punch) held through [`SCROLL_RELEASE`]
+/// and trimmed by [`SCROLL_GAIN`], linear, 0–127 of full scale like
+/// rekordbox's `PWV7`. Peaks, not RMS: a windowed RMS smeared every hit over
+/// five columns and sank hats to single digits, where rekordbox keeps a kick
+/// to a handful of columns and draws a hi-hat burst as a white tick.
+/// `amp` is the unfiltered column peak normalized to the track's loudest
+/// column, 0–255. `peak` and `rms` are the column's *absolute*
+/// (un-normalized) sample peak and RMS, 0–255 for 0–1.0 full scale:
+/// rekordbox's monochrome overview heights are a fixed function of absolute
+/// level, not of the track's own maximum, so the writer needs the real
+/// numbers.
 /// Time-domain single pass; meant for export, where the audio is already
 /// being read anyway.
 pub fn scroll_bands(samples: &[f32], sample_rate: u32) -> Vec<u8> {
     let sr = sample_rate.max(1) as u64;
     let cols = ((samples.len() as u64 * SCROLL_COLS_PER_SEC as u64) / sr).max(1) as usize;
-    let mut ssq = vec![[0.0f64; 3]; cols];
+    let mut band_peak = vec![[0.0f32; 3]; cols];
     let mut ssq_full = vec![0.0f64; cols];
     let mut cnt = vec![0u32; cols];
     let mut amp_peak = vec![0.0f32; cols];
@@ -379,37 +382,20 @@ pub fn scroll_bands(samples: &[f32], sample_rate: u32) -> Vec<u8> {
         let col = (((i as u64 * SCROLL_COLS_PER_SEC as u64) / sr) as usize).min(cols - 1);
         let vals = [lp.step(s), mid_lp.step(mid_hp.step(s)), hp.step(s)];
         for (k, v) in vals.iter().enumerate() {
-            ssq[col][k] += f64::from(v * v);
+            band_peak[col][k] = band_peak[col][k].max(v.abs());
         }
         ssq_full[col] += f64::from(s * s);
         cnt[col] += 1;
         amp_peak[col] = amp_peak[col].max(s.abs());
     }
-    // Power-averaged RMS smoothing over ±SCROLL_SMOOTH columns.
-    let smooth: Vec<[f32; 3]> = (0..cols)
-        .map(|i| {
-            let lo = i.saturating_sub(SCROLL_SMOOTH);
-            let hi = (i + SCROLL_SMOOTH + 1).min(cols);
-            let mut acc = [0.0f64; 3];
-            for j in lo..hi {
-                for k in 0..3 {
-                    acc[k] += ssq[j][k] / f64::from(cnt[j].max(1));
-                }
-            }
-            std::array::from_fn(|k| (acc[k] / (hi - lo) as f64).sqrt() as f32)
-        })
-        .collect();
-    let band_max = smooth
-        .iter()
-        .flat_map(|c| c.iter().copied())
-        .fold(0.0f32, f32::max)
-        .max(1e-6);
     let peak_max = amp_peak.iter().copied().fold(0.0f32, f32::max).max(1e-6);
     let mut out = Vec::with_capacity(cols * SCROLL_STRIDE);
     let to_byte = |v: f32| (v * 255.0).round().clamp(0.0, 255.0) as u8;
-    for (i, (c, &ap)) in smooth.iter().zip(&amp_peak).enumerate() {
+    let mut held = [0.0f32; 3];
+    for (i, (c, &ap)) in band_peak.iter().zip(&amp_peak).enumerate() {
         for k in 0..3 {
-            out.push(((c[k] / band_max) * SCROLL_GAIN[k] * 127.0).round().min(127.0) as u8);
+            held[k] = c[k].max(held[k] * SCROLL_RELEASE[k]);
+            out.push((held[k] * SCROLL_GAIN[k] * 127.0).round().clamp(0.0, 127.0) as u8);
         }
         out.push(to_byte(ap / peak_max));
         out.push(to_byte(ap));
@@ -443,8 +429,7 @@ mod tests {
             };
             for other in 0..3 {
                 if other != band {
-                    // >2x, not more: the 12 dB/oct crossovers leak, and the
-                    // per-band SCROLL_GAIN trim amplifies the leakage.
+                    // >2x, not more: the 12 dB/oct crossovers leak.
                     assert!(
                         mean(band) > mean(other) * 2,
                         "{hz} Hz: band {band} ({}) should dominate band {other} ({})",
@@ -459,6 +444,27 @@ mod tests {
             assert!((195..=210).contains(&mean(4)), "abs peak off: {}", mean(4));
             assert!((135..=150).contains(&mean(5)), "abs rms off: {}", mean(5));
         }
+    }
+
+    #[test]
+    fn scroll_bands_hold_a_hit_through_the_release() {
+        // One full-scale 60 Hz cycle at the start, then silence: the low band
+        // decays by SCROLL_RELEASE per column, the high band drops at once.
+        let sr = 44_100;
+        let mut s = vec![0.0f32; sr as usize];
+        for (i, v) in s.iter_mut().enumerate().take(sr as usize / 60) {
+            *v = (2.0 * std::f32::consts::PI * 60.0 * i as f32 / sr as f32).sin();
+        }
+        let cols = scroll_bands(&s, sr);
+        let low = |c: usize| cols[c * SCROLL_STRIDE] as f32;
+        let high = |c: usize| cols[c * SCROLL_STRIDE + 2];
+        let peak = (0..6).map(|c| low(c)).fold(0.0f32, f32::max);
+        assert!(peak > 60.0, "low band carries the hit: {peak}");
+        // Once the filter has settled, ten columns of release are 0.94^10.
+        let ratio = low(25) / low(15);
+        let expect = SCROLL_RELEASE[0].powi(10);
+        assert!((ratio - expect).abs() < 0.05, "release over ten columns: {ratio} vs {expect}");
+        assert!(high(40) == 0, "high band holds nothing: {}", high(40));
     }
 
     #[test]

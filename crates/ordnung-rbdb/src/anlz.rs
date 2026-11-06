@@ -760,12 +760,6 @@ fn scroll_col(inp: &AnlzInput, i: usize) -> Option<[u8; SCROLL_STRIDE]> {
     Some(inp.scroll[i * SCROLL_STRIDE..(i + 1) * SCROLL_STRIDE].try_into().unwrap())
 }
 
-/// Columns rekordbox's three-band waveforms lag the mono peak by: its `PWV7`
-/// matched our bands better shifted one column later (48 of 94 reference
-/// tracks within shape and level, median r 0.912, against 41 and 0.883 when
-/// aligned), where `PWV3`/`PWV5` sit exactly on the peak columns.
-const BAND_LAG: usize = 1;
-
 /// One 3-band column `[low, mid, high]`, 0–127 — the scale the golden PWV7
 /// carries — for scroll column `i`, or at the fraction `frac` of the track
 /// when no scroll columns exist. Prefers the export-time scroll columns (real
@@ -775,7 +769,7 @@ const BAND_LAG: usize = 1;
 /// a solid pinned block; with no band data at all, shape the amplitude
 /// preview so the waveform never comes out blank.
 fn band3_col(inp: &AnlzInput, i: usize, frac: f64) -> [u8; 3] {
-    if let Some([l, m, h, ..]) = scroll_col(inp, i.saturating_sub(BAND_LAG)) {
+    if let Some([l, m, h, ..]) = scroll_col(inp, i) {
         return [l, m, h];
     }
     let decompand = |v: u8| {

@@ -9,9 +9,9 @@ analysis	grid in phase, downbeat right	31
 analysis	key exact	40
 analysis	key exact or neighbour	59
 analysis	tracks graded	94
-mirror	anlz 2EX.PWV6.shape	85
+mirror	anlz 2EX.PWV6.shape	83
 mirror	anlz 2EX.PWV7.header	6
-mirror	anlz 2EX.PWV7.shape	44
+mirror	anlz 2EX.PWV7.shape	19
 mirror	anlz 2EX.PWVC.bytes	94
 mirror	anlz DAT.PQTZ.beats	86
 mirror	anlz DAT.PQTZ.header	9
