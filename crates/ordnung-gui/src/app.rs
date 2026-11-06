@@ -3368,11 +3368,23 @@ impl App {
                                 (avail.right() - group_w).max(avail.left()),
                             );
                             ui.add_space((left - avail.left()).max(0.0));
-                            let resp = ui.add(
-                                crate::ui::field::Field::singleline(&mut self.search_query)
-                                    .width(w)
-                                    .hint("Search songs, records and Discogs"),
-                            );
+                            // A touch squarer than the buttons beside it:
+                            // Kai judged the toolbar on 2026-11-06 and kept
+                            // the theme's corner for everything but this box.
+                            let resp = ui
+                                .scope(|ui| {
+                                    let ws = &mut ui.visuals_mut().widgets;
+                                    for s in [&mut ws.inactive, &mut ws.hovered, &mut ws.active] {
+                                        s.rounding =
+                                            egui::Rounding::same(crate::ui::tokens::radius::XS);
+                                    }
+                                    ui.add(
+                                        crate::ui::field::Field::singleline(&mut self.search_query)
+                                            .width(w)
+                                            .hint("Search songs, records and Discogs"),
+                                    )
+                                })
+                                .inner;
                             // ⌘F (or Edit ▸ Find) asked for this field. Focus
                             // it and select whatever's already typed, so the
                             // chord means "search for something else" as well
