@@ -242,7 +242,7 @@ impl App {
             confirm_vinyl_edit: None,
             collect_wanted: None,
             vinyl_sheet: None,
-            vinyl_cursor: None,
+            vinyl_cursor: HashMap::new(),
             vinyl_cursor_moved: false,
             sheet_follows_dig: false,
             video_mid_start: None,

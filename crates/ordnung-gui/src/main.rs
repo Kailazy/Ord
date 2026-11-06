@@ -1657,10 +1657,11 @@ struct App {
     /// position (a local file, a Discogs-listed YouTube video, or nothing).
     /// `None` when no record is open. See [`vinyl_sheet`].
     vinyl_sheet: Option<VinylSheet>,
-    /// The record the keyboard is on in the vinyl view: arrows move it over
-    /// the shelf, ⏎ opens it, and a click lands it on the record clicked so
-    /// the keys carry on from there. Drawn as the card's hover.
-    vinyl_cursor: Option<VinylCoverKey>,
+    /// The record the keyboard is on in each shelf: arrows move it over the
+    /// records, ⏎ opens it, and a click lands it on the record clicked so the
+    /// keys carry on from there. Kept per list, so coming back to a shelf
+    /// starts from the record it was on. Drawn as the card's hover.
+    vinyl_cursor: HashMap<VinylList, u64>,
     /// Set for the frame after an arrow moved `vinyl_cursor`, so the shelf
     /// scrolls the record it landed on into view.
     vinyl_cursor_moved: bool,

@@ -2182,14 +2182,15 @@ impl App {
             let (step, enter) = Self::shelf_key_step(ctx, cols);
             let at = self
                 .vinyl_cursor
-                .and_then(|k| cells.iter().position(|c| c.key == k));
+                .get(&tab)
+                .and_then(|&id| cells.iter().position(|c| c.key == (tab, id)));
             if step != 0 {
                 let last = cells.len() as isize - 1;
                 let next = match at {
                     None => 0,
                     Some(i) => (i as isize + step).clamp(0, last),
                 };
-                self.vinyl_cursor = Some(cells[next as usize].key);
+                self.vinyl_cursor.insert(tab, cells[next as usize].key.1);
                 self.vinyl_cursor_moved = true;
             } else if enter {
                 if let Some(i) = at {
@@ -2286,7 +2287,7 @@ impl App {
                 }
             }
             Some(VinylGridAction::Open(key)) => {
-                self.vinyl_cursor = Some(key);
+                self.vinyl_cursor.insert(key.0, key.1);
                 self.open_vinyl_sheet(key, ctx);
             }
             Some(VinylGridAction::Dig(key)) => {
@@ -2303,7 +2304,7 @@ impl App {
             Some(VinylGridAction::Play(key)) => {
                 // The tracklist may still be loading; the sheet starts playback
                 // itself once it has one (see `pending_play`).
-                self.vinyl_cursor = Some(key);
+                self.vinyl_cursor.insert(key.0, key.1);
                 self.open_vinyl_sheet(key, ctx);
                 if let Some(sheet) = self.vinyl_sheet.as_mut() {
                     sheet.pending_play = true;
@@ -2531,7 +2532,7 @@ impl App {
                         );
                         let resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand);
                         // The keyboard cursor is a hover without the pointer.
-                        let on_cursor = self.vinyl_cursor == Some(c.key);
+                        let on_cursor = self.vinyl_cursor.get(&c.key.0) == Some(&c.key.1);
                         if on_cursor && self.vinyl_cursor_moved {
                             ui.scroll_to_rect(rect.expand(GAP), None);
                         }
@@ -2838,7 +2839,7 @@ impl App {
                     ui.allocate_exact_size(egui::vec2(avail, ROW_H), egui::Sense::click());
                 // The keyboard cursor is a hover without the pointer; a step
                 // onto a row scrolled away brings it back first.
-                let on_cursor = self.vinyl_cursor == Some(c.key);
+                let on_cursor = self.vinyl_cursor.get(&c.key.0) == Some(&c.key.1);
                 if on_cursor && self.vinyl_cursor_moved {
                     ui.scroll_to_rect(rect, None);
                 }

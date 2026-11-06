@@ -1643,6 +1643,9 @@ impl App {
         let Some(seller) = self.seller_current.clone() else {
             return;
         };
+        // Opening a record puts the keyboard ring on it, so the arrows walk on
+        // from the record last clicked rather than from the find box pick.
+        self.seller_highlight = Some(l.listing_id);
         let sub = [
             l.year.map(|y| y.to_string()),
             l.format.clone(),
