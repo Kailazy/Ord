@@ -79,6 +79,46 @@ pub(crate) struct BrowseFetched {
 }
 
 /// What a row asked for, applied after the window releases its borrows.
+/// The open run, snapshotted for one pass of drawing (see
+/// [`App::browse_snapshot`]).
+pub(crate) struct BrowseSnap {
+    pub thread: BrowseThread,
+    pub name: String,
+    page: u32,
+    pages: u32,
+    loading: bool,
+    error: Option<String>,
+    rows: Vec<BrowseRow>,
+}
+
+/// What one pass of the rows asked for (see [`App::browse_apply`]).
+#[derive(Default)]
+pub(crate) struct BrowseOut {
+    act: Option<Act>,
+    want_covers: Vec<String>,
+    hover_row: Option<usize>,
+}
+
+struct BrowseRow {
+    cover: Option<Tex>,
+    /// Where the sleeve comes from, for rows that scroll into view
+    /// before theirs has been asked for.
+    thumb: Option<String>,
+    artist: String,
+    title: String,
+    /// `1994 · 12" · CR-03`, whichever parts exist. An artist's rows
+    /// name the label too, since it varies down their run.
+    sub: String,
+    /// Credited as remixer rather than as the artist (artist runs only).
+    remix: bool,
+    owned: bool,
+    wanted: bool,
+    /// A wantlist edit on this record is in flight or queued.
+    pending: bool,
+    /// The record the open sheet shows: the row you came from.
+    shown: bool,
+}
+
 enum Act {
     /// Open this release's sheet — listen before judging the sleeve.
     Open(usize),
@@ -394,10 +434,41 @@ impl App {
 
     /// Draw the open browse page, if any.
     pub(crate) fn draw_browse_page(&mut self, ctx: &egui::Context) {
-        let Some(panel) = self.browse_panel.as_ref() else {
+        // While a record sheet is open the run is one of its panes (see
+        // `draw_vinyl_sheet`), never a window over it.
+        if self.vinyl_sheet.as_ref().is_some_and(|s| !s.hidden) {
+            return;
+        }
+        let Some(snap) = self.browse_snapshot() else {
             return;
         };
-        let thread = panel.thread;
+        let mut out = BrowseOut::default();
+        let mut open = true;
+        let glyph = match snap.thread {
+            BrowseThread::Label => "⌂",
+            BrowseThread::Artist => "♪",
+        };
+        crate::ui::window::Window::new(format!("{glyph} {}", snap.name))
+            .id(egui::Id::new("browse-page"))
+            .open(&mut open)
+            .resizable_height()
+            .default_width(PANEL_W)
+            .show(ctx, |ui| {
+                ui.set_min_width(PANEL_W);
+                ui.set_max_width(PANEL_W);
+                Self::browse_rows_ui(ui, &snap, &mut out);
+            });
+        if !open {
+            self.browse_panel = None;
+            return;
+        }
+        self.browse_apply(ctx, snap.thread, out);
+    }
+
+    /// The open run as the rows draw it: whose, which page, and each row
+    /// with its shelf marks and whatever sleeve is decoded already.
+    pub(crate) fn browse_snapshot(&self) -> Option<BrowseSnap> {
+        let panel = self.browse_panel.as_ref()?;
         let (name, page, pages, loading, error) = (
             panel.name.clone(),
             panel.page,
@@ -405,26 +476,10 @@ impl App {
             panel.loading,
             panel.error.clone(),
         );
+        let thread = panel.thread;
         // Snapshot the rows, then fill sleeves through the shared URL cache
         // (`dig_cover` needs `&mut self`, so two passes like the versions
         // panel).
-        struct Row {
-            cover: Option<Tex>,
-            /// Where the sleeve comes from, for rows that scroll into view
-            /// before theirs has been asked for.
-            thumb: Option<String>,
-            artist: String,
-            title: String,
-            /// `1994 · 12" · CR-03`, whichever parts exist. An artist's rows
-            /// name the label too, since it varies down their run.
-            sub: String,
-            /// Credited as remixer rather than as the artist (artist runs only).
-            remix: bool,
-            owned: bool,
-            wanted: bool,
-            /// A wantlist edit on this record is in flight or queued.
-            pending: bool,
-        }
         let specs: Vec<(String, u64, String, String, String, bool)> = panel
             .releases
             .iter()
@@ -455,7 +510,8 @@ impl App {
                 )
             })
             .collect();
-        let mut rows: Vec<Row> = Vec::with_capacity(specs.len());
+        let shown_release = self.vinyl_sheet.as_ref().map(|s| s.release_id);
+        let mut rows: Vec<BrowseRow> = Vec::with_capacity(specs.len());
         for (thumb, release_id, artist, title, sub, remix) in specs {
             // By record, not pressing: the run may list another pressing of a
             // record you own.
@@ -470,7 +526,7 @@ impl App {
                 Some(ThumbState::Ready(t)) => t.clone(),
                 _ => None,
             });
-            rows.push(Row {
+            rows.push(BrowseRow {
                 cover,
                 thumb,
                 artist,
@@ -480,246 +536,249 @@ impl App {
                 owned,
                 wanted,
                 pending,
+                shown: shown_release == Some(release_id),
             });
         }
 
-        let mut act: Option<Act> = None;
-        let mut want_covers: Vec<String> = Vec::new();
-        let mut hover_row: Option<usize> = None;
-        let mut open = true;
-        let glyph = match thread {
-            BrowseThread::Label => "⌂",
-            BrowseThread::Artist => "♪",
-        };
-        crate::ui::window::Window::new(format!("{glyph} {name}"))
-            .id(egui::Id::new("browse-page"))
-            .open(&mut open)
-            .resizable_height()
-            .default_width(PANEL_W)
-            .show(ctx, |ui| {
-                ui.set_min_width(PANEL_W);
-                ui.set_max_width(PANEL_W);
-                ui.add_space(6.0);
-                if let Some(e) = &error {
-                    ui.label(egui::RichText::new(e).weak());
-                    ui.add_space(4.0);
-                    return;
-                }
-                if loading && rows.is_empty() {
-                    ui.horizontal(|ui| {
-                        ui.spinner();
-                        let reading = match thread {
-                            BrowseThread::Label => "Reading the label's crate…",
-                            BrowseThread::Artist => "Reading the artist's crate…",
-                        };
-                        ui.label(egui::RichText::new(reading).weak());
-                    });
-                    ui.add_space(4.0);
-                    return;
-                }
-                if rows.is_empty() {
-                    ui.label(egui::RichText::new("No records on this page of the run").weak());
-                }
-                egui::ScrollArea::vertical()
-                    .max_height(440.0)
-                    .show(ui, |ui| {
-                        // A paged run keeps the list at full height on every
-                        // page, so the pager under it stays put under the
-                        // cursor when a short last page turns up.
-                        if pages > 1 {
-                            ui.set_min_height(440.0);
-                        }
-                        for (i, r) in rows.iter().enumerate() {
-                            ui.horizontal(|ui| {
-                                let (trect, tresp) = ui.allocate_exact_size(
-                                    egui::vec2(THUMB, THUMB),
-                                    egui::Sense::click(),
-                                );
-                                if r.cover.is_none() && ui.is_rect_visible(trect) {
-                                    if let Some(u) = &r.thumb {
-                                        want_covers.push(u.clone());
-                                    }
-                                }
-                                crate::ui::cover::paint_at(ui, trect, r.cover.as_ref(), 4.0, None);
-                                let tresp = tresp
-                                    .on_hover_cursor(egui::CursorIcon::PointingHand)
-                                    .on_hover_note("Open the record");
-                                if tresp.hovered() {
-                                    hover_row = Some(i);
-                                }
-                                if tresp.clicked() {
-                                    act = Some(Act::Open(i));
-                                }
-                                ui.add_space(8.0);
-                                // The buttons claim their width first, from
-                                // the right, so the text column gets what is
-                                // left and cuts its title there: a long title
-                                // would otherwise run under the buttons and
-                                // widen the window, for good (egui keeps the
-                                // widest width a window's content ever took).
-                                ui.with_layout(
-                                    egui::Layout::right_to_left(egui::Align::Center),
-                                    |ui| {
-                                        // Same square as the heart beside it,
-                                        // so the pair reads as one control row.
-                                        if crate::ui::icon::glyph_button(ui, "🔍", true)
-                                            .on_hover_note("Dig from this record")
-                                            .clicked()
-                                        {
-                                            act = Some(Act::Dig(i));
-                                        }
-                                        let parked = r.owned || r.wanted;
-                                        if crate::ui::icon::shelf_button(
-                                            ui,
-                                            VinylList::Wantlist,
-                                            false,
-                                            "",
-                                            !parked && !r.pending,
-                                        )
-                                        .on_hover_note("Add to your Discogs wantlist")
-                                        .clicked()
-                                        {
-                                            act = Some(Act::Want(i));
-                                        }
-                                        ui.with_layout(
-                                            egui::Layout::top_down(egui::Align::Min),
-                                            |ui| {
-                                                ui.spacing_mut().item_spacing.y = 1.0;
-                                                ui.horizontal(|ui| {
-                                                    ui.spacing_mut().item_spacing.x = 6.0;
-                                                    // What follows the title on its
-                                                    // line, reserved before the title
-                                                    // is cut: a shelf mark and the
-                                                    // remix tag.
-                                                    let marks = [
-                                                        (r.owned, VinylList::Collection),
-                                                        (!r.owned && r.wanted, VinylList::Wantlist),
-                                                    ];
-                                                    let remix = r.remix.then(|| {
-                                                        egui::WidgetText::from(
-                                                            egui::RichText::new("REMIX")
-                                                                .small()
-                                                                .color(egui::Color32::from_gray(140)),
-                                                        )
-                                                        .into_galley(
-                                                            ui,
-                                                            Some(egui::TextWrapMode::Extend),
-                                                            f32::INFINITY,
-                                                            egui::TextStyle::Small,
-                                                        )
-                                                    });
-                                                    let reserve = marks
-                                                        .iter()
-                                                        .filter(|(show, _)| *show)
-                                                        .count() as f32
-                                                        * (14.0 + 6.0)
-                                                        + remix.as_ref().map_or(0.0, |g| g.size().x + 6.0);
-                                                    let t = ui
-                                                        .scope(|ui| {
-                                                            ui.set_max_width(
-                                                                (ui.available_width() - reserve).max(0.0),
-                                                            );
-                                                            ui.add(
-                                                                egui::Label::new(
-                                                                    egui::RichText::new(format!(
-                                                                        "{} — {}",
-                                                                        r.artist, r.title
-                                                                    ))
-                                                                    .strong(),
-                                                                )
-                                                                .truncate()
-                                                                .sense(egui::Sense::click()),
-                                                            )
-                                                        })
-                                                        .inner
-                                                        .on_hover_cursor(egui::CursorIcon::PointingHand)
-                                                        .on_hover_note("Open the record");
-                                                    if t.clicked() {
-                                                        act = Some(Act::Open(i));
-                                                    }
-                                                    // Your shelves, marked: the mark
-                                                    // itself, solid, in the row's quiet ink.
-                                                    for (show, list) in marks {
-                                                        if show {
-                                                            let (rect, _) = ui.allocate_exact_size(
-                                                                egui::vec2(14.0, 14.0),
-                                                                egui::Sense::hover(),
-                                                            );
-                                                            crate::ui::icon::shelf(
-                                                                ui.painter(),
-                                                                rect.center(),
-                                                                5.5,
-                                                                egui::Color32::from_gray(150),
-                                                                true,
-                                                                list,
-                                                            );
-                                                        }
-                                                    }
-                                                    if let Some(g) = remix {
-                                                        ui.add(egui::Label::new(g));
-                                                    }
-                                                });
-                                                if !r.sub.is_empty() {
-                                                    // Cut, never widen: a long catalogue
-                                                    // line would push the frame out.
-                                                    ui.add(
-                                                        egui::Label::new(
-                                                            egui::RichText::new(&r.sub).small().weak(),
-                                                        )
-                                                        .truncate(),
-                                                    );
-                                                }
-                                            },
-                                        );
-                                    },
-                                );
-                            });
-                            ui.add_space(crate::ui::tokens::space::S2);
-                            ui.separator();
-                            ui.add_space(crate::ui::tokens::space::S2);
-                        }
-                    });
-                // Pager, only when the run outgrows one page.
-                if pages > 1 {
-                    ui.add_space(4.0);
-                    ui.horizontal(|ui| {
-                        if ui
-                            .add_enabled(page > 1 && !loading, egui::Button::new("←"))
-                            .on_hover_note("Earlier in the run")
-                            .clicked()
-                        {
-                            act = Some(Act::Page(page - 1));
-                        }
-                        if ui
-                            .add_enabled(page < pages && !loading, egui::Button::new("→"))
-                            .on_hover_note("Later in the run")
-                            .clicked()
-                        {
-                            act = Some(Act::Page(page + 1));
-                        }
-                        ui.label(egui::RichText::new(format!("Page {page} of {pages}")).weak());
-                        // After the label, so the page number holds still
-                        // while a page loads.
-                        if loading {
-                            ui.spinner();
-                        }
-                    });
-                }
-            });
-        if !open {
-            self.browse_panel = None;
+        Some(BrowseSnap { thread, name, page, pages, loading, error, rows })
+    }
+
+    /// The run's rows and pager, drawn in whatever frame holds them: the
+    /// browse window, or the record sheet's run pane.
+    pub(crate) fn browse_rows_ui(ui: &mut egui::Ui, snap: &BrowseSnap, out: &mut BrowseOut) {
+        let (thread, page, pages, loading) = (snap.thread, snap.page, snap.pages, snap.loading);
+        let (error, rows) = (&snap.error, &snap.rows);
+        ui.add_space(6.0);
+        if let Some(e) = &error {
+            ui.label(egui::RichText::new(e).weak());
+            ui.add_space(4.0);
             return;
         }
+        if loading && rows.is_empty() {
+            ui.horizontal(|ui| {
+                ui.spinner();
+                let reading = match thread {
+                    BrowseThread::Label => "Reading the label's crate…",
+                    BrowseThread::Artist => "Reading the artist's crate…",
+                };
+                ui.label(egui::RichText::new(reading).weak());
+            });
+            ui.add_space(4.0);
+            return;
+        }
+        if rows.is_empty() {
+            ui.label(egui::RichText::new("No records on this page of the run").weak());
+        }
+        egui::ScrollArea::vertical()
+            .max_height(440.0)
+            .show(ui, |ui| {
+                // A paged run keeps the list at full height on every
+                // page, so the pager under it stays put under the
+                // cursor when a short last page turns up.
+                if pages > 1 {
+                    ui.set_min_height(440.0);
+                }
+                for (i, r) in rows.iter().enumerate() {
+                    let bg = ui.painter().add(egui::Shape::Noop);
+                    let row = ui.horizontal(|ui| {
+                        let (trect, tresp) = ui.allocate_exact_size(
+                            egui::vec2(THUMB, THUMB),
+                            egui::Sense::click(),
+                        );
+                        if r.cover.is_none() && ui.is_rect_visible(trect) {
+                            if let Some(u) = &r.thumb {
+                                out.want_covers.push(u.clone());
+                            }
+                        }
+                        crate::ui::cover::paint_at(ui, trect, r.cover.as_ref(), 4.0, None);
+                        let tresp = tresp
+                            .on_hover_cursor(egui::CursorIcon::PointingHand)
+                            .on_hover_note("Open the record");
+                        if tresp.hovered() {
+                            out.hover_row = Some(i);
+                        }
+                        if tresp.clicked() {
+                            out.act = Some(Act::Open(i));
+                        }
+                        ui.add_space(8.0);
+                        // The buttons claim their width first, from
+                        // the right, so the text column gets what is
+                        // left and cuts its title there: a long title
+                        // would otherwise run under the buttons and
+                        // widen the window, for good (egui keeps the
+                        // widest width a window's content ever took).
+                        ui.with_layout(
+                            egui::Layout::right_to_left(egui::Align::Center),
+                            |ui| {
+                                // Same square as the heart beside it,
+                                // so the pair reads as one control row.
+                                if crate::ui::icon::glyph_button(ui, "🔍", true)
+                                    .on_hover_note("Dig from this record")
+                                    .clicked()
+                                {
+                                    out.act = Some(Act::Dig(i));
+                                }
+                                let parked = r.owned || r.wanted;
+                                if crate::ui::icon::shelf_button(
+                                    ui,
+                                    VinylList::Wantlist,
+                                    false,
+                                    "",
+                                    !parked && !r.pending,
+                                )
+                                .on_hover_note("Add to your Discogs wantlist")
+                                .clicked()
+                                {
+                                    out.act = Some(Act::Want(i));
+                                }
+                                ui.with_layout(
+                                    egui::Layout::top_down(egui::Align::Min),
+                                    |ui| {
+                                        ui.spacing_mut().item_spacing.y = 1.0;
+                                        ui.horizontal(|ui| {
+                                            ui.spacing_mut().item_spacing.x = 6.0;
+                                            // What follows the title on its
+                                            // line, reserved before the title
+                                            // is cut: a shelf mark and the
+                                            // remix tag.
+                                            let marks = [
+                                                (r.owned, VinylList::Collection),
+                                                (!r.owned && r.wanted, VinylList::Wantlist),
+                                            ];
+                                            let remix = r.remix.then(|| {
+                                                egui::WidgetText::from(
+                                                    egui::RichText::new("REMIX")
+                                                        .small()
+                                                        .color(egui::Color32::from_gray(140)),
+                                                )
+                                                .into_galley(
+                                                    ui,
+                                                    Some(egui::TextWrapMode::Extend),
+                                                    f32::INFINITY,
+                                                    egui::TextStyle::Small,
+                                                )
+                                            });
+                                            let reserve = marks
+                                                .iter()
+                                                .filter(|(show, _)| *show)
+                                                .count() as f32
+                                                * (14.0 + 6.0)
+                                                + remix.as_ref().map_or(0.0, |g| g.size().x + 6.0);
+                                            let t = ui
+                                                .scope(|ui| {
+                                                    ui.set_max_width(
+                                                        (ui.available_width() - reserve).max(0.0),
+                                                    );
+                                                    ui.add(
+                                                        egui::Label::new(
+                                                            egui::RichText::new(format!(
+                                                                "{} — {}",
+                                                                r.artist, r.title
+                                                            ))
+                                                            .strong(),
+                                                        )
+                                                        .truncate()
+                                                        .sense(egui::Sense::click()),
+                                                    )
+                                                })
+                                                .inner
+                                                .on_hover_cursor(egui::CursorIcon::PointingHand)
+                                                .on_hover_note("Open the record");
+                                            if t.clicked() {
+                                                out.act = Some(Act::Open(i));
+                                            }
+                                            // Your shelves, marked: the mark
+                                            // itself, solid, in the row's quiet ink.
+                                            for (show, list) in marks {
+                                                if show {
+                                                    let (rect, _) = ui.allocate_exact_size(
+                                                        egui::vec2(14.0, 14.0),
+                                                        egui::Sense::hover(),
+                                                    );
+                                                    crate::ui::icon::shelf(
+                                                        ui.painter(),
+                                                        rect.center(),
+                                                        5.5,
+                                                        egui::Color32::from_gray(150),
+                                                        true,
+                                                        list,
+                                                    );
+                                                }
+                                            }
+                                            if let Some(g) = remix {
+                                                ui.add(egui::Label::new(g));
+                                            }
+                                        });
+                                        if !r.sub.is_empty() {
+                                            // Cut, never widen: a long catalogue
+                                            // line would push the frame out.
+                                            ui.add(
+                                                egui::Label::new(
+                                                    egui::RichText::new(&r.sub).small().weak(),
+                                                )
+                                                .truncate(),
+                                            );
+                                        }
+                                    },
+                                );
+                            },
+                        );
+                    });
+                    if r.shown {
+                        ui.painter().set(
+                            bg,
+                            egui::Shape::rect_filled(
+                                row.response.rect.expand(crate::ui::tokens::space::S2),
+                                crate::ui::tokens::radius::SM,
+                                egui::Color32::from_white_alpha(10),
+                            ),
+                        );
+                    }
+                    ui.add_space(crate::ui::tokens::space::S2);
+                    ui.separator();
+                    ui.add_space(crate::ui::tokens::space::S2);
+                }
+            });
+        // Pager, only when the run outgrows one page.
+        if pages > 1 {
+            ui.add_space(4.0);
+            ui.horizontal(|ui| {
+                if ui
+                    .add_enabled(page > 1 && !loading, egui::Button::new("←"))
+                    .on_hover_note("Earlier in the run")
+                    .clicked()
+                {
+                    out.act = Some(Act::Page(page - 1));
+                }
+                if ui
+                    .add_enabled(page < pages && !loading, egui::Button::new("→"))
+                    .on_hover_note("Later in the run")
+                    .clicked()
+                {
+                    out.act = Some(Act::Page(page + 1));
+                }
+                ui.label(egui::RichText::new(format!("Page {page} of {pages}")).weak());
+                // After the label, so the page number holds still
+                // while a page loads.
+                if loading {
+                    ui.spinner();
+                }
+            });
+        }
+    }
 
-        // Sleeves for the rows that were on screen, requested once the window
+    /// What the rows asked for: sleeves to fetch, a record to open, want
+    /// or dig, a page turn, and the hovered row's detail warmed.
+    pub(crate) fn browse_apply(&mut self, ctx: &egui::Context, thread: BrowseThread, out: BrowseOut) {
+        // Sleeves for the rows that were on screen, requested once the frame
         // has released its borrows. CDN downloads, outside the request pace.
-        for u in want_covers {
+        for u in out.want_covers {
             self.dig_cover(&u);
         }
         let row_of = |i: usize| -> Option<&BrowseRelease> {
             self.browse_panel.as_ref().and_then(|p| p.releases.get(i))
         };
-        match act {
+        match out.act {
             Some(Act::Open(i)) => {
                 if let Some(r) = row_of(i).cloned() {
                     let (artist, title) = crate::dig::row_artist_title(&r);
@@ -769,7 +828,7 @@ impl App {
             None => {}
         }
         // Resting on a row: have its tracklist ready before the click.
-        let warm = hover_row.and_then(|i| {
+        let warm = out.hover_row.and_then(|i| {
             self.browse_panel
                 .as_ref()
                 .and_then(|p| p.releases.get(i))

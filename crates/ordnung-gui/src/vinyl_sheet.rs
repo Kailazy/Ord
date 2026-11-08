@@ -189,6 +189,16 @@ pub(crate) struct VinylSheet {
     /// a window stranded over the library. A click on the bar brings the
     /// sheet back; the bar goes when the video stops.
     pub hidden: bool,
+    /// What the body under the header shows: the tracklist, or the run
+    /// (the artist's or the label's) opened from a name on the header.
+    pub pane: SheetPane,
+}
+
+/// The record sheet's body, one of its panes (see [`VinylSheet::pane`]).
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SheetPane {
+    Tracks,
+    Run,
 }
 
 impl VinylSheet {
@@ -613,6 +623,7 @@ impl App {
             mark: None,
             cursor: None,
             hidden: false,
+            pane: SheetPane::Tracks,
         });
         self.spawn_sheet_fetch(release_id, ctx.clone());
         self.spawn_sheet_price(release_id, ctx.clone());
@@ -1554,6 +1565,7 @@ impl App {
 
         /// What the user clicked this frame, applied after the window closes its
         /// borrow of `self`.
+        #[derive(Clone)]
         enum Act {
             Play(usize),
             /// Put this row's song in the crate of liked songs, or take it out.
@@ -1586,8 +1598,15 @@ impl App {
             OpenAlternative,
             /// Every pressing of this record, to swap one in.
             Pressings,
+            /// Back to the tracklist from the run pane.
+            TracksPane,
         }
         let mut act: Option<Act> = None;
+        // The run pane's rows, snapshotted before the window borrows `self`;
+        // applied after it (see `browse_rows_ui`).
+        let run_snap = self.browse_snapshot();
+        let mut run_out = crate::browse_page::BrowseOut::default();
+        let pane = self.vinyl_sheet.as_ref().unwrap().pane;
         // The tracklist row a hover-less mark sits on: the line the sheet was
         // opened from, matched the way the matcher reads titles.
         let marked = self.vinyl_sheet.as_ref().unwrap().marked_row();
@@ -2253,147 +2272,196 @@ impl App {
                     ui.add_space(4.0);
                 }
 
-                if loading {
-                    ui.add_space(10.0);
-                    ui.horizontal(|ui| {
-                        ui.spinner();
-                        ui.label(egui::RichText::new("Loading tracklist…").weak());
-                    });
-                    ui.add_space(10.0);
-                    return;
+                // The body's panes: the tracklist, and the run opened from a
+                // name on the header, which otherwise would land in a window
+                // over this one. Each artist and the label get a segment, so
+                // a run is one press away from any pane.
+                let run_open = run_snap.as_ref().filter(|_| pane == SheetPane::Run);
+                let run_label = run_snap.as_ref().map(|r| {
+                    let glyph = match r.thread {
+                        discogs::BrowseThread::Label => "⌂",
+                        discogs::BrowseThread::Artist => "♪",
+                    };
+                    format!("{glyph} {}", r.name)
+                });
+                let mut seg_labels: Vec<(String, Option<Act>)> = vec![("Tracks".into(), Some(Act::TracksPane))];
+                for a in artist_parts.iter().filter(|a| a.browsable()).take(3) {
+                    seg_labels.push((format!("♪ {}", a.name), Some(Act::ArtistPage(a.id, a.name.clone()))));
                 }
-                if let Some(e) = &error {
-                    ui.add_space(10.0);
-                    ui.label(egui::RichText::new(e).color(crate::ui::tokens::color::NEGATIVE));
-                    ui.add_space(10.0);
-                    return;
+                if let Some(l) = &sheet_label {
+                    seg_labels.push((format!("⌂ {l}"), Some(Act::LabelPage)));
+                }
+                // A run opened from a track credit (a remixer, say) that no
+                // header segment names still gets one while it is shown.
+                if let Some(rl) = &run_label {
+                    if !seg_labels.iter().any(|(l, _)| l == rl) {
+                        seg_labels.push((rl.clone(), None));
+                    }
+                }
+                let selected = match &run_label {
+                    Some(rl) if pane == SheetPane::Run => seg_labels.iter().position(|(l, _)| l == rl),
+                    _ => Some(0),
+                };
+                if seg_labels.len() > 1 {
+                    ui.add_space(crate::ui::tokens::space::S3);
+                    let segments: Vec<crate::ui::button::Segment> = seg_labels
+                        .iter()
+                        .map(|(l, _)| crate::ui::button::Segment { label: l, tip: "" })
+                        .collect();
+                    if let Some(i) = crate::ui::button::segmented(ui, selected, &segments) {
+                        if let Some(a) = &seg_labels[i].1 {
+                            act = Some(a.clone());
+                        }
+                    }
+                    ui.add_space(crate::ui::tokens::space::S2);
                 }
 
-                let sheet = self.vinyl_sheet.as_ref().unwrap();
-                if sheet.rows.is_empty() && sheet.extra_videos.is_empty() {
-                    ui.add_space(10.0);
-                    ui.label(
-                        egui::RichText::new("Discogs lists no tracks or videos for this release.")
-                            .weak(),
-                    );
-                    ui.add_space(10.0);
-                    return;
-                }
+                if let Some(snap) = run_open {
+                    ui.add_space(crate::ui::tokens::space::S2);
+                    crate::App::browse_rows_ui(ui, snap, &mut run_out);
+                } else {
+                    if loading {
+                        ui.add_space(10.0);
+                        ui.horizontal(|ui| {
+                            ui.spinner();
+                            ui.label(egui::RichText::new("Loading tracklist…").weak());
+                        });
+                        ui.add_space(10.0);
+                        return;
+                    }
+                    if let Some(e) = &error {
+                        ui.add_space(10.0);
+                        ui.label(egui::RichText::new(e).color(crate::ui::tokens::color::NEGATIVE));
+                        ui.add_space(10.0);
+                        return;
+                    }
 
-                egui::ScrollArea::vertical()
-                    .max_height(360.0)
-                    .show(ui, |ui| {
-                        ui.add_space(4.0);
-                        for (i, row) in sheet.rows.iter().enumerate() {
-                            let playing = match row.source {
-                                SheetSource::Local(l) => sheet
-                                    .local
-                                    .get(l)
-                                    .is_some_and(|t| Some(t.id) == sounding_id),
-                                SheetSource::Video(v) => playing_video == Some(v),
-                                SheetSource::None => false,
-                            };
-                            let running = match row.source {
-                                // `sounding_id` already means the audio engine is running.
-                                SheetSource::Local(_) => true,
-                                SheetSource::Video(_) => video_running,
-                                SheetSource::None => false,
-                            };
-                            let liked = self.is_liked(
-                                row.artist.as_deref().unwrap_or(&sheet.artist),
-                                &row.title,
-                                Some(sheet.release_id),
-                                Some(&row.position),
-                            );
-                            // The keyboard cursor lights a row the way the
-                            // mark does: it is the pointer's hover without
-                            // the pointer.
-                            let lit = marked == Some(i) || cursor == Some(i);
-                            let top = ui.cursor().top();
-                            let tagged: Vec<Id> = sheet_row_spec(sheet, i)
-                                .map(|sp| {
-                                    self.song_tag_ids(&ordnung_core::catalog::song_key(
-                                        &sp.artist,
-                                        &sp.title,
-                                        sp.release_id,
-                                        sp.position.as_deref(),
-                                    ))
-                                    .to_vec()
-                                })
-                                .unwrap_or_default();
-                            let hit = sheet_row_ui(ui, sheet, row, i, playing, running, lit, liked, &self.crate_sets, &tagged, &self.db_path);
-                            // A step off the visible part of the list brings
-                            // the row it landed on into view.
-                            if cursor_moved && cursor == Some(i) {
-                                let span = egui::Rect::from_x_y_ranges(
-                                    ui.max_rect().x_range(),
-                                    top..=ui.cursor().top(),
+                    let sheet = self.vinyl_sheet.as_ref().unwrap();
+                    if sheet.rows.is_empty() && sheet.extra_videos.is_empty() {
+                        ui.add_space(10.0);
+                        ui.label(
+                            egui::RichText::new("Discogs lists no tracks or videos for this release.")
+                                .weak(),
+                        );
+                        ui.add_space(10.0);
+                        return;
+                    }
+
+                    egui::ScrollArea::vertical()
+                        .max_height(360.0)
+                        .show(ui, |ui| {
+                            ui.add_space(4.0);
+                            for (i, row) in sheet.rows.iter().enumerate() {
+                                let playing = match row.source {
+                                    SheetSource::Local(l) => sheet
+                                        .local
+                                        .get(l)
+                                        .is_some_and(|t| Some(t.id) == sounding_id),
+                                    SheetSource::Video(v) => playing_video == Some(v),
+                                    SheetSource::None => false,
+                                };
+                                let running = match row.source {
+                                    // `sounding_id` already means the audio engine is running.
+                                    SheetSource::Local(_) => true,
+                                    SheetSource::Video(_) => video_running,
+                                    SheetSource::None => false,
+                                };
+                                let liked = self.is_liked(
+                                    row.artist.as_deref().unwrap_or(&sheet.artist),
+                                    &row.title,
+                                    Some(sheet.release_id),
+                                    Some(&row.position),
                                 );
-                                ui.scroll_to_rect(span, None);
-                            }
-                            match hit {
-                                Some(RowHit::Play) => act = Some(Act::Play(i)),
-                                Some(RowHit::Like) => act = Some(Act::Like(i)),
-                                Some(RowHit::Artist(id, name)) => {
-                                    act = Some(Act::ArtistPage(id, name))
+                                // The keyboard cursor lights a row the way the
+                                // mark does: it is the pointer's hover without
+                                // the pointer.
+                                let lit = marked == Some(i) || cursor == Some(i);
+                                let top = ui.cursor().top();
+                                let tagged: Vec<Id> = sheet_row_spec(sheet, i)
+                                    .map(|sp| {
+                                        self.song_tag_ids(&ordnung_core::catalog::song_key(
+                                            &sp.artist,
+                                            &sp.title,
+                                            sp.release_id,
+                                            sp.position.as_deref(),
+                                        ))
+                                        .to_vec()
+                                    })
+                                    .unwrap_or_default();
+                                let hit = sheet_row_ui(ui, sheet, row, i, playing, running, lit, liked, &self.crate_sets, &tagged, &self.db_path);
+                                // A step off the visible part of the list brings
+                                // the row it landed on into view.
+                                if cursor_moved && cursor == Some(i) {
+                                    let span = egui::Rect::from_x_y_ranges(
+                                        ui.max_rect().x_range(),
+                                        top..=ui.cursor().top(),
+                                    );
+                                    ui.scroll_to_rect(span, None);
                                 }
-                                Some(RowHit::DragStart) => {
-                                    if let Some(spec) = sheet_row_spec(sheet, i) {
-                                        egui::DragAndDrop::set_payload(ui.ctx(), DraggedSongs(vec![spec]));
+                                match hit {
+                                    Some(RowHit::Play) => act = Some(Act::Play(i)),
+                                    Some(RowHit::Like) => act = Some(Act::Like(i)),
+                                    Some(RowHit::Artist(id, name)) => {
+                                        act = Some(Act::ArtistPage(id, name))
+                                    }
+                                    Some(RowHit::DragStart) => {
+                                        if let Some(spec) = sheet_row_spec(sheet, i) {
+                                            egui::DragAndDrop::set_payload(ui.ctx(), DraggedSongs(vec![spec]));
+                                        }
+                                    }
+                                    Some(RowHit::AddToCrate(cid)) => act = Some(Act::AddToCrate(i, cid)),
+                                    Some(RowHit::SetTag(tag, on)) => act = Some(Act::SetTag(i, tag, on)),
+                                    Some(RowHit::CopyLink(url)) => act = Some(Act::CopyLink(url)),
+                                    None => {}
+                                }
+                            }
+                            // Leftover videos: album rips, live sets, anything the
+                            // tracklist didn't claim.
+                            if !sheet.extra_videos.is_empty() {
+                                ui.add_space(10.0);
+                                ui.label(egui::RichText::new("Other videos").weak());
+                                ui.separator();
+                                for (n, v) in sheet.extra_videos.iter().enumerate() {
+                                    let Some(video) =
+                                        sheet.detail.as_ref().and_then(|d| d.videos.get(*v))
+                                    else {
+                                        continue;
+                                    };
+                                    let playing = playing_video == Some(*v);
+                                    if extra_video_ui(ui, video, n, playing, video_running) {
+                                        act = Some(Act::PlayExtra(*v));
                                     }
                                 }
-                                Some(RowHit::AddToCrate(cid)) => act = Some(Act::AddToCrate(i, cid)),
-                                Some(RowHit::SetTag(tag, on)) => act = Some(Act::SetTag(i, tag, on)),
-                                Some(RowHit::CopyLink(url)) => act = Some(Act::CopyLink(url)),
-                                None => {}
                             }
-                        }
-                        // Leftover videos: album rips, live sets, anything the
-                        // tracklist didn't claim.
-                        if !sheet.extra_videos.is_empty() {
-                            ui.add_space(10.0);
-                            ui.label(egui::RichText::new("Other videos").weak());
-                            ui.separator();
-                            for (n, v) in sheet.extra_videos.iter().enumerate() {
-                                let Some(video) =
-                                    sheet.detail.as_ref().and_then(|d| d.videos.get(*v))
-                                else {
-                                    continue;
-                                };
-                                let playing = playing_video == Some(*v);
-                                if extra_video_ui(ui, video, n, playing, video_running) {
-                                    act = Some(Act::PlayExtra(*v));
-                                }
-                            }
-                        }
-                        ui.add_space(4.0);
-                    });
-
-                // Footer: how many tracks you actually own, and a way in.
-                let owned = sheet
-                    .rows
-                    .iter()
-                    .filter(|r| matches!(r.source, SheetSource::Local(_)))
-                    .count();
-                ui.separator();
-                ui.horizontal(|ui| {
-                    let note = match owned {
-                        0 => "No tracks from this record are in your library".to_string(),
-                        1 => "1 track from this record is in your library".to_string(),
-                        n => format!("{n} tracks from this record are in your library"),
-                    };
-                    ui.label(egui::RichText::new(note).small().weak());
-                    if owned > 0 {
-                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            if crate::ui::button::button(ui, "Show in library")
-                                .on_hover_note("Filter the library to this record")
-                                .clicked()
-                            {
-                                act = Some(Act::Goto);
-                            }
+                            ui.add_space(4.0);
                         });
-                    }
-                });
+
+                    // Footer: how many tracks you actually own, and a way in.
+                    let owned = sheet
+                        .rows
+                        .iter()
+                        .filter(|r| matches!(r.source, SheetSource::Local(_)))
+                        .count();
+                    ui.separator();
+                    ui.horizontal(|ui| {
+                        let note = match owned {
+                            0 => "No tracks from this record are in your library".to_string(),
+                            1 => "1 track from this record is in your library".to_string(),
+                            n => format!("{n} tracks from this record are in your library"),
+                        };
+                        ui.label(egui::RichText::new(note).small().weak());
+                        if owned > 0 {
+                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                if crate::ui::button::button(ui, "Show in library")
+                                    .on_hover_note("Filter the library to this record")
+                                    .clicked()
+                                {
+                                    act = Some(Act::Goto);
+                                }
+                            });
+                        }
+                    });
+                }
             });
         // The transport talks straight to the engine that holds the record —
         // the panel for a video, the audio engine for a local file — nothing
@@ -2425,11 +2493,26 @@ impl App {
 
         match act {
             Some(Act::LabelPage) => {
-                self.open_label_page(release_id, sheet_label.clone());
+                let same = self
+                    .browse_panel
+                    .as_ref()
+                    .is_some_and(|p| p.thread == discogs::BrowseThread::Label && Some(&p.name) == sheet_label.as_ref());
+                if !same {
+                    self.open_label_page(release_id, sheet_label.clone());
+                }
+                self.set_sheet_pane(ctx, SheetPane::Run);
             }
             Some(Act::ArtistPage(id, name)) => {
-                self.open_artist_page(id, name);
+                let same = self
+                    .browse_panel
+                    .as_ref()
+                    .is_some_and(|p| p.thread == discogs::BrowseThread::Artist && p.id == id);
+                if !same {
+                    self.open_artist_page(id, name);
+                }
+                self.set_sheet_pane(ctx, SheetPane::Run);
             }
+            Some(Act::TracksPane) => self.set_sheet_pane(ctx, SheetPane::Tracks),
             // Starting a dig closes the sheet: the dig window it opens is
             // the first thing a digger looks at.
             Some(Act::Pressings) => {
@@ -2624,11 +2707,20 @@ impl App {
             }
             None => {}
         }
+        // The run pane's rows asked for things too (a sleeve, a record to
+        // open, a page turn): applied like the browse window applies them.
+        if let Some(snap) = run_snap.filter(|_| pane == SheetPane::Run) {
+            self.browse_apply(ctx, snap.thread, run_out);
+        }
         if !open {
             // Closing the record takes its video with it: the panel is that
             // record's player, so leaving it playing over a closed sheet is
-            // sound with nothing on screen to explain it.
+            // sound with nothing on screen to explain it. A run it was
+            // showing goes too, rather than surfacing as a window.
             self.stop_sheet_video();
+            if pane == SheetPane::Run {
+                self.browse_panel = None;
+            }
             self.vinyl_sheet = None;
         }
     }
@@ -2880,6 +2972,17 @@ impl App {
         if close {
             self.stop_sheet_video();
             self.vinyl_sheet = None;
+        }
+    }
+
+    fn set_sheet_pane(&mut self, ctx: &egui::Context, pane: SheetPane) {
+        if let Some(s) = self.vinyl_sheet.as_mut() {
+            s.pane = pane;
+            // The window holds its tallest height per open; a pane with
+            // less to show starts from its own.
+            ctx.data_mut(|d| {
+                d.remove::<f32>(egui::Id::new(("vinyl-sheet", s.release_id)).with("held-height"))
+            });
         }
     }
 }
