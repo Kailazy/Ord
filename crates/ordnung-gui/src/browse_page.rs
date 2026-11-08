@@ -489,27 +489,17 @@ impl App {
         // Docked to the open record sheet, on whichever side has room, so
         // the run never lands over the record it was opened from; it
         // follows the sheet as it is dragged and floats free once the
-        // sheet closes. When neither side has room the sheet is nudged
-        // over by what's missing, so the pair fits where one did.
-        let run_w = egui::AreaState::load(ctx, egui::Id::new("browse-page"))
-            .map_or(PANEL_W + 2.0 * crate::ui::tokens::space::S4, |a| a.rect().width());
+        // sheet closes.
         let dock = self
             .vinyl_sheet
             .as_ref()
             .filter(|s| !s.hidden)
-            .map(|s| egui::Id::new(("vinyl-sheet", s.release_id)))
-            .and_then(|sheet| egui::AreaState::load(ctx, sheet).map(|a| (sheet, a.rect())))
-            .map(|(sheet, r)| {
-                let screen = ctx.screen_rect();
-                let room_right = screen.right() - r.right();
-                let room_left = r.left() - screen.left();
-                let right = room_right >= run_w || room_right >= room_left && room_left < run_w;
-                let room = if right { room_right } else { room_left };
-                if room < run_w {
-                    let by = (run_w - room).min(if right { room_left } else { room_right });
-                    crate::ui::window::Window::nudge(ctx, sheet, egui::vec2(if right { -by } else { by }, 0.0));
-                }
-                if right {
+            .and_then(|s| {
+                egui::AreaState::load(ctx, egui::Id::new(("vinyl-sheet", s.release_id)))
+            })
+            .map(|a| a.rect())
+            .map(|r| {
+                if r.right() + PANEL_W <= ctx.screen_rect().right() {
                     (egui::Align2::LEFT_TOP, r.right_top())
                 } else {
                     (egui::Align2::RIGHT_TOP, r.left_top())
