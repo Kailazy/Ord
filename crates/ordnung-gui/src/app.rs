@@ -391,6 +391,10 @@ impl App {
                 crate::inspector::InspectorDensity::Expanded as usize,
             ),
             view: LibraryView::Library,
+            history_back: Vec::new(),
+            history_fwd: Vec::new(),
+            history_at: (LibraryView::Library, VinylTab::Shelf(VinylList::Collection)),
+            history_replace: 0,
             renaming: None,
             sort: None,
             now_playing: None,
@@ -435,6 +439,8 @@ impl App {
             StartupView::Vinyl => LibraryView::Vinyl,
             StartupView::Recent => LibraryView::RecentlyAdded,
         };
+        // The home view is where the history starts, not a step from Library.
+        app.history_at = (app.view.clone(), app.vinyl_tab);
         // Restore the sidebar to the width tier it was left at.
         app.nav.tier = app.config.nav_density as usize;
         app.inspector_nav.tier = app.config.inspector_density as usize;
@@ -2570,6 +2576,25 @@ impl App {
             }
         }
 
+        // Notice a view change made anywhere last frame, for the back arrow.
+        self.record_history();
+        // ⌘[ and ⌘] step back and forward through the views selected, as in
+        // a browser, and so do a mouse's side buttons.
+        let (go_back, go_fwd) = ctx.input_mut(|i| {
+            (
+                i.consume_key(egui::Modifiers::COMMAND, egui::Key::OpenBracket)
+                    || i.pointer.button_pressed(egui::PointerButton::Extra1),
+                i.consume_key(egui::Modifiers::COMMAND, egui::Key::CloseBracket)
+                    || i.pointer.button_pressed(egui::PointerButton::Extra2),
+            )
+        });
+        if go_back {
+            self.history_go(true);
+        }
+        if go_fwd {
+            self.history_go(false);
+        }
+
         // Cmd/Ctrl+A selects every visible row in the current view or playlist
         // (`self.rows` is already narrowed to the active tab and column filters).
         // Skip it while a text field — search, per-column filter — owns the
@@ -3368,7 +3393,34 @@ impl App {
                                 avail.left(),
                                 (avail.right() - group_w).max(avail.left()),
                             );
-                            ui.add_space((left - avail.left()).max(0.0));
+                            // Back and forward through the views selected,
+                            // a browser's arrows, hard against the field's
+                            // left so the field keeps its spot.
+                            let arrow_w = ui.fonts(|f| {
+                                f.layout_no_wrap(
+                                    named(icons::CARET_LEFT).to_owned(),
+                                    font::icon(font::body().size + 2.0),
+                                    egui::Color32::PLACEHOLDER,
+                                )
+                                .size()
+                                .x
+                            }) + 2.0 * ui.spacing().button_padding.x;
+                            let arrows_w = 2.0 * (arrow_w + ui.spacing().item_spacing.x);
+                            ui.add_space((left - avail.left() - arrows_w).max(0.0));
+                            for (back, glyph, note) in [
+                                (true, icons::CARET_LEFT, "Back"),
+                                (false, icons::CARET_RIGHT, "Forward"),
+                            ] {
+                                let can = if back { &self.history_back } else { &self.history_fwd };
+                                let resp = ui
+                                    .add_enabled_ui(!can.is_empty(), |ui| {
+                                        crate::ui::button::icon_toggle(ui, named(glyph), false)
+                                    })
+                                    .inner;
+                                if resp.on_hover_note(note).clicked() {
+                                    self.history_go(back);
+                                }
+                            }
                             // A touch squarer than the buttons beside it:
                             // Kai judged the toolbar on 2026-11-06 and kept
                             // the theme's corner for everything but this box.
@@ -4464,33 +4516,7 @@ impl App {
             None => {}
         }
         if self.view != prev_view {
-            // The open icon-and-colour picker follows the playlist the
-            // sidebar selects, instead of staying on the one it was opened for.
-            if let (LibraryView::Playlist(id), Some(ed)) = (&self.view, self.look_editor.as_mut()) {
-                ed.id = *id;
-            }
-            // A record sheet belongs to the Vinyl section. Leaving that section
-            // closes it rather than leaving it stranded over the Library. A
-            // sheet whose video is rolling hides instead, and the record
-            // follows the listener as the bar at the window's bottom (see
-            // `draw_record_bar`), so the sound on air always has a face.
-            let rolling = self
-                .vinyl_sheet
-                .as_ref()
-                .is_some_and(|s| s.playing_video.is_some())
-                && webview::is_open();
-            if rolling && !matches!(self.view, LibraryView::Vinyl | LibraryView::CrateSet(_)) {
-                if let Some(s) = self.vinyl_sheet.as_mut() {
-                    s.hidden = true;
-                }
-            } else if prev_view == LibraryView::Vinyl
-                && !matches!(self.view, LibraryView::CrateSet(_))
-                && self.vinyl_sheet.is_some()
-            {
-                self.stop_sheet_video();
-                self.vinyl_sheet = None;
-            }
-            self.reload();
+            self.view_changed(prev_view);
         }
         // Kick off / adopt the off-thread duplicate scan after the view switch is
         // settled, so clicking the Duplicates tab starts the scan this same frame

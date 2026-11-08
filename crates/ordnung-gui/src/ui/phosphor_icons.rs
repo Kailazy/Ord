@@ -55,6 +55,8 @@ pub mod app {
     pub const SHOPPING_CART: &str = "shopping-cart";
     pub const CARET_UP: &str = "caret-up";
     pub const CARET_DOWN: &str = "caret-down";
+    pub const CARET_LEFT: &str = "caret-left";
+    pub const CARET_RIGHT: &str = "caret-right";
     pub const CLIPBOARD_TEXT: &str = "clipboard-text";
     pub const LOCK_KEY: &str = "lock-key";
     pub const WAVE_SINE: &str = "wave-sine";
@@ -77,7 +79,7 @@ pub mod app {
     #[cfg(test)]
     pub const ALL: &[&str] = &[
         MUSIC_NOTE, VINYL, HEART, SPARKLE, WARNING, EJECT, LIGHTNING, PLUS, PACKAGE, TAG, FOLDER,
-        FILE_AUDIO, CARET_UP, CARET_DOWN, CLIPBOARD_TEXT, LOCK_KEY, WAVE_SINE, INFO,
+        FILE_AUDIO, CARET_UP, CARET_DOWN, CARET_LEFT, CARET_RIGHT, CLIPBOARD_TEXT, LOCK_KEY, WAVE_SINE, INFO,
         CHAT_TEARDROP_TEXT, MAGNIFYING_GLASS, SHUFFLE, HOUSE, PLAY, PENCIL_SIMPLE, TRASH, LINK,
         GEAR, STAR, FUNNEL, CHECK, COPY, USER,
     ];

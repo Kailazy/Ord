@@ -2186,6 +2186,19 @@ struct App {
     inspector_nav: ui::nav::NavState,
     /// Which track set the table shows — the whole library or one playlist.
     view: LibraryView,
+    /// Where the user has been, for the toolbar's back and forward arrows:
+    /// the places (view and vinyl tab) left behind, and the ones gone back
+    /// from. `history_at` is the place last recorded, so a change of `view`
+    /// or `vinyl_tab` made anywhere is noticed once per frame in `update`.
+    history_back: Vec<(LibraryView, VinylTab)>,
+    history_fwd: Vec<(LibraryView, VinylTab)>,
+    history_at: (LibraryView, VinylTab),
+    /// Frames left after a back or forward step in which a change of place
+    /// replaces the last one instead of adding a step: the app sends a dead
+    /// place (a deleted playlist, an ejected stick, an emptied list) back
+    /// to Library within a frame or two, and a browser treats such a
+    /// redirect as the page itself, never as a step to go back from.
+    history_replace: u8,
     /// Inline rename in progress for a sidebar entry, or `None` when no row is
     /// being edited.
     renaming: Option<Renaming>,

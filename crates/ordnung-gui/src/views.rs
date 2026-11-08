@@ -637,6 +637,79 @@ impl App {
         self.missing_labels = labels;
     }
 
+    /// Notice that `view` or `vinyl_tab` changed since the last frame, from
+    /// the sidebar, the search box, a shortcut or anything else, and keep the
+    /// place left behind for the back arrow. Once per frame, from `update`.
+    pub(crate) fn record_history(&mut self) {
+        let here = (self.view.clone(), self.vinyl_tab);
+        if here != self.history_at {
+            if self.history_replace > 0 {
+                // A redirect on the heels of a step (see `history_replace`).
+                self.history_at = here;
+            } else {
+                self.history_fwd.clear();
+                self.history_back.push(std::mem::replace(&mut self.history_at, here));
+                if self.history_back.len() > 50 {
+                    self.history_back.remove(0);
+                }
+            }
+        }
+        self.history_replace = self.history_replace.saturating_sub(1);
+    }
+
+    /// Back or forward one place, as a browser does: the place left goes on
+    /// the other stack. Nothing to go to, nothing happens.
+    pub(crate) fn history_go(&mut self, back: bool) {
+        let (from, to) = if back {
+            (&mut self.history_fwd, &mut self.history_back)
+        } else {
+            (&mut self.history_back, &mut self.history_fwd)
+        };
+        let Some(place) = to.pop() else {
+            return;
+        };
+        from.push(self.history_at.clone());
+        let prev_view = std::mem::replace(&mut self.view, place.0.clone());
+        self.vinyl_tab = place.1;
+        self.history_at = place;
+        self.history_replace = 2;
+        if self.view != prev_view {
+            self.view_changed(prev_view);
+        }
+    }
+
+    /// What follows a change of `view`, whoever made it: the sidebar's
+    /// selection or the history arrows.
+    pub(crate) fn view_changed(&mut self, prev_view: LibraryView) {
+        // The open icon-and-colour picker follows the playlist the
+        // sidebar selects, instead of staying on the one it was opened for.
+        if let (LibraryView::Playlist(id), Some(ed)) = (&self.view, self.look_editor.as_mut()) {
+            ed.id = *id;
+        }
+        // A record sheet belongs to the Vinyl section. Leaving that section
+        // closes it rather than leaving it stranded over the Library. A
+        // sheet whose video is rolling hides instead, and the record
+        // follows the listener as the bar at the window's bottom (see
+        // `draw_record_bar`), so the sound on air always has a face.
+        let rolling = self
+            .vinyl_sheet
+            .as_ref()
+            .is_some_and(|s| s.playing_video.is_some())
+            && crate::webview::is_open();
+        if rolling && !matches!(self.view, LibraryView::Vinyl | LibraryView::CrateSet(_)) {
+            if let Some(s) = self.vinyl_sheet.as_mut() {
+                s.hidden = true;
+            }
+        } else if prev_view == LibraryView::Vinyl
+            && !matches!(self.view, LibraryView::CrateSet(_))
+            && self.vinyl_sheet.is_some()
+        {
+            self.stop_sheet_video();
+            self.vinyl_sheet = None;
+        }
+        self.reload();
+    }
+
     /// Switch the Library Health window to one of its two tabs and remember the
     /// choice, so reopening the section from the sidebar lands back here. The
     /// reload is explicit: the view-change hook in `update` runs before the content
