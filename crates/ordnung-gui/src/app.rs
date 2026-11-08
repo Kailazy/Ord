@@ -214,6 +214,7 @@ impl App {
             show_watch: false,
             watch_by_seller: true,
             browse_panel: None,
+            browse_kept: Vec::new(),
             browse_tx,
             browse_rx,
             vinyl_filter: String::new(),

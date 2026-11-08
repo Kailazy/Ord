@@ -1768,11 +1768,13 @@ won't mount it (NXS2 and CDJ-3000 read exFAT)."
                     ui.add_space(8.0);
                     let segs = [
                         Segment {
+                            icon: "",
                             label: "Add to stick",
                             tip: "Tracks already on the stick are kept; a playlist of the \
 same name is updated, others are left alone",
                         },
                         Segment {
+                            icon: "",
                             label: "Replace stick",
                             tip: "Afterwards the stick holds exactly this selection",
                         },
@@ -1844,7 +1846,7 @@ grids made in rekordbox, and the files of tracks not in this selection."
         ui.add_space(6.0);
         let segs: Vec<Segment> = CONVERT_TARGETS
             .iter()
-            .map(|&f| Segment { label: format_label(f), tip: format_tip(f) })
+            .map(|&f| Segment { icon: "", label: format_label(f), tip: format_tip(f) })
             .collect();
         let picked = CONVERT_TARGETS.iter().position(|&f| f == target);
         if let Some(i) = button::segmented(ui, picked, &segs) {

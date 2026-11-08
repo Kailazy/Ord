@@ -1291,10 +1291,12 @@ impl App {
         // A cached record lands a frame or two after the open; drawing the
         // window before then shows it short and then taller, the resize the
         // user sees on every open. Hold it until the rows are in, up to
-        // `SHEET_HOLD`, so a slow fetch still gets the loading sheet.
+        // `SHEET_HOLD`, so a slow fetch still gets the loading sheet. A
+        // record opened over an open sheet (from its run pane) is not held:
+        // the window stays, at its height, and the new rows fill it.
         if let Some(s) = self.vinyl_sheet.as_ref() {
             let waited = s.opened.elapsed();
-            if s.loading && waited < SHEET_HOLD {
+            if s.loading && waited < SHEET_HOLD && crate::ui::glass::opening(ctx, sheet_glass()) {
                 ctx.request_repaint_after(SHEET_HOLD - waited);
                 return;
             }
@@ -1680,7 +1682,7 @@ impl App {
         let mut open = true;
 
         crate::ui::window::Window::new(format!("{artist} — {title}"))
-            .id(egui::Id::new(("vinyl-sheet", release_id)))
+            .id(egui::Id::new("vinyl-sheet"))
             // One backdrop for every record: the press that opens a sheet
             // primes it before the record is known.
             .glass_id(sheet_glass())
@@ -2277,39 +2279,38 @@ impl App {
                 // over this one. Each artist and the label get a segment, so
                 // a run is one press away from any pane.
                 let run_open = run_snap.as_ref().filter(|_| pane == SheetPane::Run);
-                let run_label = run_snap.as_ref().map(|r| {
-                    let glyph = match r.thread {
-                        discogs::BrowseThread::Label => "⌂",
-                        discogs::BrowseThread::Artist => "♪",
-                    };
-                    format!("{glyph} {}", r.name)
-                });
-                let mut seg_labels: Vec<(String, Option<Act>)> = vec![("Tracks".into(), Some(Act::TracksPane))];
+                let run_label = run_snap
+                    .as_ref()
+                    .map(|r| (crate::browse_page::thread_icon(r.thread), r.name.clone()));
+                let mut seg_labels: Vec<(&str, String, Option<Act>)> =
+                    vec![("", "Tracks".into(), Some(Act::TracksPane))];
                 for a in artist_parts.iter().filter(|a| a.browsable()).take(3) {
-                    seg_labels.push((format!("♪ {}", a.name), Some(Act::ArtistPage(a.id, a.name.clone()))));
+                    seg_labels.push((named(icons::USER), a.name.clone(), Some(Act::ArtistPage(a.id, a.name.clone()))));
                 }
                 if let Some(l) = &sheet_label {
-                    seg_labels.push((format!("⌂ {l}"), Some(Act::LabelPage)));
+                    seg_labels.push((named(icons::HOUSE), l.clone(), Some(Act::LabelPage)));
                 }
                 // A run opened from a track credit (a remixer, say) that no
                 // header segment names still gets one while it is shown.
-                if let Some(rl) = &run_label {
-                    if !seg_labels.iter().any(|(l, _)| l == rl) {
-                        seg_labels.push((rl.clone(), None));
+                if let Some((ri, rl)) = &run_label {
+                    if !seg_labels.iter().any(|(i, l, _)| i == ri && l == rl) {
+                        seg_labels.push((ri, rl.clone(), None));
                     }
                 }
                 let selected = match &run_label {
-                    Some(rl) if pane == SheetPane::Run => seg_labels.iter().position(|(l, _)| l == rl),
+                    Some((ri, rl)) if pane == SheetPane::Run => {
+                        seg_labels.iter().position(|(i, l, _)| i == ri && l == rl)
+                    }
                     _ => Some(0),
                 };
                 if seg_labels.len() > 1 {
                     ui.add_space(crate::ui::tokens::space::S3);
                     let segments: Vec<crate::ui::button::Segment> = seg_labels
                         .iter()
-                        .map(|(l, _)| crate::ui::button::Segment { label: l, tip: "" })
+                        .map(|(i, l, _)| crate::ui::button::Segment { icon: i, label: l, tip: "" })
                         .collect();
                     if let Some(i) = crate::ui::button::segmented(ui, selected, &segments) {
-                        if let Some(a) = &seg_labels[i].1 {
+                        if let Some(a) = &seg_labels[i].2 {
                             act = Some(a.clone());
                         }
                     }
@@ -2348,6 +2349,7 @@ impl App {
                     }
 
                     egui::ScrollArea::vertical()
+                        .id_salt(release_id)
                         .max_height(360.0)
                         .show(ui, |ui| {
                             ui.add_space(4.0);
@@ -2500,7 +2502,7 @@ impl App {
                 if !same {
                     self.open_label_page(release_id, sheet_label.clone());
                 }
-                self.set_sheet_pane(ctx, SheetPane::Run);
+                self.set_sheet_pane(SheetPane::Run);
             }
             Some(Act::ArtistPage(id, name)) => {
                 let same = self
@@ -2510,9 +2512,9 @@ impl App {
                 if !same {
                     self.open_artist_page(id, name);
                 }
-                self.set_sheet_pane(ctx, SheetPane::Run);
+                self.set_sheet_pane(SheetPane::Run);
             }
-            Some(Act::TracksPane) => self.set_sheet_pane(ctx, SheetPane::Tracks),
+            Some(Act::TracksPane) => self.set_sheet_pane(SheetPane::Tracks),
             // Starting a dig closes the sheet: the dig window it opens is
             // the first thing a digger looks at.
             Some(Act::Pressings) => {
@@ -2975,14 +2977,11 @@ impl App {
         }
     }
 
-    fn set_sheet_pane(&mut self, ctx: &egui::Context, pane: SheetPane) {
+    /// The window keeps its height across panes (and across records: it
+    /// is one window whose content changes), so a switch never resizes it.
+    fn set_sheet_pane(&mut self, pane: SheetPane) {
         if let Some(s) = self.vinyl_sheet.as_mut() {
             s.pane = pane;
-            // The window holds its tallest height per open; a pane with
-            // less to show starts from its own.
-            ctx.data_mut(|d| {
-                d.remove::<f32>(egui::Id::new(("vinyl-sheet", s.release_id)).with("held-height"))
-            });
         }
     }
 }

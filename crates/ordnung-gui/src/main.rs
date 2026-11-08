@@ -1703,6 +1703,9 @@ struct App {
     /// paged list, with the user's shelves marked on every row. `None` when
     /// closed. See [`browse_page`].
     browse_panel: Option<browse_page::BrowsePanel>,
+    /// Runs opened earlier and since replaced, kept so a return to one
+    /// shows at once (see `App::browse_restore`).
+    browse_kept: Vec<browse_page::BrowsePanel>,
     /// Receives the open browse page's fetches (the id resolution + first
     /// page, then page turns). Tagged with the thread and id, so a reply for a
     /// panel since re-pointed elsewhere is dropped.

@@ -198,8 +198,8 @@ impl App {
                             ui,
                             Some(usize::from(self.liked_to_get_only)),
                             &[
-                                Segment { label: "All", tip: "Every liked song" },
-                                Segment { label: "To get", tip: "Only the songs no file in your library is yet" },
+                                Segment { icon: "", label: "All", tip: "Every liked song" },
+                                Segment { icon: "", label: "To get", tip: "Only the songs no file in your library is yet" },
                             ],
                         );
                         if let Some(p) = picked {

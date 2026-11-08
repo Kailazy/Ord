@@ -251,10 +251,12 @@ impl App {
                         Some(if by_seller { 0 } else { 1 }),
                         &[
                             Segment {
+                                icon: "",
                                 label: "By seller",
                                 tip: "One basket per shop, the shop holding the most of your wants first: one order, one shipping charge",
                             },
                             Segment {
+                                icon: "",
                                 label: "Cheapest",
                                 tip: "Every offer in one list, cheapest copy first",
                             },

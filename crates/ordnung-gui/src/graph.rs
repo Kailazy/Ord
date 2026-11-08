@@ -2646,10 +2646,12 @@ impl App {
                             }
                             let segs = [
                                 crate::ui::button::Segment {
+                                    icon: "",
                                     label: "Artists",
                                     tip: "Gather records around their artists",
                                 },
                                 crate::ui::button::Segment {
+                                    icon: "",
                                     label: "Genre clouds",
                                     tip: "Gather records into clouds by style",
                                 },

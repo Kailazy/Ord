@@ -1397,10 +1397,12 @@ impl App {
             Some(if list_mode { 1 } else { 0 }),
             &[
                 crate::ui::button::Segment {
+                    icon: "",
                     label: "⊞",
                     tip: "Show records as a wall of covers",
                 },
                 crate::ui::button::Segment {
+                    icon: "",
                     label: "☰",
                     tip: "Show records as compact rows",
                 },

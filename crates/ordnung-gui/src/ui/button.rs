@@ -142,6 +142,8 @@ pub fn menu_button(ui: &mut egui::Ui, label: impl Into<String>) -> egui::Respons
 
 /// One part of a [`segmented`] button: its label and its hover note.
 pub struct Segment<'a> {
+    /// A Phosphor glyph set before the label, or "" for none.
+    pub icon: &'a str,
     pub label: &'a str,
     pub tip: &'a str,
 }
@@ -159,7 +161,14 @@ pub fn segmented(ui: &mut egui::Ui, selected: Option<usize>, segments: &[Segment
     let font_id = egui::TextStyle::Button.resolve(ui.style());
     let galleys: Vec<_> = segments
         .iter()
-        .map(|s| ui.painter().layout_no_wrap(s.label.to_owned(), font_id.clone(), color::LABEL))
+        .map(|s| {
+            let text: egui::WidgetText = if s.icon.is_empty() {
+                s.label.into()
+            } else {
+                crate::ui::icon_text(s.icon, s.label, font_id.clone())
+            };
+            text.into_galley(ui, Some(egui::TextWrapMode::Extend), f32::INFINITY, egui::TextStyle::Button)
+        })
         .collect();
     let widths: Vec<f32> = galleys.iter().map(|g| g.size().x + 2.0 * pad.x).collect();
     let h = ui.spacing().interact_size.y;

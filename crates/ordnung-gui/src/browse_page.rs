@@ -203,7 +203,45 @@ fn collapse_rows<'a>(
     rows
 }
 
+/// The mark a run carries wherever it is named: a head for an artist's, a
+/// house for a label's.
+pub(crate) fn thread_icon(thread: BrowseThread) -> &'static str {
+    use crate::ui::phosphor_icons::{app, named};
+    match thread {
+        BrowseThread::Label => named(app::HOUSE),
+        BrowseThread::Artist => named(app::USER),
+    }
+}
+
 impl App {
+    /// Swap in the run asked for when it was open earlier this session: a
+    /// run another one replaces is parked, not dropped, so artist → label
+    /// → artist costs no second fetch. `id` 0 matches a label by name, as
+    /// a label page is opened before its id is known.
+    fn browse_restore(&mut self, thread: BrowseThread, id: u64, name: &str) -> bool {
+        if let Some(mut p) = self.browse_panel.take().filter(|p| !p.loading) {
+            // Its read-ahead reply, if one is in flight, is dropped by
+            // `poll_browse_page`; the next page turn asks again.
+            p.ahead = None;
+            self.browse_kept.retain(|k| (k.thread, k.id) != (p.thread, p.id));
+            self.browse_kept.push(p);
+            if self.browse_kept.len() > 8 {
+                self.browse_kept.remove(0);
+            }
+        }
+        let hit = self
+            .browse_kept
+            .iter()
+            .position(|k| k.thread == thread && if id == 0 { k.name == name } else { k.id == id });
+        match hit {
+            Some(i) => {
+                self.browse_panel = Some(self.browse_kept.remove(i));
+                true
+            }
+            None => false,
+        }
+    }
+
     /// Open the label page for the label of `release_id`. The label id rides
     /// the release detail, which is cached for any record whose sheet was
     /// opened — so this usually resolves without a request and spends its one
@@ -211,6 +249,9 @@ impl App {
     /// the detail corrects it.
     pub(crate) fn open_label_page(&mut self, release_id: u64, hint: Option<String>) {
         let name = hint.unwrap_or_else(|| "…".to_string());
+        if self.browse_restore(BrowseThread::Label, 0, &name) {
+            return;
+        }
         self.browse_panel = Some(BrowsePanel {
             thread: BrowseThread::Label,
             id: 0,
@@ -273,6 +314,9 @@ impl App {
     /// front (it comes from a Discogs artist search hit), so this spends its
     /// one paced call straight on the first page of the run.
     pub(crate) fn open_artist_page(&mut self, artist_id: u64, name: String) {
+        if self.browse_restore(BrowseThread::Artist, artist_id, &name) {
+            return;
+        }
         self.browse_panel = Some(BrowsePanel {
             thread: BrowseThread::Artist,
             id: artist_id,
@@ -444,11 +488,8 @@ impl App {
         };
         let mut out = BrowseOut::default();
         let mut open = true;
-        let glyph = match snap.thread {
-            BrowseThread::Label => "⌂",
-            BrowseThread::Artist => "♪",
-        };
-        crate::ui::window::Window::new(format!("{glyph} {}", snap.name))
+        let title = crate::ui::icon_text(thread_icon(snap.thread), &snap.name, crate::ui::tokens::font::title());
+        crate::ui::window::Window::new(title)
             .id(egui::Id::new("browse-page"))
             .open(&mut open)
             .resizable_height()
@@ -570,6 +611,7 @@ impl App {
             ui.label(egui::RichText::new("No records on this page of the run").weak());
         }
         egui::ScrollArea::vertical()
+            .id_salt((thread as u8, &snap.name))
             .max_height(440.0)
             .show(ui, |ui| {
                 // A paged run keeps the list at full height on every

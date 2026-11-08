@@ -473,11 +473,11 @@ impl App {
                 let segments: Vec<Segment> = offered
                     .iter()
                     .map(|l| match (set.kind, l) {
-                        (_, CrateLayout::Tracks) => Segment { label: "Tracks", tip: "The files in your library with this tag, as the library shows them" },
-                        (CrateKind::Crate, CrateLayout::Records) => Segment { label: "Records", tip: "The records to bring, with the songs the crate takes from each" },
-                        (CrateKind::Tag, CrateLayout::Records) => Segment { label: "Records", tip: "The records the tagged songs sit on" },
-                        (CrateKind::Crate, CrateLayout::Songs) => Segment { label: "Songs", tip: "Every song in the crate" },
-                        (CrateKind::Tag, CrateLayout::Songs) => Segment { label: "Songs", tip: "Every song with this tag, files or not" },
+                        (_, CrateLayout::Tracks) => Segment { icon: "", label: "Tracks", tip: "The files in your library with this tag, as the library shows them" },
+                        (CrateKind::Crate, CrateLayout::Records) => Segment { icon: "", label: "Records", tip: "The records to bring, with the songs the crate takes from each" },
+                        (CrateKind::Tag, CrateLayout::Records) => Segment { icon: "", label: "Records", tip: "The records the tagged songs sit on" },
+                        (CrateKind::Crate, CrateLayout::Songs) => Segment { icon: "", label: "Songs", tip: "Every song in the crate" },
+                        (CrateKind::Tag, CrateLayout::Songs) => Segment { icon: "", label: "Songs", tip: "Every song with this tag, files or not" },
                     })
                     .collect();
                 let picked = segmented(ui, offered.iter().position(|l| *l == layout), &segments);
