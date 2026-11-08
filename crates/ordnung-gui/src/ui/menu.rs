@@ -434,7 +434,7 @@ impl MenuUi<'_> {
         self.row(
             None,
             label.into(),
-            (!detail.is_empty()).then_some(detail),
+            (!detail.is_empty()).then_some((detail, color::LABEL_3)),
             color::LABEL,
             |_| false,
         )
@@ -450,7 +450,7 @@ impl MenuUi<'_> {
         label: impl Into<String>,
         detail: Option<String>,
     ) -> egui::Response {
-        self.row(None, label.into(), detail, color::LABEL, |r| {
+        self.row(None, label.into(), detail.map(|d| (d, color::LABEL_3)), color::LABEL, |r| {
             r.dnd_hover_payload::<T>().is_some()
         })
     }
@@ -478,10 +478,22 @@ impl MenuUi<'_> {
         label: impl Into<String>,
         detail: impl Into<String>,
     ) -> bool {
+        self.selectable_detail_in(selected, label, detail, color::LABEL_3)
+    }
+
+    /// [`selectable_detail`](Self::selectable_detail) with the detail in a
+    /// meaning ink: a stale date in the caution colour, say.
+    pub fn selectable_detail_in(
+        &mut self,
+        selected: bool,
+        label: impl Into<String>,
+        detail: impl Into<String>,
+        detail_color: egui::Color32,
+    ) -> bool {
         self.row(
             Some(selected),
             label.into(),
-            Some(detail.into()),
+            Some((detail.into(), detail_color)),
             color::LABEL,
             |_| false,
         )
@@ -603,6 +615,12 @@ impl MenuUi<'_> {
         self.ui.add_space(space::S1);
     }
 
+    /// True on the pass the menu opened: the one frame to focus a field or
+    /// scroll a row into view.
+    pub fn just_opened(&self) -> bool {
+        self.since_open == 0.0
+    }
+
     /// Dismiss the menu after this frame — call on the click that should end
     /// the interaction. Toggling rows simply don't, and the menu stays up.
     pub fn close(&mut self) {
@@ -622,7 +640,7 @@ impl MenuUi<'_> {
         &mut self,
         selected: Option<bool>,
         label: String,
-        detail: Option<String>,
+        detail: Option<(String, egui::Color32)>,
         text_color: egui::Color32,
         lit: impl FnOnce(&egui::Response) -> bool,
     ) -> egui::Response {
@@ -702,8 +720,8 @@ impl MenuUi<'_> {
         }
         // The detail claims its width first; the label gets the rest and
         // truncates with an ellipsis rather than running under the detail.
-        let detail_galley = detail.map(|d| {
-            painter.layout_no_wrap(d, font::callout(), color::LABEL_3.gamma_multiply(enter))
+        let detail_galley = detail.map(|(d, ink)| {
+            painter.layout_no_wrap(d, font::callout(), ink.gamma_multiply(enter))
         });
         let label_max = rect.right()
             - ROW_PAD

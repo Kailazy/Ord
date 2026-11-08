@@ -101,6 +101,16 @@ fn draw_cart_button(
     });
 }
 
+/// What the shop menu asked for, applied once its borrows are released.
+#[derive(Default)]
+struct SellerPick {
+    switch_to: Option<String>,
+    sweep: Option<String>,
+    remove: Option<String>,
+    /// Open the Add seller box.
+    add: bool,
+}
+
 /// What a card click or context-menu pick asked for, applied after the grid
 /// releases its borrows.
 enum SellerAct {
@@ -337,7 +347,6 @@ impl App {
     /// a virtualized card grid. `query` is the shared vinyl search, already
     /// trimmed and lowercased.
     pub(crate) fn draw_sellers(&mut self, ui: &mut egui::Ui, ctx: &egui::Context, query: &str) {
-        let busy = self.is_busy();
         self.ensure_seller_listings();
 
         // --- Shop row: add, pick a shop, find a record, then the current
@@ -347,9 +356,7 @@ impl App {
         // scrolls and can be lettered. The find box searches the *records*
         // across every saved shop and names the shop on each hit, so "who
         // has this?" is one lookup instead of a shop-by-shop tour.
-        let mut switch_to: Option<String> = None;
-        let mut remove: Option<String> = None;
-        let mut sweep: Option<String> = None;
+        let mut pick_act = SellerPick::default();
         let mut add_clicked = false;
         // A find-box hit picked this frame: `(seller, listing_id)`.
         let mut pick: Option<(String, u64)> = None;
@@ -372,30 +379,57 @@ impl App {
             Some(b)
         });
         ui.add_space(8.0);
+        // Made on the outer ui so the shop menu's Add row (applied below,
+        // outside the row) names the same popup.
+        let popup_id = ui.make_persistent_id("seller-add-popup");
         // One height for the whole row: the find field sets it, the add
-        // button, the picker and the shop actions are sized to match.
+        // button and the picker are sized to match.
         ui.horizontal(|ui| crate::ui::control_row(ui, |ui| {
-            // The add box lives in a popup so the row stays a row of
-            // buttons; the button toggles it, Enter or Add inside submits.
-            let add_btn = ui
-                .button("＋ Add seller")
-                .on_hover_note("Save a Discogs seller to dig through, by username or shop URL");
-            let popup_id = ui.make_persistent_id("seller-add-popup");
-            if add_btn.clicked() {
-                ui.memory_mut(|m| m.toggle_popup(popup_id));
-            }
-            let just_opened = add_btn.clicked() && ui.memory(|m| m.is_popup_open(popup_id));
+            // The add box lives in a popup under the shop menu's button,
+            // opened by its Add seller row; with no shop saved yet there is
+            // no menu, and a plain Add seller button stands in its place.
+            // Enter or Add inside submits.
+            let anchor = if self.sellers.is_empty() {
+                self.seller_find.clear();
+                self.seller_find_hits.clear();
+                self.seller_find_for.clear();
+                let add_btn = ui
+                    .button("＋ Add seller")
+                    .on_hover_note("Save a Discogs seller to dig through, by username or shop URL");
+                if add_btn.clicked() {
+                    ui.memory_mut(|m| m.toggle_popup(popup_id));
+                }
+                add_btn
+            } else {
+                let btn = self.draw_seller_picker(ui, &mut pick_act);
+                // The add box hangs from this button too; a click on it
+                // while the box is up would stack the menu under the box.
+                if btn.clicked() && ui.memory(|m| m.is_popup_open(popup_id)) {
+                    ui.memory_mut(|m| m.close_popup());
+                }
+                ui.add_space(6.0);
+                self.draw_seller_find(ui, ctx, &mut pick);
+                btn
+            };
+            // Opened this frame, by the button or by the menu's row last
+            // frame: the field takes focus either way.
+            let is_open = ui.memory(|m| m.is_popup_open(popup_id));
+            let was_open: bool = ui.data(|d| d.get_temp(popup_id.with("was"))).unwrap_or(false);
+            ui.data_mut(|d| d.insert_temp(popup_id.with("was"), is_open));
+            let just_opened = is_open && !was_open;
             egui::popup::popup_below_widget(
                 ui,
                 popup_id,
-                &add_btn,
+                &anchor,
                 egui::PopupCloseBehavior::CloseOnClickOutside,
                 |ui| {
-                    ui.set_min_width(220.0);
-                    ui.horizontal(|ui| {
+                    // As wide as the shop menu it took over from, so the
+                    // swap reads as one surface.
+                    ui.set_min_width(320.0);
+                    ui.horizontal(|ui| crate::ui::control_row(ui, |ui| {
                         let edit = ui.add(
                             crate::ui::field::Field::singleline(&mut self.seller_add)
-                                .width(180.0)
+                                .width(250.0)
                                 .hint("Seller username or URL"),
                         );
                         if just_opened {
@@ -403,20 +437,15 @@ impl App {
                         }
                         let submitted =
                             edit.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
-                        if ui
-                            .small_button("Add")
-                            .on_hover_note("Save this seller")
-                            .clicked()
-                            || submitted
-                        {
+                        if ui.button("Add").clicked() || submitted {
                             add_clicked = true;
                         }
-                    });
+                    }));
                     // What the sweep keeps: every genre, or a few. The
                     // inventory endpoint ignores a genre parameter, so the
                     // sweep applies this against the genre database.
                     crate::ui::menu::embedded(ui, |m| {
-                        m.header("Save");
+                        m.header("Genres");
                         if m.selectable(self.seller_add_genres.is_empty(), "All genres") {
                             self.seller_add_genres.clear();
                         }
@@ -435,61 +464,9 @@ impl App {
                     });
                 },
             );
-            if !self.sellers.is_empty() {
-                ui.add_space(6.0);
-                self.draw_seller_picker(ui, &mut switch_to);
-                ui.add_space(6.0);
-                self.draw_seller_find(ui, ctx, &mut pick);
-            } else {
-                self.seller_find.clear();
-                self.seller_find_hits.clear();
-                self.seller_find_for.clear();
-            }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if let Some(cur) = self.seller_current.clone() {
                     draw_cart_button(ui, &cur, cart.as_ref(), self.wantlist.len(), &mut cart_open);
-                    // The note sizes the job once the shop's size is known
-                    // (stamped by the first page of any earlier update): a
-                    // distributor takes half an hour, and saying so up front
-                    // is what makes the wait reasonable rather than a hang.
-                    let size_note = self
-                        .sellers
-                        .iter()
-                        .find(|s| s.username == cur)
-                        .and_then(|s| s.reported)
-                        .map(|n| {
-                            format!(
-                                "; this shop lists {n} items, about {} min",
-                                crate::jobs::seller_sweep_minutes(n)
-                            )
-                        })
-                        .unwrap_or_else(|| "; large shops take a while".to_string());
-                    ui.add_enabled_ui(!busy, |ui| {
-                        if ui
-                            .button("⟲ Update")
-                            .on_hover_note(format!(
-                                "Pull this seller's for-sale inventory from Discogs \
-                                 (runs in the background{size_note})"
-                            ))
-                            .clicked()
-                        {
-                            sweep = Some(cur.clone());
-                        }
-                    });
-                    if ui
-                        .button("↗ Open shop")
-                        .on_hover_note("Open this seller's shop on discogs.com")
-                        .clicked()
-                    {
-                        open_url(&format!("https://www.discogs.com/seller/{cur}/profile"));
-                    }
-                    if ui
-                        .button("Remove")
-                        .on_hover_note("Forget this seller and their cached crates")
-                        .clicked()
-                    {
-                        remove = Some(cur.clone());
-                    }
                 }
             });
         }));
@@ -510,6 +487,10 @@ impl App {
             self.open_watch_offer(id, ctx);
         }
         // Apply the shop-row asks now that `self.sellers` is free again.
+        let SellerPick { switch_to, sweep, remove, add } = pick_act;
+        if add {
+            ui.memory_mut(|m| m.open_popup(popup_id));
+        }
         if let Some(u) = switch_to {
             self.seller_current = Some(u);
             self.seller_highlight = None;
@@ -871,79 +852,162 @@ impl App {
         }
     }
 
-    /// The shop picker: an alphabetical dropdown of every saved seller, the
-    /// current one named on the button. Past a dozen shops the list gets
-    /// letter headings so a long roster scans the way a strip of chips
-    /// never could. A pick lands in `switch_to`, applied once the borrows
-    /// on `self.sellers` are released.
-    fn draw_seller_picker(&self, ui: &mut egui::Ui, switch_to: &mut Option<String>) {
+    /// The shop picker: one menu under the current shop's name. A filter
+    /// field leads it; the shops holding wantlist records come first, by
+    /// wants held, the rest by freshness; every row says how big the shop
+    /// is, how many wants it holds and when it was last updated, a stale
+    /// or never-updated shop in the caution ink. The current shop's
+    /// actions and an Add seller row close the panel, so the row of
+    /// buttons stays a row. Picks land in the out-params, applied once the
+    /// borrows on `self.sellers` are released.
+    fn draw_seller_picker(&self, ui: &mut egui::Ui, act: &mut SellerPick) -> egui::Response {
         use crate::ui::tokens::color;
-        const LETTERS_AT: usize = 12;
+        // Distinct wantlist records each shop stocks: the watch's rows
+        // are per copy, so a shop with two copies of one want holds one.
+        let mut wants: HashMap<&str, HashSet<u64>> = HashMap::new();
+        for (seller, l) in &self.wantlist_watch {
+            wants.entry(seller.as_str()).or_default().insert(l.release_id);
+        }
+        let wants_of = |s: &SellerShop| wants.get(s.username.as_str()).map_or(0, |w| w.len());
         let mut sorted: Vec<&SellerShop> = self.sellers.iter().collect();
-        sorted.sort_by_key(|s| s.username.to_lowercase());
-        let current = self
-            .seller_current
-            .clone()
-            .unwrap_or_else(|| "Pick a seller".to_string());
-        let lettered = sorted.len() >= LETTERS_AT;
-        let resp = egui::ComboBox::from_id_salt("seller-pick")
-            .selected_text(egui::RichText::new(current).strong())
-            .width(220.0)
-            .height(420.0)
-            .show_ui(ui, |ui| {
-                ui.set_min_width(240.0);
-                let mut last_letter: Option<char> = None;
-                for shop in &sorted {
-                    if lettered {
-                        let letter = shop
-                            .username
-                            .chars()
-                            .next()
-                            .map(|c| c.to_uppercase().next().unwrap_or(c))
-                            .map(|c| if c.is_alphabetic() { c } else { '#' })
-                            .unwrap_or('#');
-                        if last_letter != Some(letter) {
-                            if last_letter.is_some() {
-                                ui.add_space(4.0);
+        sorted.sort_by(|a, b| {
+            wants_of(b)
+                .cmp(&wants_of(a))
+                .then(b.swept_at.cmp(&a.swept_at))
+                .then_with(|| a.username.to_lowercase().cmp(&b.username.to_lowercase()))
+        });
+        let current = self.seller_current.as_deref();
+        let btn = crate::ui::button::menu_button(ui, current.unwrap_or("Pick a seller"));
+        crate::ui::menu::dropdown(&btn, 320.0, |m| {
+            // The filter lives in egui's memory under the menu's id and
+            // starts empty each visit; the field takes focus on the pass
+            // the panel opens.
+            let fresh = m.just_opened();
+            let ui = m.ui();
+            let filter_id = ui.id().with("shop_filter");
+            let mut filter: String = if fresh {
+                String::new()
+            } else {
+                ui.data(|d| d.get_temp(filter_id)).unwrap_or_default()
+            };
+            let field = crate::ui::field::Field::singleline(&mut filter)
+                .hint("Filter shops")
+                .width(ui.available_width() - crate::ui::field::MARGIN.sum().x)
+                .show(ui);
+            if fresh {
+                field.request_focus();
+            }
+            let enter = field.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+            let query = filter.trim().to_lowercase();
+            ui.data_mut(|d| d.insert_temp(filter_id, filter.clone()));
+
+            let shown: Vec<&SellerShop> = sorted
+                .iter()
+                .copied()
+                .filter(|s| query.is_empty() || s.username.to_lowercase().contains(&query))
+                .collect();
+            if enter {
+                if let Some(first) = shown.first() {
+                    act.switch_to = Some(first.username.clone());
+                    m.close();
+                }
+            }
+            let (held, rest): (Vec<&SellerShop>, Vec<&SellerShop>) =
+                shown.iter().partition(|s| wants_of(s) > 0);
+            m.scroll(280.0, |m| {
+                if shown.is_empty() {
+                    m.note("No saved shop matches that");
+                }
+                for (header, group) in [("Hold your wants", held), ("Other shops", rest)] {
+                    if group.is_empty() {
+                        continue;
+                    }
+                    m.header(header);
+                    for shop in group {
+                        // Two facts in one shape every row: the wants the
+                        // shop holds (the group's own order), then its age.
+                        // The crate count waits for the status line under
+                        // the row. Only a shop never swept wears the caution
+                        // ink: every age is normal for a shop updated by hand.
+                        // The ink is the whole detail's, so a never-swept
+                        // shop says only that: its wants would wear the
+                        // warning too.
+                        let (detail, ink) = match shop.swept_at {
+                            Some(t) => {
+                                let age = fmt_ago(t);
+                                let detail = match wants_of(shop) {
+                                    0 => age,
+                                    1 => format!("1 want · {age}"),
+                                    n => format!("{n} wants · {age}"),
+                                };
+                                (detail, color::LABEL_3)
                             }
-                            ui.label(
-                                egui::RichText::new(letter.to_string())
-                                    .small()
-                                    .color(color::LABEL_3),
-                            );
-                            last_letter = Some(letter);
+                            None => ("never updated".to_string(), color::CAUTION),
+                        };
+                        let active = current == Some(shop.username.as_str());
+                        if m.selectable_detail_in(active, &shop.username, detail, ink) {
+                            act.switch_to = Some(shop.username.clone());
+                            m.close();
+                        }
+                        // The menu opens on the current shop, wherever the
+                        // order put it.
+                        if active && fresh {
+                            m.ui().scroll_to_cursor(Some(egui::Align::Center));
                         }
                     }
-                    let active = self.seller_current.as_deref() == Some(shop.username.as_str());
-                    let text = match shop.cached {
-                        0 => shop.username.clone(),
-                        n => format!("{}  ·  {n}", shop.username),
-                    };
-                    let row = ui.selectable_label(active, text);
-                    // The row's hover popup is the shop's info card, led by
-                    // the shipping floor. Quotes are per record and
-                    // location-specific; a seller publishing only a free-text
-                    // policy has none, and that absence never reads as free.
-                    let mut note = String::from("Browse this seller's crates");
-                    match self.seller_shipping.get(&shop.username) {
-                        Some((price, currency)) => note.push_str(&format!(
-                            ". Shipping from {} per record",
+                }
+            });
+            if let Some(cur) = current {
+                m.separator();
+                // The note sizes the job once the shop's size is known
+                // (stamped by the first page of any earlier update): a
+                // distributor takes half an hour, and saying so up front
+                // is what makes the wait reasonable rather than a hang.
+                let size_note = self
+                    .sellers
+                    .iter()
+                    .find(|s| s.username == cur)
+                    .and_then(|s| s.reported)
+                    .map(|n| format!("{n} items, about {} min", crate::jobs::seller_sweep_minutes(n)))
+                    .unwrap_or_default();
+                let busy = self.is_busy();
+                let detail = if busy { "waiting for the current job".to_string() } else { size_note };
+                if m.item_detail("Update crates", detail) && !busy {
+                    act.sweep = Some(cur.to_string());
+                    m.close();
+                }
+                // Quotes are per record and location-specific; a seller
+                // publishing only a free-text policy has none, and that
+                // absence never reads as free, so it says nothing.
+                let ships = self
+                    .seller_shipping
+                    .get(cur)
+                    .map(|(price, currency)| {
+                        format!(
+                            "ships from {}",
                             crate::vinyl_sheet::fmt_market_price(&discogs::MarketPrice {
                                 value: *price,
                                 currency: currency.clone(),
                             })
-                        )),
-                        None => note.push_str(
-                            ". Shipping not quoted yet, update the crates to fetch it",
-                        ),
-                    }
-                    if row.on_hover_note(note).clicked() {
-                        *switch_to = Some(shop.username.clone());
-                    }
+                        )
+                    })
+                    .unwrap_or_default();
+                if m.item_detail("Open shop on Discogs", ships) {
+                    open_url(&format!("https://www.discogs.com/seller/{cur}/profile"));
+                    m.close();
                 }
-            });
-        resp.response
-            .on_hover_note(format!("Pick one of {} saved sellers, A to Z", sorted.len()));
+                if m.item_danger("Remove shop") {
+                    act.remove = Some(cur.to_string());
+                    m.close();
+                }
+            }
+            m.separator();
+            if m.item("Add seller") {
+                act.add = true;
+                m.close();
+            }
+        });
+        btn
     }
 
     /// The find box: a record search across every saved seller's crates,
