@@ -214,6 +214,13 @@ impl<'o> Window<'o> {
         self
     }
 
+    /// Move the window `id` by `by` on its next pass, as if dragged there,
+    /// without it counting as the user's drag (a window making room for
+    /// one docking beside it).
+    pub fn nudge(ctx: &egui::Context, id: egui::Id, by: egui::Vec2) {
+        ctx.data_mut(|d| d.insert_temp(id.with("nudge"), by));
+    }
+
     /// A tighter or looser content inset than the standard window margin.
     pub fn inner_margin(mut self, margin: egui::Margin) -> Self {
         self.inner_margin = Some(margin);
@@ -268,6 +275,12 @@ impl<'o> Window<'o> {
             .filter_map(|bid| ctx.read_response(bid))
             .filter(|r| r.dragged())
             .fold(egui::Vec2::ZERO, |acc, r| acc + r.drag_delta());
+        // A shift another window asked for (`nudge`) moves it like a drag
+        // does, without counting as one: the family's corner stays.
+        let shift = moved
+            + ctx
+                .data_mut(|d| d.remove_temp::<egui::Vec2>(id.with("nudge")))
+                .unwrap_or(egui::Vec2::ZERO);
         // egui sees neither the title nor `open`: both are drawn here, in
         // the content, so the title can't widen the frame past the content
         // and the close is in the frame's corner whether there's a title
@@ -333,12 +346,12 @@ impl<'o> Window<'o> {
             // Held by the corner it opened at, once the family has one.
             (Place::Center, Some(r)) if remembered.is_some() => w
                 .pivot(egui::Align2::LEFT_TOP)
-                .current_pos(r.left_top() + moved),
+                .current_pos(r.left_top() + shift),
             (Place::Center, Some(r)) => w
                 .pivot(egui::Align2::CENTER_CENTER)
-                .current_pos(r.center() + moved),
+                .current_pos(r.center() + shift),
             (Place::At(pivot, _), Some(r)) => {
-                w.pivot(pivot).current_pos(pivot.pos_in_rect(&r) + moved)
+                w.pivot(pivot).current_pos(pivot.pos_in_rect(&r) + shift)
             }
             // Where the family was left, on the pass it opens.
             (Place::Center, None) if opening && remembered.is_some() => w
