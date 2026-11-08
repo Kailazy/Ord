@@ -424,10 +424,7 @@ impl App {
             wanted: bool,
             /// A wantlist edit on this record is in flight or queued.
             pending: bool,
-            /// The record the open sheet shows: the row you came from.
-            shown: bool,
         }
-        let shown_release = self.vinyl_sheet.as_ref().map(|s| s.release_id);
         let specs: Vec<(String, u64, String, String, String, bool)> = panel
             .releases
             .iter()
@@ -483,28 +480,8 @@ impl App {
                 owned,
                 wanted,
                 pending,
-                shown: shown_release == Some(release_id),
             });
         }
-        // Docked to the open record sheet, on whichever side has room, so
-        // the run never lands over the record it was opened from; it
-        // follows the sheet as it is dragged and floats free once the
-        // sheet closes.
-        let dock = self
-            .vinyl_sheet
-            .as_ref()
-            .filter(|s| !s.hidden)
-            .and_then(|s| {
-                egui::AreaState::load(ctx, egui::Id::new(("vinyl-sheet", s.release_id)))
-            })
-            .map(|a| a.rect())
-            .map(|r| {
-                if r.right() + PANEL_W <= ctx.screen_rect().right() {
-                    (egui::Align2::LEFT_TOP, r.right_top())
-                } else {
-                    (egui::Align2::RIGHT_TOP, r.left_top())
-                }
-            });
 
         let mut act: Option<Act> = None;
         let mut want_covers: Vec<String> = Vec::new();
@@ -514,15 +491,12 @@ impl App {
             BrowseThread::Label => "⌂",
             BrowseThread::Artist => "♪",
         };
-        let mut win = crate::ui::window::Window::new(format!("{glyph} {name}"))
+        crate::ui::window::Window::new(format!("{glyph} {name}"))
             .id(egui::Id::new("browse-page"))
             .open(&mut open)
             .resizable_height()
-            .default_width(PANEL_W);
-        if let Some((pivot, pos)) = dock {
-            win = win.fixed_at(pivot, pos);
-        }
-        win.show(ctx, |ui| {
+            .default_width(PANEL_W)
+            .show(ctx, |ui| {
                 ui.set_min_width(PANEL_W);
                 ui.set_max_width(PANEL_W);
                 ui.add_space(6.0);
@@ -556,8 +530,7 @@ impl App {
                             ui.set_min_height(440.0);
                         }
                         for (i, r) in rows.iter().enumerate() {
-                            let bg = ui.painter().add(egui::Shape::Noop);
-                            let row = ui.horizontal(|ui| {
+                            ui.horizontal(|ui| {
                                 let (trect, tresp) = ui.allocate_exact_size(
                                     egui::vec2(THUMB, THUMB),
                                     egui::Sense::click(),
@@ -701,16 +674,6 @@ impl App {
                                     },
                                 );
                             });
-                            if r.shown {
-                                ui.painter().set(
-                                    bg,
-                                    egui::Shape::rect_filled(
-                                        row.response.rect.expand(crate::ui::tokens::space::S2),
-                                        crate::ui::tokens::radius::SM,
-                                        ui.visuals().faint_bg_color,
-                                    ),
-                                );
-                            }
                             ui.add_space(crate::ui::tokens::space::S2);
                             ui.separator();
                             ui.add_space(crate::ui::tokens::space::S2);
