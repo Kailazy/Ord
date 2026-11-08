@@ -1682,7 +1682,9 @@ impl App {
         let mut open = true;
 
         crate::ui::window::Window::new(format!("{artist} — {title}"))
-            .id(egui::Id::new("vinyl-sheet"))
+            // Not the old `vinyl-sheet`: egui keeps the window's height
+            // under its id, and that one carried a content-sized height.
+            .id(egui::Id::new("record-sheet"))
             // One backdrop for every record: the press that opens a sheet
             // primes it before the record is known.
             .glass_id(sheet_glass())
@@ -1695,9 +1697,13 @@ impl App {
             .title_bar(false)
             // Fixed width: the sheet's content is a fixed-width layout (see the
             // `set_max_width` note below), so a horizontal drag would only pad
-            // it. Height still follows the tracklist.
+            // it. One height for every record and pane, so switching from
+            // the tracks to a run and back never moves the frame; the body
+            // scrolls inside it. The user's drag of the bottom edge is kept.
             .resizable_height()
             .default_width(SHEET_W)
+            .default_height(SHEET_H)
+            .min_height(SHEET_MIN_H)
             .show(ctx, |ui| {
                 // Pin the content width rather than only flooring it. The sheet
                 // auto-sizes, so any child that fills the width it is offered
@@ -2319,7 +2325,7 @@ impl App {
 
                 if let Some(snap) = run_open {
                     ui.add_space(crate::ui::tokens::space::S2);
-                    crate::App::browse_rows_ui(ui, snap, &mut run_out);
+                    crate::App::browse_rows_ui(ui, snap, &mut run_out, true);
                 } else {
                     if loading {
                         ui.add_space(10.0);
@@ -2348,9 +2354,42 @@ impl App {
                         return;
                     }
 
+                    // The footer sits on the sheet's bottom edge and the
+                    // list takes what is left above it, so the body fills
+                    // the held frame exactly: content past the frame would
+                    // grow it, one line per frame (egui's resize ratchet).
+                    ui.with_layout(egui::Layout::bottom_up(egui::Align::Min), |ui| {
+                    // Footer: how many tracks you actually own, and a way in.
+                    let owned = sheet
+                        .rows
+                        .iter()
+                        .filter(|r| matches!(r.source, SheetSource::Local(_)))
+                        .count();
+                    // At its controls' height: a row laid out shorter than
+                    // its button would reach past the frame, which egui
+                    // then grows to fit, a step every frame.
+                    crate::ui::control_row(ui, |ui| ui.horizontal(|ui| {
+                        let note = match owned {
+                            0 => "No tracks from this record are in your library".to_string(),
+                            1 => "1 track from this record is in your library".to_string(),
+                            n => format!("{n} tracks from this record are in your library"),
+                        };
+                        ui.label(egui::RichText::new(note).small().weak());
+                        if owned > 0 {
+                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                if crate::ui::button::button(ui, "Show in library")
+                                    .on_hover_note("Filter the library to this record")
+                                    .clicked()
+                                {
+                                    act = Some(Act::Goto);
+                                }
+                            });
+                        }
+                    }));
+                    ui.separator();
+                    ui.with_layout(egui::Layout::top_down(egui::Align::Min), |ui| {
                     egui::ScrollArea::vertical()
                         .id_salt(release_id)
-                        .max_height(360.0)
                         .show(ui, |ui| {
                             ui.add_space(4.0);
                             for (i, row) in sheet.rows.iter().enumerate() {
@@ -2437,31 +2476,7 @@ impl App {
                             }
                             ui.add_space(4.0);
                         });
-
-                    // Footer: how many tracks you actually own, and a way in.
-                    let owned = sheet
-                        .rows
-                        .iter()
-                        .filter(|r| matches!(r.source, SheetSource::Local(_)))
-                        .count();
-                    ui.separator();
-                    ui.horizontal(|ui| {
-                        let note = match owned {
-                            0 => "No tracks from this record are in your library".to_string(),
-                            1 => "1 track from this record is in your library".to_string(),
-                            n => format!("{n} tracks from this record are in your library"),
-                        };
-                        ui.label(egui::RichText::new(note).small().weak());
-                        if owned > 0 {
-                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                if crate::ui::button::button(ui, "Show in library")
-                                    .on_hover_note("Filter the library to this record")
-                                    .clicked()
-                                {
-                                    act = Some(Act::Goto);
-                                }
-                            });
-                        }
+                    });
                     });
                 }
             });
@@ -3005,6 +3020,13 @@ enum RecordPlay {
 /// The record sheet's content width. Fixed, and the single source the
 /// transport bar sizes against — see the `set_max_width` note in the sheet.
 const SHEET_W: f32 = 620.0;
+/// The sheet's height until the user drags its bottom edge: the header,
+/// then four records of a run or ten tracks, with the next one cut by the
+/// edge, which is what says there are more (the scroll bar shows on hover).
+const SHEET_H: f32 = 700.0;
+/// The shortest the sheet can be dragged: the header, three tracks or two
+/// records of a run, and the footer.
+const SHEET_MIN_H: f32 = 500.0;
 /// How long a loading sheet is held off screen before it opens anyway.
 const SHEET_HOLD: Duration = Duration::from_millis(400);
 /// How long the row a play would start on must stand before its video is

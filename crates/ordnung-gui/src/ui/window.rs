@@ -147,6 +147,15 @@ impl<'o> Window<'o> {
         self
     }
 
+    /// A window `resizable_height` with a default height is held at the
+    /// height it has, content or not: a body whose pages differ in length
+    /// keeps one frame, and only a drag of the bottom edge changes it. egui
+    /// remembers the drag across runs under the window's id.
+    pub fn default_height(mut self, h: f32) -> Self {
+        self.default_size[1] = Some(h);
+        self
+    }
+
     pub fn default_size(mut self, size: impl Into<egui::Vec2>) -> Self {
         let size = size.into();
         self.default_size = [Some(size.x), Some(size.y)];
@@ -359,6 +368,7 @@ impl<'o> Window<'o> {
         let mut slot = None;
         let mut closed = false;
         let resizable = self.resizable;
+        let hold_height = resizable == [false, true] && self.default_size[1].is_some();
         let with_title_bar = self.title_bar;
         let shown = w.show(ctx, |ui| {
             slot = Some(glass::begin(ui));
@@ -394,7 +404,13 @@ impl<'o> Window<'o> {
             // shrinks while open: a list that turns to a shorter page or
             // layout keeps the frame, and the controls in it, where the
             // cursor is. The held height resets on each open.
-            if resizable == [false, true] {
+            if hold_height {
+                let r = ui.min_rect();
+                ui.expand_to_include_rect(egui::Rect::from_min_max(
+                    r.min,
+                    egui::pos2(r.right(), ui.max_rect().bottom()),
+                ));
+            } else if resizable == [false, true] {
                 let held_id = id.with("held-height");
                 let was = if opening {
                     0.0

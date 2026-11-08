@@ -497,7 +497,7 @@ impl App {
             .show(ctx, |ui| {
                 ui.set_min_width(PANEL_W);
                 ui.set_max_width(PANEL_W);
-                Self::browse_rows_ui(ui, &snap, &mut out);
+                Self::browse_rows_ui(ui, &snap, &mut out, false);
             });
         if !open {
             self.browse_panel = None;
@@ -586,7 +586,10 @@ impl App {
 
     /// The run's rows and pager, drawn in whatever frame holds them: the
     /// browse window, or the record sheet's run pane.
-    pub(crate) fn browse_rows_ui(ui: &mut egui::Ui, snap: &BrowseSnap, out: &mut BrowseOut) {
+    /// `fill`: the list takes the height it is given, the pager on its
+    /// bottom edge (the record sheet's pane, in a held frame); else the list
+    /// is as tall as its rows, to a cap, and the pager follows it.
+    pub(crate) fn browse_rows_ui(ui: &mut egui::Ui, snap: &BrowseSnap, out: &mut BrowseOut, fill: bool) {
         let (thread, page, pages, loading) = (snap.thread, snap.page, snap.pages, snap.loading);
         let (error, rows) = (&snap.error, &snap.rows);
         ui.add_space(6.0);
@@ -610,14 +613,15 @@ impl App {
         if rows.is_empty() {
             ui.label(egui::RichText::new("No records on this page of the run").weak());
         }
+        let list = |ui: &mut egui::Ui, out: &mut BrowseOut| {
         egui::ScrollArea::vertical()
             .id_salt((thread as u8, &snap.name))
-            .max_height(440.0)
+            .max_height(if fill { f32::INFINITY } else { 440.0 })
             .show(ui, |ui| {
                 // A paged run keeps the list at full height on every
                 // page, so the pager under it stays put under the
                 // cursor when a short last page turns up.
-                if pages > 1 {
+                if pages > 1 && !fill {
                     ui.set_min_height(440.0);
                 }
                 for (i, r) in rows.iter().enumerate() {
@@ -781,10 +785,18 @@ impl App {
                     ui.add_space(crate::ui::tokens::space::S2);
                 }
             });
+        };
         // Pager, only when the run outgrows one page.
-        if pages > 1 {
-            ui.add_space(4.0);
-            ui.horizontal(|ui| {
+        let pager = |ui: &mut egui::Ui, out: &mut BrowseOut| {
+            if pages <= 1 {
+                return;
+            }
+            // Pinned, the pager sits on the edge like the tracks footer does.
+            if !fill {
+                ui.add_space(4.0);
+            }
+            // At its buttons' height, so it never reaches past a held frame.
+            crate::ui::control_row(ui, |ui| ui.horizontal(|ui| {
                 if ui
                     .add_enabled(page > 1 && !loading, egui::Button::new("←"))
                     .on_hover_note("Earlier in the run")
@@ -805,7 +817,21 @@ impl App {
                 if loading {
                     ui.spinner();
                 }
+            }));
+            // The footer's hairline, over the pager: drawn after the row,
+            // which in the pinned (bottom-up) layout puts it above.
+            if fill {
+                ui.separator();
+            }
+        };
+        if fill {
+            ui.with_layout(egui::Layout::bottom_up(egui::Align::Min), |ui| {
+                pager(ui, out);
+                ui.with_layout(egui::Layout::top_down(egui::Align::Min), |ui| list(ui, out));
             });
+        } else {
+            list(ui, out);
+            pager(ui, out);
         }
     }
 
