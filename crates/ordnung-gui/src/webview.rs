@@ -1038,6 +1038,17 @@ mod imp {
     /// A knob at zero is handled by [`set_page_muted`] instead, out here on the
     /// view — the page keeps whatever level it had, so unmuting restores it
     /// without this having to remember what YouTube's own default was.
+    ///
+    /// The page's own autoplay switch is turned off here too, the way a user
+    /// would: with it on, a watch page that runs out hops to whatever YouTube
+    /// recommends next, within seconds and with no countdown. YouTube keeps a
+    /// guest's choice in session storage (`yt-player-autonavstate`, data `1`
+    /// off, `2` on) but reads it only while the player starts up, so writing
+    /// it does not hold; clicking the switch does, and YouTube then writes the
+    /// key itself (measured 2026-11-08). That write is the readout: a click
+    /// that lands before the switch is wired does nothing, so it repeats, two
+    /// seconds apart, until the key says off. The switch's `aria-checked` was
+    /// seen to stay `true` after an effective click, so it is not trusted.
     fn ask_state(web: &WKWebView, serial: u64, volume: f32, hold: bool) {
         let muted = volume <= 0.0;
         // The readied page stays client-muted throughout; the swap unmutes it.
@@ -1058,6 +1069,11 @@ mod imp {
                {inject};\
                var v=document.querySelector('video');\
                if(!v)return 'novideo';\
+               var a=null;try{{a=JSON.parse(sessionStorage.getItem('yt-player-autonavstate'));}}catch(e){{}}\
+               if(!(a&&a.data=='1')){{\
+                 var t=document.querySelector('.ytp-autonav-toggle-button');var n=Date.now();\
+                 if(t&&t.getAttribute('aria-checked')!='false'&&!(n-(window.ordAutonavAt||0)<2000)){{window.ordAutonavAt=n;t.click();}}\
+               }}\
                {set_vol}\
                {hold_js}\
                var s=v.ended?'ended':(v.paused?'paused':'playing');\
@@ -1116,7 +1132,20 @@ mod imp {
                     // mid-song jump against the old one's clock, and the new
                     // video then plays from the top with the scrubber
                     // jumping after it.
-                    if id.as_ref().is_some_and(|id| *id != page.id) {
+                    if let Some(id) = id.as_deref().filter(|id| *id != page.id) {
+                        // A page that has been answering for its own video
+                        // and now names another has moved on by itself:
+                        // YouTube's autoplay, hopping to a recommendation
+                        // when the video ran out. That is never ours to
+                        // play. Silence it at once and count the video as
+                        // over, so the queue advances or the sheet stops
+                        // exactly as if it had ended quietly.
+                        if !id.is_empty() && page.reported_at > page.local_at {
+                            let js = "(function(){var v=document.querySelector('video');if(v)v.pause();})()";
+                            unsafe { page.web.evaluateJavaScript_completionHandler(&NSString::from_str(js), None) };
+                            page.state = "ended".into();
+                            page.position = page.duration;
+                        }
                         return;
                     }
                     // The length is a fact about the video, not about where
