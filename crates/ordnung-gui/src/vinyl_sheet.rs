@@ -1822,7 +1822,7 @@ impl App {
                                 Some((n, r)) => (n, Some(r)),
                                 None => (line.as_str(), None),
                             };
-                            ui.horizontal(|ui| {
+                            crate::ui::text_line(ui, |ui| {
                                 ui.spacing_mut().item_spacing.x = 0.0;
                                 let ink = crate::ui::tokens::color::LABEL_2;
                                 if crate::ui::button::name_link(
@@ -1856,7 +1856,7 @@ impl App {
                         // listed. The word that swaps one in sits on the line
                         // that names the version, not in the row of things to
                         // do with the record.
-                        ui.horizontal(|ui| {
+                        crate::ui::text_line(ui, |ui| {
                             ui.spacing_mut().item_spacing.x = 8.0;
                             if !sub.is_empty() {
                                 // Discogs format lines run long; cut this one
@@ -1905,15 +1905,11 @@ impl App {
                         // dropdown so five copies don't take five lines; it
                         // reads from the sellers' cached crates, so it's
                         // exactly as fresh as the last sweep.
+                        // The controls on these lines are compact: the
+                        // lines keep the pitch of the text above them, and a
+                        // dropdown landing later does not move the row.
                         ui.horizontal_wrapped(|ui| {
                             ui.spacing_mut().item_spacing.x = 6.0;
-                            // A button's height from the first frame, so the
-                            // row (and the sheet) stays put when a dropdown
-                            // lands on it later.
-                            ui.set_min_height(
-                                ui.text_style_height(&egui::TextStyle::Button)
-                                    + 2.0 * ui.spacing().button_padding.y,
-                            );
                             let price_ink = crate::ui::tokens::color::POSITIVE;
                             ui.label(egui::RichText::new("Discogs").weak());
                             if crate::ui::button::name_link(
@@ -1938,7 +1934,7 @@ impl App {
                                 } else {
                                     format!("From your sellers ({shops})")
                                 };
-                                let btn = crate::ui::button::menu_button(ui, label)
+                                let btn = crate::ui::button::compact_menu(ui, &label)
                                     .on_hover_note(
                                         "Copies in the shops you follow, cheapest first",
                                     );
@@ -1972,8 +1968,12 @@ impl App {
                                     })
                                 };
                                 let gap = ui.spacing().item_spacing.x;
+                                // The Formats chip after the price, when
+                                // there is one: its word, its padding, the
+                                // gap before it (measured in body type, a
+                                // little over).
                                 let menu_w = if rows.len() > 1 {
-                                    text_w(" ▾") + 2.0 * ui.spacing().button_padding.x
+                                    text_w("Formats ▾") + 12.0 + gap
                                 } else {
                                     0.0
                                 };
@@ -2008,13 +2008,28 @@ impl App {
                                 .first()
                                 .map(|r| r.text())
                                 .unwrap_or_default();
-                                let line = &shown;
-                                // The line is the dropdown only when there
-                                // is something to choose: several formats
-                                // open the list, one format is the link
-                                // to it.
+                                // The price is the link, as on the Discogs
+                                // side: to the one format's page, or to the
+                                // album when there are several, which a chip
+                                // after the price then lists. Source, price,
+                                // tool: the two money lines keep one shape.
+                                let url = match rows.as_slice() {
+                                    [one] => one.2.as_str(),
+                                    _ => page.as_str(),
+                                };
+                                if crate::ui::button::name_link(
+                                    ui,
+                                    &shown,
+                                    crate::ui::tokens::font::body(),
+                                    price_ink,
+                                )
+                                .on_hover_note("Open on Bandcamp")
+                                .clicked()
+                                {
+                                    open_url(url);
+                                }
                                 if rows.len() > 1 {
-                                    let btn = crate::ui::button::menu_button(ui, line.as_str())
+                                    let btn = crate::ui::button::compact_menu(ui, "Formats")
                                         .on_hover_note("Formats on Bandcamp");
                                     crate::ui::menu::dropdown(&btn, 360.0, |m| {
                                         for (name, detail, url) in rows {
@@ -2029,19 +2044,6 @@ impl App {
                                             m.close();
                                         }
                                     });
-                                } else {
-                                    let url = rows.first().map_or(page.as_str(), |r| r.2.as_str());
-                                    if crate::ui::button::name_link(
-                                        ui,
-                                        line,
-                                        crate::ui::tokens::font::body(),
-                                        price_ink,
-                                    )
-                                    .on_hover_note("Open on Bandcamp")
-                                    .clicked()
-                                    {
-                                        open_url(url);
-                                    }
                                 }
                             }
                         });
@@ -2056,7 +2058,7 @@ impl App {
                                         .small()
                                         .color(crate::ui::tokens::color::POSITIVE),
                                 );
-                                if crate::ui::button::button(ui, "Buy ↗")
+                                if crate::ui::button::compact(ui, "Buy ↗", false)
                                     .on_hover_note("Open this listing on discogs.com")
                                     .clicked()
                                 {
@@ -2084,7 +2086,7 @@ impl App {
                                         .small()
                                         .color(crate::ui::tokens::color::POSITIVE),
                                 );
-                                if crate::ui::button::button(ui, "View")
+                                if crate::ui::button::compact(ui, "View", false)
                                     .on_hover_note("Show that pressing in this window")
                                     .clicked()
                                 {

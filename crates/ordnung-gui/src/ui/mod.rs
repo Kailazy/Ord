@@ -148,6 +148,20 @@ pub fn control_row<R>(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui) -> R) -
     .inner
 }
 
+/// A line of text that carries a link or an inline control, laid out at the
+/// line's height. `ui.horizontal` assumes something interactive is coming and
+/// makes the row `interact_size` tall, which sets the words 3 pt low and
+/// spaces such a line apart from the plain labels around it.
+pub fn text_line<R>(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
+    let h = ui.text_style_height(&egui::TextStyle::Body);
+    ui.allocate_ui_with_layout(
+        egui::vec2(ui.available_width(), h),
+        egui::Layout::left_to_right(egui::Align::Center),
+        add,
+    )
+    .inner
+}
+
 /// Carry a striped table's shading on under its last row: the even rows
 /// the table would shade, continued through the blank space to the bottom
 /// of the view, so a short list still reads as rows. Call it in the body

@@ -140,6 +140,13 @@ pub fn menu_button(ui: &mut egui::Ui, label: impl Into<String>) -> egui::Respons
     button(ui, format!("{} ▾", label.into()))
 }
 
+/// A [`menu_button`] drawn as a [`compact`] button: the dropdown's anchor on
+/// a line of text (the shops stocking a record, beside its price), where
+/// the full-height button would set that line apart from the lines around it.
+pub fn compact_menu(ui: &mut egui::Ui, label: &str) -> egui::Response {
+    compact(ui, &format!("{label} ▾"), false)
+}
+
 /// One part of a [`segmented`] button: its label and its hover note.
 pub struct Segment<'a> {
     /// A Phosphor glyph set before the label, or "" for none.
