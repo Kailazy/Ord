@@ -1507,11 +1507,12 @@ impl App {
         // on the header opens its own page. Before the detail lands (or for
         // a cached row from before the field existed) the header is the
         // shelf's one string.
-        let artist_parts: Vec<discogs::ArtistCredit> = self
-            .vinyl_sheet
-            .as_ref()
-            .and_then(|s| s.detail.as_ref())
-            .map(|d| d.artists.clone())
+        let detail = self.vinyl_sheet.as_ref().and_then(|s| s.detail.as_ref());
+        let artist_parts: Vec<discogs::ArtistCredit> = detail.map(|d| d.artists.clone()).unwrap_or_default();
+        // The acts credited on the tracks themselves: on a compilation the
+        // header says "Various" and these are the names that matter.
+        let track_parts: Vec<discogs::ArtistCredit> = detail
+            .map(|d| d.tracklist.iter().flat_map(|t| t.artists.iter().cloned()).collect())
             .unwrap_or_default();
         // Always a line, since it doubles as the link to the release page.
         let price_line = match &self.vinyl_sheet.as_ref().unwrap().price {
@@ -2292,8 +2293,13 @@ impl App {
                 let run_label = run_open.map(|r| (crate::browse_page::thread_icon(r.thread), r.name.clone()));
                 let mut seg_labels: Vec<(&str, String, Option<Act>)> =
                     vec![("", "Tracks".into(), Some(Act::TracksPane))];
-                for a in artist_parts.iter().filter(|a| a.browsable()) {
-                    seg_labels.push((named(icons::USER), a.name.clone(), Some(Act::ArtistPage(a.id, a.name.clone()))));
+                // The record's own names, then each act credited on a track
+                // (a compilation's artists), once each; the label after them,
+                // the way the header reads.
+                for a in artist_parts.iter().chain(&track_parts).filter(|a| a.browsable()) {
+                    if !seg_labels.iter().any(|(_, _, act)| matches!(act, Some(Act::ArtistPage(id, _)) if *id == a.id)) {
+                        seg_labels.push((named(icons::USER), a.name.clone(), Some(Act::ArtistPage(a.id, a.name.clone()))));
+                    }
                 }
                 if let Some(l) = &sheet_label {
                     seg_labels.push((named(icons::HOUSE), l.clone(), Some(Act::LabelPage)));
