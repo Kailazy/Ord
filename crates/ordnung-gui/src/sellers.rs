@@ -543,6 +543,13 @@ impl App {
         if let Some(u) = sweep {
             self.spawn_sweep_seller(ctx.clone(), u);
         }
+        // Whatever shop is open is the one the next launch opens on.
+        if let Some(cur) = &self.seller_current {
+            if self.config.seller_current != *cur {
+                self.config.seller_current = cur.clone();
+                self.save_config();
+            }
+        }
 
         // --- Empty states. ----------------------------------------------------
         if self.sellers.is_empty() {

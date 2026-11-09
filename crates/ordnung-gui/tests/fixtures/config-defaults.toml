@@ -11,6 +11,7 @@ default_sort_ascending = true
 vinyl_sort = "added"
 vinyl_sort_ascending = false
 vinyl_view = "grid"
+seller_current = ""
 radio_dock = "top"
 graph_arrange = "artists"
 graph_hide = []

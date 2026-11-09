@@ -41,6 +41,7 @@ default_sort_ascending = false
 vinyl_sort = "price"
 vinyl_sort_ascending = true
 vinyl_view = "list"
+seller_current = "lowtide"
 radio_dock = "left"
 graph_arrange = "genres"
 graph_hide = [

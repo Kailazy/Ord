@@ -1413,8 +1413,9 @@ struct App {
     /// Saved Discogs marketplace sellers (the Sellers tab's shops), from the
     /// `sellers` table. Reloaded with the vinyl lists on every `reload`.
     sellers: Vec<SellerShop>,
-    /// Which saved seller's crates the Sellers tab is browsing. `None` until a
-    /// seller is added or picked; kept valid against `sellers` on reload.
+    /// Which saved seller's crates the Sellers tab is browsing. Seeded from
+    /// the config's last pick at launch, `None` until a seller is added or
+    /// picked; kept valid against `sellers` on reload.
     seller_current: Option<String>,
     /// The current seller's cached listings, loaded lazily (a swept shop can
     /// run to tens of thousands of rows, so this is NOT part of `reload`, which

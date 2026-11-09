@@ -425,6 +425,8 @@ impl App {
         util::mark("config loaded");
         app.token_input = config.discogs_token.clone();
         app.config = config;
+        // The Market tab reopens on the shop looked at last.
+        app.seller_current = Some(app.config.seller_current.clone()).filter(|s| !s.is_empty());
         app.config.apply_appearance(&egui_ctx);
         // The video player's level. It has no panel yet — that's built on the
         // first video — but the level is recorded now so the first one to play

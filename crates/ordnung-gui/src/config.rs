@@ -91,6 +91,10 @@ pub struct Config {
     /// tabs: collection, wantlist and a seller's crates are the same kind of
     /// browsing. Unknown values fall back to grid.
     pub vinyl_view: String,
+    /// The saved seller whose crates the Market tab showed last, so the
+    /// next launch opens on the same shop. Empty until one is picked; a
+    /// name no longer saved gives way to the first.
+    pub seller_current: String,
     /// Where the radio bar sits on the map: `"top"` (the default), `"bottom"`,
     /// `"left"` or `"right"`. Set by dragging the bar; at a side it stands
     /// upright with the cover on top.
@@ -730,6 +734,7 @@ impl Default for Config {
             vinyl_sort: crate::views::VinylSort::Added,
             vinyl_sort_ascending: false,
             vinyl_view: "grid".to_string(),
+            seller_current: String::new(),
             radio_dock: crate::radio::RadioDock::Top,
             graph_arrange: crate::graph::Arrange::Artists,
             graph_hide: Vec::new(),
@@ -1158,6 +1163,7 @@ mod tests {
             vinyl_sort: VinylSort::Price,
             vinyl_sort_ascending: true,
             vinyl_view: "list".into(),
+            seller_current: "lowtide".into(),
             radio_dock: RadioDock::Left,
             graph_arrange: Arrange::Genres,
             graph_hide: ["owned", "wanted", "dug"].map(String::from).to_vec(),
