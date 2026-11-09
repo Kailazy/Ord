@@ -739,7 +739,7 @@ fn footer(ui: &mut egui::Ui, items: u32) -> egui::Response {
 /// Group a count with thin separators: `1204` reads as `1,204`. Big numbers are
 /// the normal case here (a common word matches thousands of releases), and an
 /// ungrouped five-digit run is genuinely hard to size up at a glance.
-fn thousands(n: u32) -> String {
+pub(crate) fn thousands(n: u32) -> String {
     let s = n.to_string();
     let mut out = String::with_capacity(s.len() + s.len() / 3);
     for (i, c) in s.chars().enumerate() {

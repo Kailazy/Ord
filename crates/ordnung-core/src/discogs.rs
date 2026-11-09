@@ -416,6 +416,12 @@ pub struct ReleaseDetail {
     /// one-release label's distributor is the door to its whole scene.
     #[serde(default)]
     pub companies: Vec<ReleaseCompany>,
+    /// How many Discogs users have this pressing, and want it. 0 on rows
+    /// cached before the fields existed, until the schema bump re-fetches.
+    #[serde(default)]
+    pub have: u32,
+    #[serde(default)]
+    pub want: u32,
 }
 
 /// One credit on a release beyond the main artists: who, and as what.
@@ -2701,9 +2707,9 @@ struct SearchPagination {
     items: u32,
 }
 
-/// Per-hit community tallies the search endpoint includes with every result:
-/// how many users have (`have`) and want (`want`) the release.
-#[derive(Debug, Default, Deserialize)]
+/// Community tallies the search endpoint includes with every hit, and the
+/// release endpoint with the release: how many users have and want it.
+#[derive(Debug, Clone, Default, Deserialize)]
 struct HitCommunity {
     #[serde(default, deserialize_with = "null_as_default")]
     have: u32,
@@ -3820,6 +3826,8 @@ struct ReleaseResponse {
     extraartists: Vec<CreditEntry>,
     #[serde(default, deserialize_with = "null_as_default")]
     companies: Vec<CompanyEntry>,
+    #[serde(default, deserialize_with = "null_as_default")]
+    community: HitCommunity,
 }
 
 /// One `extraartists` credit, on a release or on a track.
@@ -4157,6 +4165,8 @@ impl ReleaseResponse {
         ReleaseDetail {
             credits,
             companies,
+            have: self.community.have,
+            want: self.community.want,
             release_id: self.id.to_string(),
             format,
             title: self.title,
@@ -4787,6 +4797,8 @@ mod tests {
             videos: Vec::new(),
             credits: Vec::new(),
             companies: Vec::new(),
+            have: 0,
+            want: 0,
         }
     }
 

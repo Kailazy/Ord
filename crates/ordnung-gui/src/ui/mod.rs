@@ -104,6 +104,15 @@ pub fn info_note(ui: &mut egui::Ui, text: impl Into<String>) {
     .on_hover_note(text);
 }
 
+/// A level as a filled line: `ink` over a quiet track, `frac` of `line`'s
+/// width. How full a stick is, how many people have a record.
+pub fn gauge(p: &egui::Painter, line: egui::Rect, frac: f32, ink: egui::Color32) {
+    p.rect_filled(line, tokens::radius::XS, tokens::color::separator_opaque());
+    let mut fill = line;
+    fill.set_width(line.width() * frac.clamp(0.0, 1.0));
+    p.rect_filled(fill, tokens::radius::XS, ink);
+}
+
 /// The chip that floats at the pointer while something is dragged inside
 /// the app ("3 track(s)", "1 song"), so it's clear something is being
 /// carried toward a drop target. Painted in the tooltip layer, above all.

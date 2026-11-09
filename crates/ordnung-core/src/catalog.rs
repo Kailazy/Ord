@@ -28,8 +28,9 @@ use unicode_normalization::{char::is_combining_mark, UnicodeNormalization};
 /// the crate dig follows sideways. Version 7 kept each track's own credits
 /// on the track, so a tracklist can name whose remix a side is. Version 8
 /// added the artists by name and id on the release and on each track, so
-/// the names on a record sheet open their artist pages.
-pub const DETAIL_SCHEMA_VERSION: i64 = 8;
+/// the names on a record sheet open their artist pages. Version 9 added the
+/// have and want counts the record sheet draws as bars.
+pub const DETAIL_SCHEMA_VERSION: i64 = 9;
 
 /// Which table backs a vinyl list. The two caches share an identical schema and
 /// every query below, so the list only ever picks the table name — never its own
@@ -5759,6 +5760,8 @@ mod tests {
             videos: Vec::new(),
             credits: Vec::new(),
             companies: Vec::new(),
+            have: 0,
+            want: 0,
         };
         cat.set_external_artwork(id, "discogs", Some("123"), None, Some(&[1]), None)
             .unwrap();
@@ -7797,6 +7800,8 @@ mod tests {
             videos: Vec::new(),
             credits: Vec::new(),
             companies: Vec::new(),
+            have: 0,
+            want: 0,
         }
     }
 

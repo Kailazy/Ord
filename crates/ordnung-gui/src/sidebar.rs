@@ -1205,10 +1205,7 @@ pub(crate) fn capacity_line(ui: &mut egui::Ui, used: u64, total: u64) {
         egui::pos2(mark.left() - space::S2, row.top() + stroke::GAUGE),
     );
     let p = ui.painter();
-    p.rect_filled(line, radius::XS, color::separator_opaque());
-    let mut fill = line;
-    fill.set_width(line.width() * (used as f32 / total as f32).clamp(0.0, 1.0));
-    p.rect_filled(fill, radius::XS, color::LABEL_3);
+    crate::ui::gauge(p, line, used as f32 / total as f32, color::LABEL_3);
     p.text(
         mark.center(),
         egui::Align2::CENTER_CENTER,

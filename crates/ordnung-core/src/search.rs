@@ -457,6 +457,8 @@ mod tests {
             videos: Vec::new(),
             credits: Vec::new(),
             companies: Vec::new(),
+            have: 0,
+            want: 0,
         })
         .unwrap();
 
