@@ -155,6 +155,29 @@ pub struct Segment<'a> {
     pub tip: &'a str,
 }
 
+/// The labels of `segments` in the button's type, one galley each.
+fn segment_galleys(ui: &egui::Ui, segments: &[Segment]) -> Vec<std::sync::Arc<egui::Galley>> {
+    let font_id = egui::TextStyle::Button.resolve(ui.style());
+    segments
+        .iter()
+        .map(|s| {
+            let text: egui::WidgetText = if s.icon.is_empty() {
+                s.label.into()
+            } else {
+                crate::ui::icon_text(s.icon, s.label, font_id.clone())
+            };
+            text.into_galley(ui, Some(egui::TextWrapMode::Extend), f32::INFINITY, egui::TextStyle::Button)
+        })
+        .collect()
+}
+
+/// The width a [`segmented`] button takes for `segments`: what a caller
+/// that has to fit it, or scroll it, measures before laying it out.
+pub fn segmented_width(ui: &egui::Ui, segments: &[Segment]) -> f32 {
+    let pad = ui.spacing().button_padding.x;
+    segment_galleys(ui, segments).iter().map(|g| g.size().x + 2.0 * pad).sum()
+}
+
 /// Several buttons in one frame, parted by hairlines: a choice between a
 /// few views of the same thing (a wall of covers or rows), where separate
 /// buttons would read as separate actions and take a gap each. The frame
@@ -165,18 +188,7 @@ pub struct Segment<'a> {
 /// the segment clicked this frame, if any; the caller owns the choice.
 pub fn segmented(ui: &mut egui::Ui, selected: Option<usize>, segments: &[Segment]) -> Option<usize> {
     let pad = ui.spacing().button_padding;
-    let font_id = egui::TextStyle::Button.resolve(ui.style());
-    let galleys: Vec<_> = segments
-        .iter()
-        .map(|s| {
-            let text: egui::WidgetText = if s.icon.is_empty() {
-                s.label.into()
-            } else {
-                crate::ui::icon_text(s.icon, s.label, font_id.clone())
-            };
-            text.into_galley(ui, Some(egui::TextWrapMode::Extend), f32::INFINITY, egui::TextStyle::Button)
-        })
-        .collect();
+    let galleys = segment_galleys(ui, segments);
     let widths: Vec<f32> = galleys.iter().map(|g| g.size().x + 2.0 * pad.x).collect();
     let h = ui.spacing().interact_size.y;
     let size = egui::vec2(widths.iter().sum(), h);
