@@ -2334,40 +2334,9 @@ impl App {
                         .map(|(i, l, _)| crate::ui::button::Segment { icon: i, label: l, tip: "" })
                         .collect();
                     // A row of names wider than the sheet (a split release
-                    // and its label) is clipped at the sheet's edge and
-                    // scrolls, with arrows after the clip that page it; a
-                    // row that fits is laid out plain.
-                    let picked = if crate::ui::button::segmented_width(ui, &segments) <= ui.available_width() {
-                        crate::ui::button::segmented(ui, selected, &segments)
-                    } else {
-                        ui.horizontal(|ui| {
-                            let side = ui.spacing().interact_size.y;
-                            let arrows = 2.0 * (side + ui.spacing().item_spacing.x);
-                            let out = egui::ScrollArea::horizontal()
-                                .id_salt(("sheet_panes", release_id))
-                                .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden)
-                                .max_width(ui.available_width() - arrows)
-                                .show(ui, |ui| crate::ui::button::segmented(ui, selected, &segments));
-                            let shown = out.inner_rect.width();
-                            let at = out.state.offset.x;
-                            let end = out.content_size.x - shown;
-                            let left = ui
-                                .add_enabled_ui(at > 0.0, |ui| crate::ui::button::square(ui, named(icons::CARET_LEFT)))
-                                .inner
-                                .clicked();
-                            let right = ui
-                                .add_enabled_ui(at < end, |ui| crate::ui::button::square(ui, named(icons::CARET_RIGHT)))
-                                .inner
-                                .clicked();
-                            if left || right {
-                                let mut state = out.state;
-                                state.offset.x = (at + if left { -shown } else { shown }).clamp(0.0, end);
-                                state.store(ui.ctx(), out.id);
-                            }
-                            out.inner
-                        })
-                        .inner
-                    };
+                    // and its label) scrolls under arrows.
+                    let picked =
+                        crate::ui::button::segmented_scroll(ui, ("sheet_panes", release_id), selected, &segments);
                     if let Some(i) = picked {
                         if let Some(a) = &seg_labels[i].2 {
                             act = Some(a.clone());

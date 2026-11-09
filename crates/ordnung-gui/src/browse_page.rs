@@ -80,6 +80,11 @@ pub(crate) struct BrowsePanel {
     /// Pages Discogs serves of an artist's run, 0 until the first arrives;
     /// the run is being read until `cache` holds them all.
     pub run_pages: u32,
+    /// The names the alias bar offers, each a run of its own: the artist
+    /// first, then their aliases, then the groups they are in (true). Set
+    /// from the first run's kin and carried along as the bar switches runs,
+    /// so it holds still under the cursor. Empty until the kin lands.
+    pub family: Vec<(discogs::NamedRef, bool)>,
 }
 
 impl BrowsePanel {
@@ -142,6 +147,9 @@ pub(crate) struct BrowseSnap {
     /// More of an artist's run is still being read.
     reading: bool,
     by_alias: bool,
+    /// The alias bar's names (group or not), and which one is open.
+    family: Vec<(String, bool)>,
+    at: Option<usize>,
 }
 
 /// What one pass of the rows asked for (see [`App::browse_apply`]).
@@ -186,6 +194,8 @@ enum Act {
     Page(u32),
     /// Order an artist's run by alias (true) or by date.
     Sort(bool),
+    /// Open the run of the alias bar's name at this index.
+    Name(usize),
 }
 
 /// Keep the rows a record digger wants: pressings (or format-unknown master
@@ -372,6 +382,7 @@ impl App {
             ahead: None,
             kin: None,
             run_pages: 0,
+            family: Vec::new(),
         });
         let token = self.discogs_token();
         let db = self.db_path.clone();
@@ -441,6 +452,7 @@ impl App {
             ahead: None,
             kin: None,
             run_pages: 0,
+            family: Vec::new(),
         });
         self.fetch_browse_page(1);
     }
@@ -612,6 +624,13 @@ impl App {
             return;
         };
         if let Some(kin) = msg.kin {
+            if panel.family.is_empty() {
+                let me = discogs::NamedRef { id: kin.id, name: kin.name.clone() };
+                panel.family = std::iter::once((me, false))
+                    .chain(kin.aliases.iter().map(|a| (a.clone(), false)))
+                    .chain(kin.groups.iter().map(|g| (g.clone(), true)))
+                    .collect();
+            }
             panel.kin = Some(kin);
             self.adopt_artist_run();
             return;
@@ -733,6 +752,27 @@ impl App {
             .show(ctx, |ui| {
                 ui.set_min_width(PANEL_W);
                 ui.set_max_width(PANEL_W);
+                // The alias bar: every other name the artist records under,
+                // one press from its run, the way the record sheet offers
+                // its artists and label.
+                if snap.family.len() > 1 {
+                    use crate::ui::phosphor_icons::{app, named};
+                    let segments: Vec<crate::ui::button::Segment> = snap
+                        .family
+                        .iter()
+                        .map(|(n, group)| crate::ui::button::Segment {
+                            icon: named(if *group { app::USERS } else { app::USER }),
+                            label: n,
+                            tip: "",
+                        })
+                        .collect();
+                    ui.add_space(crate::ui::tokens::space::S2);
+                    if let Some(i) = crate::ui::button::segmented_scroll(ui, "browse-family", snap.at, &segments) {
+                        out.act = Some(Act::Name(i));
+                    }
+                    ui.add_space(crate::ui::tokens::space::S2);
+                    ui.separator();
+                }
                 Self::browse_rows_ui(ui, &snap, &mut out, false);
             });
         if !open {
@@ -847,6 +887,12 @@ impl App {
             offset,
             reading: panel.reading(),
             by_alias: self.config.artist_run_by_alias,
+            family: panel
+                .family
+                .iter()
+                .map(|(r, g)| (crate::dig::strip_disambiguator(&r.name).to_string(), *g))
+                .collect(),
+            at: panel.family.iter().position(|(r, _)| r.id == panel.id),
         })
     }
 
@@ -1190,6 +1236,15 @@ impl App {
                 }
             }
             Some(Act::Page(p)) => self.fetch_browse_page(p),
+            Some(Act::Name(i)) => {
+                let family = self.browse_panel.as_ref().map(|p| p.family.clone()).unwrap_or_default();
+                if let Some((r, _)) = family.get(i).cloned() {
+                    self.open_run_page(BrowseThread::Artist, r.id, crate::dig::strip_disambiguator(&r.name).to_string());
+                    if let Some(p) = self.browse_panel.as_mut() {
+                        p.family = family;
+                    }
+                }
+            }
             Some(Act::Sort(by_alias)) => {
                 self.config.artist_run_by_alias = by_alias;
                 self.save_config();

@@ -263,6 +263,43 @@ pub fn segmented(ui: &mut egui::Ui, selected: Option<usize>, segments: &[Segment
     clicked
 }
 
+/// A [`segmented`] row that may be wider than the space it gets (a list of
+/// names): laid out plain when it fits; else clipped there and scrolled,
+/// with caret arrows after the clip that page it by the visible width.
+/// `salt` keeps each row's scroll offset its own.
+pub fn segmented_scroll(
+    ui: &mut egui::Ui,
+    salt: impl std::hash::Hash,
+    selected: Option<usize>,
+    segments: &[Segment],
+) -> Option<usize> {
+    use super::phosphor_icons::{app, named};
+    if segmented_width(ui, segments) <= ui.available_width() {
+        return segmented(ui, selected, segments);
+    }
+    ui.horizontal(|ui| {
+        let side = ui.spacing().interact_size.y;
+        let arrows = 2.0 * (side + ui.spacing().item_spacing.x);
+        let out = egui::ScrollArea::horizontal()
+            .id_salt(salt)
+            .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden)
+            .max_width(ui.available_width() - arrows)
+            .show(ui, |ui| segmented(ui, selected, segments));
+        let shown = out.inner_rect.width();
+        let at = out.state.offset.x;
+        let end = out.content_size.x - shown;
+        let left = ui.add_enabled_ui(at > 0.0, |ui| square(ui, named(app::CARET_LEFT))).inner.clicked();
+        let right = ui.add_enabled_ui(at < end, |ui| square(ui, named(app::CARET_RIGHT))).inner.clicked();
+        if left || right {
+            let mut state = out.state;
+            state.offset.x = (at + if left { -shown } else { shown }).clamp(0.0, end);
+            state.store(ui.ctx(), out.id);
+        }
+        out.inner
+    })
+    .inner
+}
+
 /// Horizontal inset of a [`deck`] key's label.
 const DECK_PAD_X: f32 = 10.0;
 
