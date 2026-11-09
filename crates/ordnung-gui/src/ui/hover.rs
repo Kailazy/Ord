@@ -64,6 +64,11 @@ pub trait HoverNoteExt {
 
 impl HoverNoteExt for egui::Response {
     fn on_hover_note(self, text: impl Into<String>) -> Self {
+        // An empty note is no note, not an empty bubble.
+        let text = text.into();
+        if text.is_empty() {
+            return self;
+        }
         let text = note(text);
         self.on_hover_note_ui(|ui| {
             ui.label(text);
@@ -71,6 +76,10 @@ impl HoverNoteExt for egui::Response {
     }
 
     fn on_disabled_hover_note(self, text: impl Into<String>) -> Self {
+        let text = text.into();
+        if text.is_empty() {
+            return self;
+        }
         let text = note(text);
         show(self, |resp| {
             resp.on_disabled_hover_ui(|ui| {
