@@ -2287,9 +2287,9 @@ impl App {
                 // over this one. Each artist and the label get a segment, so
                 // a run is one press away from any pane.
                 let run_open = run_snap.as_ref().filter(|_| pane == SheetPane::Run);
-                let run_label = run_snap
-                    .as_ref()
-                    .map(|r| (crate::browse_page::thread_icon(r.thread), r.name.clone()));
+                // The panel is the last run opened anywhere in the app, so it
+                // names a segment here only while its pane is the one showing.
+                let run_label = run_open.map(|r| (crate::browse_page::thread_icon(r.thread), r.name.clone()));
                 let mut seg_labels: Vec<(&str, String, Option<Act>)> =
                     vec![("", "Tracks".into(), Some(Act::TracksPane))];
                 for a in artist_parts.iter().filter(|a| a.browsable()) {
@@ -2306,10 +2306,8 @@ impl App {
                     }
                 }
                 let selected = match &run_label {
-                    Some((ri, rl)) if pane == SheetPane::Run => {
-                        seg_labels.iter().position(|(i, l, _)| i == ri && l == rl)
-                    }
-                    _ => Some(0),
+                    Some((ri, rl)) => seg_labels.iter().position(|(i, l, _)| i == ri && l == rl),
+                    None => Some(0),
                 };
                 if seg_labels.len() > 1 {
                     ui.add_space(crate::ui::tokens::space::S3);
@@ -2328,7 +2326,7 @@ impl App {
                             let side = ui.spacing().interact_size.y;
                             let arrows = 2.0 * (side + ui.spacing().item_spacing.x);
                             let out = egui::ScrollArea::horizontal()
-                                .id_salt("sheet_panes")
+                                .id_salt(("sheet_panes", release_id))
                                 .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden)
                                 .max_width(ui.available_width() - arrows)
                                 .show(ui, |ui| crate::ui::button::segmented(ui, selected, &segments));
