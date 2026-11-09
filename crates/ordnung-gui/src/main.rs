@@ -2187,12 +2187,12 @@ struct App {
     /// Which track set the table shows — the whole library or one playlist.
     view: LibraryView,
     /// Where the user has been, for the toolbar's back and forward arrows:
-    /// the places (view and vinyl tab) left behind, and the ones gone back
-    /// from. `history_at` is the place last recorded, so a change of `view`
-    /// or `vinyl_tab` made anywhere is noticed once per frame in `update`.
-    history_back: Vec<(LibraryView, VinylTab)>,
-    history_fwd: Vec<(LibraryView, VinylTab)>,
-    history_at: (LibraryView, VinylTab),
+    /// the places (see `views::Place`) left behind, and the ones gone back
+    /// from. `history_at` is the place last recorded, so a change made
+    /// anywhere is noticed once per frame in `update`.
+    history_back: Vec<views::Place>,
+    history_fwd: Vec<views::Place>,
+    history_at: views::Place,
     /// Frames left after a back or forward step in which a change of place
     /// replaces the last one instead of adding a step: the app sends a dead
     /// place (a deleted playlist, an ejected stick, an emptied list) back

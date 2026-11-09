@@ -2,6 +2,7 @@
 use crate::ui::phosphor_icons::{app as icons, named};
 use super::*;
 use crate::ui::choices::{choices, Choice};
+use crate::vinyl_sheet::SheetPane;
 
 // `Ordering` from the glob import is the atomic one; the vinyl sort wants the
 // comparison enum, so it gets its own name.
@@ -637,11 +638,31 @@ impl App {
         self.missing_labels = labels;
     }
 
-    /// Notice that `view` or `vinyl_tab` changed since the last frame, from
-    /// the sidebar, the search box, a shortcut or anything else, and keep the
+    /// Where the user is right now, as the history records it.
+    pub(crate) fn here(&self) -> Place {
+        let sheet = self.vinyl_sheet.as_ref().map(|s| {
+            let run = self.browse_panel.as_ref().filter(|_| s.pane == SheetPane::Run);
+            SheetPlace {
+                release_id: s.release_id,
+                pane: s.pane,
+                run: run.map(|p| (p.thread, p.name.clone())),
+                run_id: run.map_or(0, |p| p.id),
+                key: s.key,
+                artist: s.artist.clone(),
+                title: s.title.clone(),
+                sub: s.sub.clone(),
+                cover_url: s.cover_url.clone(),
+            }
+        });
+        Place { view: self.view.clone(), tab: self.vinyl_tab, sheet }
+    }
+
+    /// Notice that the place changed since the last frame (the view, the
+    /// vinyl tab, the record sheet or its pane), from the sidebar, the
+    /// search box, a run's row, a shortcut or anything else, and keep the
     /// place left behind for the back arrow. Once per frame, from `update`.
     pub(crate) fn record_history(&mut self) {
-        let here = (self.view.clone(), self.vinyl_tab);
+        let here = self.here();
         if here != self.history_at {
             if self.history_replace > 0 {
                 // A redirect on the heels of a step (see `history_replace`).
@@ -659,7 +680,7 @@ impl App {
 
     /// Back or forward one place, as a browser does: the place left goes on
     /// the other stack. Nothing to go to, nothing happens.
-    pub(crate) fn history_go(&mut self, back: bool) {
+    pub(crate) fn history_go(&mut self, back: bool, ctx: &egui::Context) {
         let (from, to) = if back {
             (&mut self.history_fwd, &mut self.history_back)
         } else {
@@ -669,12 +690,56 @@ impl App {
             return;
         };
         from.push(self.history_at.clone());
-        let prev_view = std::mem::replace(&mut self.view, place.0.clone());
-        self.vinyl_tab = place.1;
-        self.history_at = place;
+        self.history_at = place.clone();
         self.history_replace = 2;
+        self.go_to(place, ctx);
+    }
+
+    /// Put the app at `place`: the view and tab, then the record sheet over
+    /// them, reopened or closed as the place says, on the pane and the run
+    /// it showed. Reopening goes the way the record was first opened: by
+    /// its shelf key when it had one, else as a bare release.
+    fn go_to(&mut self, place: Place, ctx: &egui::Context) {
+        let prev_view = std::mem::replace(&mut self.view, place.view);
+        self.vinyl_tab = place.tab;
         if self.view != prev_view {
             self.view_changed(prev_view);
+        }
+        let Some(sp) = place.sheet else {
+            // As the sheet's own close does: a run shown on it goes too.
+            if let Some(pane) = self.vinyl_sheet.as_ref().map(|s| s.pane) {
+                self.stop_sheet_video();
+                if pane == SheetPane::Run {
+                    self.browse_panel = None;
+                }
+                self.vinyl_sheet = None;
+            }
+            return;
+        };
+        let open = |sheet: &Option<VinylSheet>| sheet.as_ref().is_some_and(|s| s.release_id == sp.release_id);
+        if !open(&self.vinyl_sheet) {
+            if let Some(key) = sp.key {
+                self.open_vinyl_sheet(key, ctx);
+            }
+        }
+        if !open(&self.vinyl_sheet) {
+            self.open_release_sheet(sp.release_id, sp.artist, sp.title, sp.sub, sp.cover_url, ctx);
+        }
+        if let Some(s) = self.vinyl_sheet.as_mut() {
+            s.hidden = false;
+            s.pane = sp.pane;
+        }
+        if let Some((thread, name)) = sp.run.filter(|_| sp.pane == SheetPane::Run) {
+            let same = self
+                .browse_panel
+                .as_ref()
+                .is_some_and(|p| p.thread == thread && p.name == name);
+            if !same {
+                match thread {
+                    discogs::BrowseThread::Artist => self.open_artist_page(sp.run_id, name),
+                    discogs::BrowseThread::Label => self.open_label_page(sp.release_id, Some(name)),
+                }
+            }
         }
     }
 
@@ -3466,5 +3531,40 @@ mod tests {
         assert_eq!(format_price(9.5, Some("EUR"), true), "€9.50");
         assert_eq!(format_price(9.5, Some("SEK"), true), "9.50 SEK");
         assert_eq!(format_price(9.5, None, true), "9.50");
+    }
+}
+
+/// One place the toolbar's arrows step between: the view and the vinyl
+/// tab, and the record sheet open over them, if any, with the pane it
+/// showed and the run on that pane. Opening a record from a run, then
+/// another, then its label's run are three places, each a step back.
+#[derive(Clone, PartialEq)]
+pub(crate) struct Place {
+    pub view: LibraryView,
+    pub tab: VinylTab,
+    pub sheet: Option<SheetPlace>,
+}
+
+/// The record sheet part of a [`Place`]. Its identity is the record, the
+/// pane and the run shown; the rest is what reopening the sheet needs and
+/// is left out of the comparison (the title changes when the detail lands).
+#[derive(Clone)]
+pub(crate) struct SheetPlace {
+    pub release_id: u64,
+    pub pane: SheetPane,
+    /// The run on the Run pane, by thread and name: a label run's id is 0
+    /// until it resolves, so the name is what identifies it.
+    pub run: Option<(discogs::BrowseThread, String)>,
+    pub run_id: u64,
+    pub key: Option<VinylCoverKey>,
+    pub artist: String,
+    pub title: String,
+    pub sub: String,
+    pub cover_url: Option<String>,
+}
+
+impl PartialEq for SheetPlace {
+    fn eq(&self, o: &Self) -> bool {
+        self.release_id == o.release_id && self.pane == o.pane && self.run == o.run
     }
 }

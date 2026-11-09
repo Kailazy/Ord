@@ -393,7 +393,11 @@ impl App {
             view: LibraryView::Library,
             history_back: Vec::new(),
             history_fwd: Vec::new(),
-            history_at: (LibraryView::Library, VinylTab::Shelf(VinylList::Collection)),
+            history_at: crate::views::Place {
+                view: LibraryView::Library,
+                tab: VinylTab::Shelf(VinylList::Collection),
+                sheet: None,
+            },
             history_replace: 0,
             renaming: None,
             sort: None,
@@ -440,7 +444,7 @@ impl App {
             StartupView::Recent => LibraryView::RecentlyAdded,
         };
         // The home view is where the history starts, not a step from Library.
-        app.history_at = (app.view.clone(), app.vinyl_tab);
+        app.history_at = app.here();
         // Restore the sidebar to the width tier it was left at.
         app.nav.tier = app.config.nav_density as usize;
         app.inspector_nav.tier = app.config.inspector_density as usize;
@@ -2589,10 +2593,10 @@ impl App {
             )
         });
         if go_back {
-            self.history_go(true);
+            self.history_go(true, ctx);
         }
         if go_fwd {
-            self.history_go(false);
+            self.history_go(false, ctx);
         }
 
         // Cmd/Ctrl+A selects every visible row in the current view or playlist
@@ -3418,7 +3422,7 @@ impl App {
                                     })
                                     .inner;
                                 if resp.on_hover_note(note).clicked() {
-                                    self.history_go(back);
+                                    self.history_go(back, ui.ctx());
                                 }
                             }
                             // A touch squarer than the buttons beside it:
