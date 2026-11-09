@@ -512,11 +512,6 @@ fn ring_slots(n: usize, inner: f32, body: f32, phase: f32) -> (Vec<egui::Vec2>, 
 /// is not a place on the map.
 const UNTAGGED: &str = "Untagged";
 
-/// Is this tag one of Discogs's coarse genres (as opposed to a style)?
-fn is_coarse_genre(tag: &str) -> bool {
-    crate::DISCOGS_GENRES.iter().any(|g| g.eq_ignore_ascii_case(tag))
-}
-
 /// The style a record files under in genre clouds, and the further styles
 /// that tie it to other clouds. The first *style* wins over the coarse genre
 /// — for a DJ's shelves "Electronic" would hold nearly everything, and the

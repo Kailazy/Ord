@@ -12,6 +12,7 @@ vinyl_sort = "added"
 vinyl_sort_ascending = false
 vinyl_view = "grid"
 seller_current = ""
+vinyl_saved = []
 radio_dock = "top"
 graph_arrange = "artists"
 graph_hide = []
@@ -110,3 +111,14 @@ accent_presets = []
 background = ""
 
 [column_widths]
+
+[vinyl_filters]
+genres = []
+tags_any = false
+year_from = ""
+year_to = ""
+formats = []
+price_max = ""
+hide_owned = false
+hide_wanted = false
+hide_viewed = false

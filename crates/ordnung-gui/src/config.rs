@@ -95,6 +95,13 @@ pub struct Config {
     /// next launch opens on the same shop. Empty until one is picked; a
     /// name no longer saved gives way to the first.
     pub seller_current: String,
+    /// The Filters popup's facets as last left, restored at launch so a dig
+    /// picks up where it stopped.
+    pub vinyl_filters: crate::VinylFilters,
+    /// Filter sets saved from the popup, in the order saved, each in its
+    /// normalized shape (see `VinylFilters::normalized`). No names: a row
+    /// reads its label off the facets.
+    pub vinyl_saved: Vec<crate::VinylFilters>,
     /// Where the radio bar sits on the map: `"top"` (the default), `"bottom"`,
     /// `"left"` or `"right"`. Set by dragging the bar; at a side it stands
     /// upright with the cover on top.
@@ -735,6 +742,8 @@ impl Default for Config {
             vinyl_sort_ascending: false,
             vinyl_view: "grid".to_string(),
             seller_current: String::new(),
+            vinyl_filters: crate::VinylFilters::default(),
+            vinyl_saved: Vec::new(),
             radio_dock: crate::radio::RadioDock::Top,
             graph_arrange: crate::graph::Arrange::Artists,
             graph_hide: Vec::new(),
@@ -934,6 +943,19 @@ impl Config {
         config_path()
             .and_then(|p| std::fs::read_to_string(p).ok())
             .and_then(|text| toml::from_str(&text).ok())
+            .map(|mut c: Config| {
+                // A hand-edited file is read, not trusted: the filters come
+                // back in the popup's own shape, and a saved set with nothing
+                // in it (no label, nothing to apply) goes.
+                c.vinyl_filters = c.vinyl_filters.normalized();
+                c.vinyl_saved = c
+                    .vinyl_saved
+                    .iter()
+                    .map(crate::VinylFilters::normalized)
+                    .filter(|s| s.active(true) > 0)
+                    .collect();
+                c
+            })
             .unwrap_or_default()
     }
 
@@ -1137,6 +1159,7 @@ mod tests {
         use crate::radio::RadioDock;
         use crate::sidebar::NavDensity;
         use crate::views::VinylSort;
+        use crate::VinylFilters;
         let expected = Config {
             export_db_id: 0,
             discogs_token: "tok-abc".into(),
@@ -1164,6 +1187,36 @@ mod tests {
             vinyl_sort_ascending: true,
             vinyl_view: "list".into(),
             seller_current: "lowtide".into(),
+            vinyl_filters: VinylFilters {
+                genres: ["Electronic", "Dub Techno"].map(String::from).to_vec(),
+                tags_any: true,
+                year_from: "1995".into(),
+                year_to: "2004".into(),
+                formats: ["12\"", "LP"].map(String::from).to_vec(),
+                price_max: "25".into(),
+                min_grade: Some(5),
+                hide_owned: true,
+                hide_wanted: true,
+                hide_viewed: true,
+            },
+            vinyl_saved: vec![
+                VinylFilters {
+                    genres: ["Techno"].map(String::from).to_vec(),
+                    year_from: "1990".into(),
+                    year_to: "1999".into(),
+                    formats: ["12\"", "7\""].map(String::from).to_vec(),
+                    hide_wanted: true,
+                    ..VinylFilters::default()
+                },
+                VinylFilters {
+                    tags_any: true,
+                    price_max: "15".into(),
+                    min_grade: Some(7),
+                    hide_owned: true,
+                    hide_viewed: true,
+                    ..VinylFilters::default()
+                },
+            ],
             radio_dock: RadioDock::Left,
             graph_arrange: Arrange::Genres,
             graph_hide: ["owned", "wanted", "dug"].map(String::from).to_vec(),

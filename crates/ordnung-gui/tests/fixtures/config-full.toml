@@ -163,6 +163,50 @@ background = "#10131f"
 artist = 180.5
 title = 240.0
 
+[vinyl_filters]
+genres = [
+    "Electronic",
+    "Dub Techno",
+]
+tags_any = true
+year_from = "1995"
+year_to = "2004"
+formats = [
+    '12"',
+    "LP",
+]
+price_max = "25"
+min_grade = 5
+hide_owned = true
+hide_wanted = true
+hide_viewed = true
+
+[[vinyl_saved]]
+genres = ["Techno"]
+tags_any = false
+year_from = "1990"
+year_to = "1999"
+formats = [
+    '12"',
+    '7"',
+]
+price_max = ""
+hide_owned = false
+hide_wanted = true
+hide_viewed = false
+
+[[vinyl_saved]]
+genres = []
+tags_any = true
+year_from = ""
+year_to = ""
+formats = []
+price_max = "15"
+min_grade = 7
+hide_owned = true
+hide_wanted = false
+hide_viewed = true
+
 [[waveform_presets]]
 slot = 1
 color_mode = "energy"

@@ -681,8 +681,9 @@ impl App {
             ui.add_space(crate::ui::tokens::space::S7);
             ui.vertical_centered(|ui| {
                 // Name the tags when they're the whole filter ("Techno and
-                // Ambient" — the AND actually applied); with year/price/
-                // condition bounds in play a generic line beats a paragraph.
+                // Ambient", or "Techno or Ambient" in Any mode: the rule
+                // actually applied); with year/price/condition bounds in
+                // play a generic line beats a paragraph.
                 let only_tags = active == flt.genres.len() && !flt.genres.is_empty();
                 let msg = {
                     match (only_tags, active > 0, query.is_empty()) {
@@ -690,7 +691,8 @@ impl App {
                             let tags_named = match flt.genres.as_slice() {
                                 [one] => one.clone(),
                                 [head @ .., last] => {
-                                    format!("{} and {last}", head.join(", "))
+                                    let op = if flt.tags_any { "or" } else { "and" };
+                                    format!("{} {op} {last}", head.join(", "))
                                 }
                                 [] => unreachable!(),
                             };
@@ -1003,7 +1005,7 @@ impl App {
                     open_url(&format!("https://www.discogs.com/seller/{cur}/profile"));
                     m.close();
                 }
-                if m.item_danger("Remove shop") {
+                if m.item_danger("Remove shop").clicked() {
                     act.remove = Some(cur.to_string());
                     m.close();
                 }

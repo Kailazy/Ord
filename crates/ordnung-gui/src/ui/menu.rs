@@ -252,6 +252,7 @@ fn draw_panel(
                         row: 0,
                         close: false,
                         grid: None,
+                        scrolls: 0,
                     };
                     add(&mut m);
                     rows = m.row;
@@ -391,6 +392,7 @@ pub fn embedded(ui: &mut egui::Ui, add: impl FnOnce(&mut MenuUi)) {
         row: 0,
         close: false,
         grid: None,
+        scrolls: 0,
     };
     add(&mut m);
     if m.close {
@@ -407,6 +409,8 @@ pub struct MenuUi<'u> {
     close: bool,
     /// Set while a [`MenuUi::columns`] run lays its rows.
     grid: Option<Grid>,
+    /// Scrolled runs so far: each one's id salt.
+    scrolls: usize,
 }
 
 /// Where a [`MenuUi::columns`] run puts its rows: the `per_col` rows from
@@ -456,9 +460,9 @@ impl MenuUi<'_> {
     }
 
     /// An action row in the destructive red, for deletes and their kin.
-    pub fn item_danger(&mut self, label: impl Into<String>) -> bool {
+    /// Returns the response: a delete's scope wants a hover note.
+    pub fn item_danger(&mut self, label: impl Into<String>) -> egui::Response {
         self.row(None, label.into(), None, color::RED, |_| false)
-            .clicked()
     }
 
     /// A row with a ✓ column — for single- or multi-select lists. All
@@ -529,11 +533,16 @@ impl MenuUi<'_> {
         let since_open = self.since_open;
         let mut row = self.row;
         let mut close = false;
+        // Salted by its ordinal in the menu, which holds as rows come and go
+        // above it: a menu may hold two scrolled runs.
+        let salt = self.scrolls;
+        self.scrolls += 1;
         // The panel's Area hands its content last frame's height, so a run
         // that starts short could never grow to its rows (a ratchet, with a
         // scrollbar over a cut-off list). The minimum scrolled height sizes
         // the run from the content instead, up to the cap.
         egui::ScrollArea::vertical()
+            .id_salt(salt)
             .max_height(max_height)
             .min_scrolled_height(max_height)
             .show(self.ui, |ui| {
@@ -543,6 +552,7 @@ impl MenuUi<'_> {
                     row,
                     close: false,
                     grid: None,
+                    scrolls: 0,
                 };
                 add(&mut m);
                 row = m.row;
@@ -550,6 +560,30 @@ impl MenuUi<'_> {
             });
         self.row = row;
         self.close |= close;
+    }
+
+    /// The rows inside greyed and inert while `on` is false: an action with
+    /// nothing to act on keeps its slot rather than vanishing, so the rows
+    /// below hold still.
+    pub fn enabled(&mut self, on: bool, add: impl FnOnce(&mut MenuUi)) {
+        if on {
+            return add(self);
+        }
+        let since_open = self.since_open;
+        let mut row = self.row;
+        self.ui.add_enabled_ui(false, |ui| {
+            let mut m = MenuUi {
+                ui,
+                since_open,
+                row,
+                close: false,
+                grid: None,
+                scrolls: 0,
+            };
+            add(&mut m);
+            row = m.row;
+        });
+        self.row = row;
     }
 
     /// The rows inside laid in columns of `per_col`, each `col_w` wide: a
@@ -673,6 +707,9 @@ impl MenuUi<'_> {
             return resp;
         }
 
+        // In a disabled run (see `enabled`) the row is inert: quiet ink; egui
+        // already reports no hover and no click on it.
+        let text_color = if self.ui.is_enabled() { text_color } else { color::LABEL_4 };
         let lit = resp.hovered() || lit(&resp);
         let hot = self
             .ui

@@ -1585,6 +1585,52 @@ impl App {
             });
         });
 
+        // Saved sets sit above the facets. The section is always drawn and
+        // the action row keeps its slot whichever way it reads (Save greyed
+        // with nothing set, Save lit, Forget), so flipping it moves nothing
+        // below.
+        m.header("Saved filters");
+        let cur = self.vinyl_flt.normalized();
+        let checked = self.config.vinyl_saved.iter().position(|s| *s == cur);
+        let mut pick = None;
+        // Four rows before the list scrolls.
+        m.scroll(110.0, |m| {
+            for (i, s) in self.config.vinyl_saved.iter().enumerate() {
+                if m.selectable(checked == Some(i), s.label()) && checked != Some(i) {
+                    pick = Some(i);
+                }
+            }
+        });
+        if let Some(i) = pick {
+            // Every facet is replaced; the search text is its own box and stays.
+            self.vinyl_flt = self.config.vinyl_saved[i].clone();
+        }
+        // The slot reads Forget on the pick's own frame, not one later.
+        let checked = pick.or(checked);
+        match checked {
+            Some(i) => {
+                if m.item_danger("Forget this set")
+                    .on_hover_note("Drops it from the list, the filters stay on")
+                    .clicked()
+                {
+                    self.config.vinyl_saved.remove(i);
+                    self.save_config();
+                }
+            }
+            None => {
+                // Anything set counts, a seller facet on a shelf too: the set
+                // is saved whole and applies wherever it is picked.
+                let mut save = false;
+                m.enabled(self.vinyl_flt.active(true) > 0, |m| {
+                    save = m.item("Save these filters");
+                });
+                if save {
+                    self.config.vinyl_saved.push(cur);
+                    self.save_config();
+                }
+            }
+        }
+
         m.header("Year");
         m.ui().horizontal(|ui| {
             ui.add_space(pad);
@@ -1605,12 +1651,12 @@ impl App {
         m.ui().horizontal(|ui| {
             ui.add_space(pad);
             for fam in FORMAT_FAMILIES {
-                let on = self.vinyl_flt.formats.contains(&fam);
+                let on = self.vinyl_flt.formats.iter().any(|f| f == fam);
                 if ui.selectable_label(on, fam).clicked() {
                     if on {
-                        self.vinyl_flt.formats.retain(|f| *f != fam);
+                        self.vinyl_flt.formats.retain(|f| f != fam);
                     } else {
-                        self.vinyl_flt.formats.push(fam);
+                        self.vinyl_flt.formats.push(fam.to_string());
                     }
                 }
             }
@@ -1667,10 +1713,24 @@ impl App {
         // Genres and styles, split back out of the merged tag census: the
         // coarse Discogs vocabulary is a closed set, so a tag on it is a
         // genre and everything else is a style. Both toggle into the same
-        // AND'd selection.
+        // selection, combined as the mode row says.
         let (genres, styles): (Vec<&(String, usize)>, Vec<&(String, usize)>) = genre_options
             .iter()
-            .partition(|(t, _)| DISCOGS_GENRES.iter().any(|g| g.eq_ignore_ascii_case(t)));
+            .partition(|(t, _)| is_coarse_genre(t));
+        // How the picked tags combine: every one (narrowing a dig) or any
+        // one (a whole taste at once). The first row of the tag lists, under
+        // whichever header comes first.
+        let mut mode_row = |m: &mut crate::ui::menu::MenuUi| {
+            m.ui().horizontal(|ui| {
+                ui.add_space(pad);
+                if ui.selectable_label(!self.vinyl_flt.tags_any, "All of these").clicked() {
+                    self.vinyl_flt.tags_any = false;
+                }
+                if ui.selectable_label(self.vinyl_flt.tags_any, "Any of these").clicked() {
+                    self.vinyl_flt.tags_any = true;
+                }
+            });
+        };
         let mut tag_row = |m: &mut crate::ui::menu::MenuUi, tag: &str, n: usize| {
             let selected = self
                 .vinyl_flt
@@ -1689,12 +1749,16 @@ impl App {
         };
         if !genres.is_empty() {
             m.header("Genres");
+            mode_row(m);
             for (tag, n) in &genres {
                 tag_row(m, tag, *n);
             }
         }
         if !styles.is_empty() {
             m.header("Styles");
+            if genres.is_empty() {
+                mode_row(m);
+            }
             m.scroll(220.0, |m| {
                 for (tag, n) in &styles {
                     tag_row(m, tag, *n);
@@ -1791,10 +1855,10 @@ impl App {
         // search narrows both tabs and you can see which shelf holds the hits
         // without switching to it.
         let query = self.vinyl_filter.trim().to_lowercase();
-        // Structured filters from the Filters popup. Genre tags are AND'd — a
-        // record must carry every one, so each pick narrows the dig — and the
-        // year/format facets AND alongside. Seller-only facets don't apply to
-        // the shelves.
+        // Structured filters from the Filters popup. Genre tags are AND'd (a
+        // record must carry every one) or, in Any mode, OR'd (one is enough),
+        // and the year/format facets AND alongside. Seller-only facets don't
+        // apply to the shelves.
         let flt = self.vinyl_flt.clone();
         let keep = |v: &&VinylRecord| {
             (query.is_empty() || vinyl_matches(v, &query))
@@ -1808,7 +1872,8 @@ impl App {
         // Every genre tag occurring in the current scope (the active shelf, or
         // the current seller's crates) — the genre menu's option list. Each
         // tag's count is the Discogs facet count: how many records carry it
-        // among those matching the tags already picked, so a tag that would
+        // among those matching the tags already picked (in Any mode, among
+        // the whole scope, since a pick widens), so a tag that would
         // narrow the shelf to nothing reads 0. The list itself and its order
         // come from the whole scope, not the matching part: a row that
         // dropped out or re-ranked on every pick made the open popup change
@@ -1859,7 +1924,12 @@ impl App {
                 .collect();
             // Biggest crates first; the tail is alphabetical for scanning.
             v.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
-            let mut v: Vec<(String, usize)> = v.into_iter().map(|(t, _, n)| (t, n)).collect();
+            // Any mode widens, so a tag's count is every record carrying it;
+            // All mode narrows, so it is the records that also match the picks.
+            let mut v: Vec<(String, usize)> = v
+                .into_iter()
+                .map(|(t, total, n)| (t, if flt.tags_any { total } else { n }))
+                .collect();
             // Keep every active tag visible even when the current scope has no
             // record carrying it, so it can be seen and cleared.
             for g in &flt.genres {
@@ -1906,7 +1976,8 @@ impl App {
             // tags, and the seller-only facets — lives behind one popup,
             // opened from a small button inside the search box: the filters
             // narrow the same search, so they sit in its field rather than
-            // beside it. The button wears the active-constraint count.
+            // beside it. The button wears the active-constraint count and
+            // names the set on hover.
             let active = flt.active(seller_mode);
             let flt_label = crate::ui::icon_text(
                 named(icons::FUNNEL),
@@ -1921,9 +1992,12 @@ impl App {
             }
             let out = field.show_with_trailing(ui);
             let flt_btn = out.trailing.map(|b| {
-                b.on_hover_note(
-                    "Filter by year, format, genre and style; each added constraint narrows further",
-                )
+                b.on_hover_note(if active == 0 {
+                    "Filter by year, format, genre and style; each added constraint narrows further"
+                        .to_string()
+                } else {
+                    flt.label()
+                })
             });
             // The ✖ keeps its slot even while hidden, so the view toggle and
             // everything right of it stay put as a search is typed or
@@ -2011,7 +2085,7 @@ impl App {
                         }
                     }
                     m.separator();
-                    if m.item_danger("Forget discovered records") {
+                    if m.item_danger("Forget discovered records").clicked() {
                         clear_dug = true;
                         m.close();
                     }
@@ -2195,12 +2269,16 @@ impl App {
         }));
         // The row's trailing item spacing is part of the gap.
         ui.add_space(pad - ui.spacing().item_spacing.y);
+        // The filters ride along with the sort: the set as left comes back
+        // at launch.
         if sort != self.config.vinyl_sort
             || ascending != self.config.vinyl_sort_ascending
             || self.config.vinyl_view != view_before
+            || self.vinyl_flt != self.config.vinyl_filters
         {
             self.config.vinyl_sort = sort;
             self.config.vinyl_sort_ascending = ascending;
+            self.config.vinyl_filters = self.vinyl_flt.clone();
             self.save_config();
         }
         // The hairline itself, with no spacing of its own: the gap above is

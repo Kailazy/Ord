@@ -402,6 +402,11 @@ const DISCOGS_GENRES: [&str; 15] = [
     "Children's",
 ];
 
+/// Is this tag one of Discogs's coarse genres (as opposed to a style)?
+pub(crate) fn is_coarse_genre(tag: &str) -> bool {
+    DISCOGS_GENRES.iter().any(|g| g.eq_ignore_ascii_case(tag))
+}
+
 /// Record format families the Filters popup offers. Matched as substrings of
 /// the free-text Discogs format summary (`2xLP, Album`, `7", 45 RPM`), so the
 /// quote characters matter.
@@ -409,19 +414,25 @@ const FORMAT_FAMILIES: [&str; 4] = ["12\"", "LP", "10\"", "7\""];
 
 /// The vinyl view's structured filters. Everything lives behind the toolbar's
 /// one Filters popup; the free-text search stays its own box. Facets AND
-/// together, and within the genre facet each tag ANDs too (every pick narrows
-/// the dig); within the format facet a record matches any selected family.
-/// The seller-only facets are ignored on the shelves.
-#[derive(Clone, Default, PartialEq)]
-struct VinylFilters {
-    /// Genre/style tags the record must ALL carry.
+/// together; within the genre facet the tags AND too (every pick narrows the
+/// dig) unless `tags_any` makes them OR; within the format facet a record
+/// matches any selected family. The seller-only facets are ignored on the
+/// shelves.
+#[derive(Clone, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
+pub(crate) struct VinylFilters {
+    /// Genre/style tags the record must carry: all of them, or any one of
+    /// them when `tags_any` is set.
     genres: Vec<String>,
+    /// Match any one of the tags instead of every one: a filter for a whole
+    /// taste ("Dub Techno or Minimal or Acid") rather than a narrowing.
+    tags_any: bool,
     /// Year bounds as typed (empty = unbounded). Kept as text so the boxes
     /// edit naturally; parsed leniently on use.
     year_from: String,
     year_to: String,
     /// Selected format families (see [`FORMAT_FAMILIES`]).
-    formats: Vec<&'static str>,
+    formats: Vec<String>,
     /// Sellers only: price ceiling as typed, in whatever currency the shop
     /// lists in (a sweep is one seller, so listings share one currency).
     price_max: String,
@@ -478,11 +489,15 @@ impl VinylFilters {
         self.formats.iter().any(|fam| f.contains(fam))
     }
 
-    /// Do a record's genre tags carry every selected tag?
+    /// Do a record's genre tags carry the selected tags: every one, or in
+    /// Any mode at least one? No selection keeps everything either way.
     fn genres_keep(&self, tags: &[String]) -> bool {
-        self.genres
-            .iter()
-            .all(|g| tags.iter().any(|t| t.eq_ignore_ascii_case(g)))
+        let has = |g: &String| tags.iter().any(|t| t.eq_ignore_ascii_case(g));
+        if self.tags_any && !self.genres.is_empty() {
+            self.genres.iter().any(has)
+        } else {
+            self.genres.iter().all(has)
+        }
     }
 
     /// How many constraints are active, for the Filters button badge. Seller
@@ -505,6 +520,193 @@ impl VinylFilters {
 
     fn clear(&mut self) {
         *self = VinylFilters::default();
+    }
+
+    /// The set in a line, for the saved-filters rows and the Filters
+    /// button's note: condition, formats, price cap, tags, years, hidden
+    /// shelves, as a digger would say it. Unset facets are left out, so an
+    /// empty set has no label.
+    fn label(&self) -> String {
+        let mut parts: Vec<String> = Vec::new();
+        if let Some((l, _)) = self
+            .min_grade
+            .and_then(|r| sellers::GRADE_FLOORS.iter().find(|(_, g)| *g == r))
+        {
+            // "VG+ or better" is "VG+" in a line.
+            parts.push(l.split(' ').next().unwrap_or(l).to_string());
+        }
+        if !self.formats.is_empty() {
+            parts.push(self.formats.join("/"));
+        }
+        if self.price_cap().is_some() {
+            // ponytail: a bare number. The cap applies in each shop's own
+            // listing currency, so the label can't name one.
+            parts.push(format!("up to {}", self.price_max.trim()));
+        }
+        // Genres before styles, three tags at most: a dig picks many styles.
+        let (genres, styles): (Vec<&String>, Vec<&String>) = self
+            .genres
+            .iter()
+            .partition(|g| is_coarse_genre(g));
+        let tags: Vec<&String> = genres.into_iter().chain(styles).collect();
+        // OR'd tags share a slash like the formats, which also means "or".
+        let shown: Vec<&str> = tags.iter().take(3).map(|t| t.as_str()).collect();
+        if !shown.is_empty() {
+            parts.push(shown.join(if self.tags_any { " / " } else { " · " }));
+        }
+        if tags.len() > 3 {
+            parts.push(format!("+{} more", tags.len() - 3));
+        }
+        match self.year_bounds() {
+            (Some(f), Some(t)) => parts.push(format!("{f} to {t}")),
+            (Some(f), None) => parts.push(format!("from {f}")),
+            (None, Some(t)) => parts.push(format!("to {t}")),
+            (None, None) => {}
+        }
+        let hidden: Vec<&str> = [
+            (self.hide_owned, "owned"),
+            (self.hide_wanted, "wanted"),
+            (self.hide_viewed, "seen"),
+        ]
+        .into_iter()
+        .filter_map(|(on, w)| on.then_some(w))
+        .collect();
+        if !hidden.is_empty() {
+            parts.push(format!("hide {}", hidden.join("/")));
+        }
+        let mut s = parts.join(" · ");
+        if let Some(first) = s.get_mut(..1) {
+            first.make_ascii_uppercase();
+        }
+        s
+    }
+
+    /// The set in one shape however its facets were picked, so a saved set
+    /// is recognised again: tags sorted, formats in the popup's order (a
+    /// format the popup never offered falls out), the typed numbers trimmed,
+    /// a grade off the popup's list dropped, the mode folded to All where it
+    /// makes no difference.
+    fn normalized(&self) -> Self {
+        let mut n = self.clone();
+        n.genres.sort_by_key(|g| g.to_lowercase());
+        n.formats = FORMAT_FAMILIES
+            .iter()
+            .filter(|fam| self.formats.iter().any(|f| f == *fam))
+            .map(|fam| fam.to_string())
+            .collect();
+        n.year_from = self.year_from.trim().to_string();
+        n.year_to = self.year_to.trim().to_string();
+        n.price_max = self.price_max.trim().to_string();
+        n.min_grade = self
+            .min_grade
+            .filter(|r| sellers::GRADE_FLOORS.iter().any(|(_, g)| g == r));
+        // Any and All filter and read alike with one tag; one form, so the
+        // same set cannot be saved twice.
+        n.tags_any = self.tags_any && self.genres.len() > 1;
+        n
+    }
+}
+
+#[cfg(test)]
+mod vinyl_filter_tests {
+    use super::*;
+
+    fn set(genres: &[&str], formats: &[&str]) -> VinylFilters {
+        VinylFilters {
+            genres: genres.iter().map(|s| s.to_string()).collect(),
+            formats: formats.iter().map(|s| s.to_string()).collect(),
+            ..VinylFilters::default()
+        }
+    }
+
+    /// The label reads the facets in a digger's order and leaves unset
+    /// ones out.
+    #[test]
+    fn label_reads_the_facets_in_order() {
+        let mut f = set(&["Dub Techno", "Electronic"], &["12\""]);
+        f.min_grade = Some(5);
+        f.year_to = "2004".into();
+        assert_eq!(f.label(), "VG+ · 12\" · Electronic · Dub Techno · to 2004");
+
+        let mut f = set(&["Techno"], &["12\"", "7\""]);
+        f.year_from = "1990".into();
+        f.year_to = "1999".into();
+        assert_eq!(f.label(), "12\"/7\" · Techno · 1990 to 1999");
+
+        let mut f = set(
+            &["Hard Bop", "Modal", "Jazz", "Cool Jazz", "Bop", "Post Bop", "Free Jazz"],
+            &["LP"],
+        );
+        f.min_grade = Some(6);
+        f.price_max = " 25 ".into();
+        f.year_to = "1969".into();
+        assert_eq!(
+            f.label(),
+            "NM · LP · up to 25 · Jazz · Hard Bop · Modal · +4 more · to 1969"
+        );
+
+        let f = VinylFilters {
+            hide_owned: true,
+            hide_wanted: true,
+            hide_viewed: true,
+            ..VinylFilters::default()
+        };
+        assert_eq!(f.label(), "Hide owned/wanted/seen");
+
+        let f = VinylFilters {
+            price_max: "15".into(),
+            hide_viewed: true,
+            ..VinylFilters::default()
+        };
+        assert_eq!(f.label(), "Up to 15 · hide seen");
+
+        let mut f = set(&["Dub Techno", "Minimal", "Acid"], &[]);
+        f.tags_any = true;
+        assert_eq!(f.label(), "Dub Techno / Minimal / Acid");
+
+        assert_eq!(VinylFilters::default().label(), "");
+    }
+
+    /// All mode wants every picked tag on the record, Any mode one of them;
+    /// nothing picked keeps every record in either mode.
+    #[test]
+    fn genres_keep_follows_the_mode() {
+        let rec: Vec<String> = ["Electronic", "Dub Techno"].map(String::from).to_vec();
+        let mut f = set(&["Dub Techno", "Minimal"], &[]);
+        assert!(!f.genres_keep(&rec));
+        f.tags_any = true;
+        assert!(f.genres_keep(&rec));
+        assert!(!f.genres_keep(&["Rock".to_string()]));
+        let mut none = set(&[], &[]);
+        assert!(none.genres_keep(&rec));
+        none.tags_any = true;
+        assert!(none.genres_keep(&rec));
+    }
+
+    /// The same set picked in another order is the same set; a facet the
+    /// popup never offered is dropped.
+    #[test]
+    fn normalized_forgets_the_pick_order() {
+        let mut a = set(&["Dub Techno", "Electronic"], &["7\"", "12\""]);
+        a.year_to = "2004 ".into();
+        let mut b = set(&["Electronic", "Dub Techno"], &["12\"", "7\""]);
+        b.year_to = " 2004".into();
+        assert_ne!(a, b);
+        assert_eq!(a.normalized(), b.normalized());
+        assert_eq!(b.normalized().formats, ["12\"", "7\""]);
+
+        let mut c = set(&[], &["CD"]);
+        c.min_grade = Some(9);
+        assert_eq!(c.normalized(), VinylFilters::default());
+
+        // With one tag the mode changes nothing, so it is one set.
+        let all = set(&["Techno"], &[]);
+        let mut any = all.clone();
+        any.tags_any = true;
+        assert_eq!(any.normalized(), all.normalized());
+        let mut two = set(&["Techno", "Acid"], &[]);
+        two.tags_any = true;
+        assert!(two.normalized().tags_any);
     }
 }
 
