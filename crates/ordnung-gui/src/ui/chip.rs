@@ -11,7 +11,7 @@
 //! that offers them fits as many as its width takes and draws the rest not
 //! at all; [`show`] then paints one at a point.
 
-use super::tokens::{color, font, space};
+use super::tokens::{color, font, radius, space};
 use crate::tex::Tex;
 use eframe::egui;
 use std::sync::Arc;
@@ -97,4 +97,18 @@ pub fn show(
         color::LABEL,
     );
     resp.on_hover_cursor(egui::CursorIcon::PointingHand)
+}
+
+/// A name in a small pill, in the caption font, on a line of text: the
+/// alias a record in an artist's run is credited to. Passive, sized to its
+/// word, no taller than the line it sits on.
+pub fn tag(ui: &mut egui::Ui, text: &str) -> egui::Response {
+    egui::Frame::none()
+        .fill(color::surface_hi())
+        .rounding(radius::XS)
+        .inner_margin(egui::Margin::symmetric(space::S2 + 1.0, 1.0))
+        .show(ui, |ui| {
+            ui.label(egui::RichText::new(text).font(font::caption()).color(color::LABEL_2))
+        })
+        .response
 }

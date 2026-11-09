@@ -23,6 +23,7 @@ nav_collapsed = []
 inspector_density = "regular"
 inspector_open = false
 double_click = ["inspector"]
+artist_run_by_alias = false
 startup_view = "library"
 auto_analyze = true
 cue_bar_open = false

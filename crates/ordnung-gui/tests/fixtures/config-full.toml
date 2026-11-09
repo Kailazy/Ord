@@ -64,6 +64,7 @@ double_click = [
     "play",
     "release",
 ]
+artist_run_by_alias = true
 startup_view = "recent"
 auto_analyze = false
 cue_bar_open = true

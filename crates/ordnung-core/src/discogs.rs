@@ -512,6 +512,10 @@ pub struct ArtistDetail {
     pub groups: Vec<NamedRef>,
     /// The members, when this artist is a group.
     pub members: Vec<NamedRef>,
+    /// Spellings the same profile is credited under (`AFX` on an Aphex Twin
+    /// record): Discogs marks them with a `*` in a release's artist string.
+    #[serde(default)]
+    pub namevariations: Vec<String>,
     /// The artist's own links (site, Bandcamp, SoundCloud), as the profile
     /// lists them — how [`crate::bandcamp`] tells the artist's account from
     /// a re-upload.
@@ -2248,6 +2252,18 @@ impl Client {
     ///
     /// One API request per call, paced by the shared throttle.
     pub fn browse_by_id(&self, thread: BrowseThread, id: u64, page: u32) -> Result<BrowsePage> {
+        self.browse_pages(thread, id, page, 100)
+    }
+
+    /// [`Client::browse_by_id`] in pages of 500 rows, the most Discogs
+    /// serves (its docs say 100, the endpoint answers 500): for reading a
+    /// whole run in as few paced requests as it takes, rather than sampling
+    /// a page of it.
+    pub fn browse_run(&self, thread: BrowseThread, id: u64, page: u32) -> Result<BrowsePage> {
+        self.browse_pages(thread, id, page, 500)
+    }
+
+    fn browse_pages(&self, thread: BrowseThread, id: u64, page: u32, per_page: u32) -> Result<BrowsePage> {
         let page = page.max(1);
         let url = match thread {
             BrowseThread::Artist => format!("{ARTISTS_URL}/{id}/releases"),
@@ -2255,7 +2271,7 @@ impl Client {
         };
         let body: BrowseResponse = self.get_json("browse response", || {
             self.authed(self.agent.get(&url))
-                .query("per_page", "100")
+                .query("per_page", &per_page.to_string())
                 .query("page", &page.to_string())
         })?;
         Ok(BrowsePage {
@@ -2367,6 +2383,7 @@ impl Client {
             aliases: refs(body.aliases),
             groups: refs(body.groups),
             members: refs(body.members),
+            namevariations: body.namevariations,
             urls: body.urls,
         })
     }
@@ -3834,6 +3851,8 @@ struct ArtistResponse {
     groups: Vec<RefEntry>,
     #[serde(default, deserialize_with = "null_as_default")]
     members: Vec<RefEntry>,
+    #[serde(default, deserialize_with = "null_as_default")]
+    namevariations: Vec<String>,
     #[serde(default, deserialize_with = "null_as_default")]
     urls: Vec<String>,
 }

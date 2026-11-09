@@ -9,8 +9,16 @@
 //! every 12" is worth knowing, reading the run in order *is* the dig.
 //!
 //! Rides `GET /labels/{id}/releases` and `GET /artists/{id}/releases` (the
-//! same browses the dig's threads use), 100 rows a page, in the order Discogs
-//! returns them — catalog order for a label, by year for an artist. Rows are
+//! same browses the dig's threads use). A label's run is read 100 rows a
+//! page, in the order Discogs returns them: catalog order. An artist's is
+//! read whole (500 rows a request, the rest behind the first) and sorted
+//! here, because Discogs hands it back by *role* (their own records, then
+//! the remixes, then the appearances), each group starting over at their
+//! first year: by date, one timeline; or by alias, their own name's records
+//! first and then each other name they record under
+//! (`Config::artist_run_by_alias`). A record credited to one of those other
+//! names (an alias, a group, a name variation, read from `GET
+//! /artists/{id}`) wears that name as a pill in place of the credit. Rows are
 //! narrowed by the same "Release formats" setting the Discogs release picker
 //! honours (`Config::shows_release_format`): hide CDs and files there and
 //! they drop out of the run here too. Master rows with no format of their
@@ -28,6 +36,10 @@ const PANEL_W: f32 = 560.0;
 /// Side of a row's sleeve thumbnail.
 const THUMB: f32 = 48.0;
 
+/// Rows of an artist's sorted run shown at a time: a label page's size, so a
+/// page costs the frame what it does today however long the run.
+const RUN_PAGE: usize = 100;
+
 /// The open browse page: whose run (a label's or an artist's), which page of
 /// it, and the rows.
 pub(crate) struct BrowsePanel {
@@ -44,22 +56,55 @@ pub(crate) struct BrowsePanel {
     pub name: String,
     /// 1-based page currently shown (or being fetched).
     pub page: u32,
-    /// Total pages Discogs reports, at least 1 once loaded.
+    /// Total pages, at least 1 once loaded: Discogs's count for a label,
+    /// pages of [`RUN_PAGE`] rows of the sorted whole for an artist.
     pub pages: u32,
     /// Total releases across the run, as Discogs counts them (all formats).
     pub items: u32,
-    /// This page's rows, vinyl-filtered and pressing-deduplicated.
+    /// The rows, vinyl-filtered and pressing-deduplicated: this page's for a
+    /// label, the whole sorted run's for an artist.
     pub releases: Vec<BrowseRelease>,
     pub loading: bool,
     /// Why there's nothing to show, when there isn't.
     pub error: Option<String>,
-    /// Every page of this run fetched so far, raw, keyed by page number — a
-    /// turn back to a page already read costs nothing, and the page after
-    /// the one on screen is read ahead into here (see
-    /// [`App::browse_lookahead`]).
+    /// Every page of this run fetched so far, raw, keyed by Discogs's page
+    /// number — a turn back to a page already read costs nothing, and the
+    /// page after the one on screen is read ahead into here (see
+    /// [`App::browse_lookahead`]). An artist's run is read into here whole.
     pub cache: HashMap<u32, BrowsePage>,
     /// The page being read ahead, if one is.
     pub ahead: Option<u32>,
+    /// An artist's kin (aliases, groups, name variations), once read: which
+    /// rows wear a pill, and the by-alias grouping. A label has none.
+    pub kin: Option<discogs::ArtistDetail>,
+    /// Pages Discogs serves of an artist's run, 0 until the first arrives;
+    /// the run is being read until `cache` holds them all.
+    pub run_pages: u32,
+}
+
+impl BrowsePanel {
+    /// Pages of an artist's run are still on their way.
+    fn reading(&self) -> bool {
+        self.thread == BrowseThread::Artist && self.cache.len() < self.run_pages as usize
+    }
+
+    /// The artist's name as Discogs spells it, and the other names the same
+    /// act records under (aliases, groups, name variations), once the kin
+    /// has arrived.
+    fn names(&self) -> (String, Vec<String>) {
+        match &self.kin {
+            Some(k) => (
+                k.name.clone(),
+                k.aliases
+                    .iter()
+                    .chain(&k.groups)
+                    .map(|r| r.name.clone())
+                    .chain(k.namevariations.iter().cloned())
+                    .collect(),
+            ),
+            None => (self.name.clone(), Vec::new()),
+        }
+    }
 }
 
 /// One finished browse-page fetch, handed back to the UI thread.
@@ -76,6 +121,8 @@ pub(crate) struct BrowseFetched {
     /// Read ahead rather than asked for: parked in the panel's cache without
     /// turning the page, unless the user has since turned to it.
     pub prefetch: bool,
+    /// An artist run's kin, when this reply carries it instead of a page.
+    pub kin: Option<discogs::ArtistDetail>,
 }
 
 /// What a row asked for, applied after the window releases its borrows.
@@ -89,6 +136,12 @@ pub(crate) struct BrowseSnap {
     loading: bool,
     error: Option<String>,
     rows: Vec<BrowseRow>,
+    /// Index in the panel's releases of the first row shown, so a row's act
+    /// names the release it was drawn from.
+    offset: usize,
+    /// More of an artist's run is still being read.
+    reading: bool,
+    by_alias: bool,
 }
 
 /// What one pass of the rows asked for (see [`App::browse_apply`]).
@@ -111,6 +164,9 @@ struct BrowseRow {
     sub: String,
     /// Credited as remixer rather than as the artist (artist runs only).
     remix: bool,
+    /// Another of the artist's names this record is credited to, worn as a
+    /// pill in place of the credit (artist runs only).
+    alias: Option<String>,
     owned: bool,
     wanted: bool,
     /// A wantlist edit on this record is in flight or queued.
@@ -128,6 +184,8 @@ enum Act {
     Dig(usize),
     /// Fetch another page of the run.
     Page(u32),
+    /// Order an artist's run by alias (true) or by date.
+    Sort(bool),
 }
 
 /// Keep the rows a record digger wants: pressings (or format-unknown master
@@ -203,6 +261,48 @@ fn collapse_rows<'a>(
     rows
 }
 
+/// Whose name a row of an artist's run is credited to.
+enum Credit<'a> {
+    /// The artist's own.
+    Own,
+    /// Another name of theirs (an alias, a group, a name variation): worn as
+    /// a pill, and the run's second group when sorted by alias.
+    Alias(&'a str),
+    /// Someone else's: a record they remixed or appear on.
+    Other,
+}
+
+/// Which of `own` and the `kin` names the row's `credit` is, read the way
+/// Discogs writes them: a `*` marks a name variation, `(2)` tells two
+/// artists of one name apart, and neither is part of the name.
+fn credit_of<'a>(credit: &str, own: &str, kin: &'a [String]) -> Credit<'a> {
+    let fold = |s: &str| crate::dig::strip_disambiguator(s.trim().trim_end_matches('*')).to_lowercase();
+    let c = fold(credit);
+    if c == fold(own) {
+        return Credit::Own;
+    }
+    match kin.iter().find(|k| fold(k) == c) {
+        Some(k) => Credit::Alias(crate::dig::strip_disambiguator(k)),
+        None => Credit::Other,
+    }
+}
+
+/// Order an artist's run. Discogs lists it by role, each group starting over
+/// at the artist's first year; here it is one timeline (undated rows last,
+/// Discogs's order breaking ties) or, `by_alias`, the artist's own records
+/// first, then each other name they record under, A to Z, then the records
+/// of others they remixed or appear on, every group by date.
+fn sort_run(rows: &mut [BrowseRelease], by_alias: bool, own: &str, kin: &[String]) {
+    rows.sort_by_key(|r| r.year.filter(|y| *y > 0).unwrap_or(u16::MAX));
+    if by_alias {
+        rows.sort_by_cached_key(|r| match credit_of(&crate::dig::row_artist_title(r).0, own, kin) {
+            Credit::Own => (0, String::new()),
+            Credit::Alias(a) => (1, a.to_lowercase()),
+            Credit::Other => (2, String::new()),
+        });
+    }
+}
+
 /// The mark a run carries wherever it is named: a head for an artist's, a
 /// house for a label's.
 pub(crate) fn thread_icon(thread: BrowseThread) -> &'static str {
@@ -219,7 +319,9 @@ impl App {
     /// → artist costs no second fetch. `id` 0 matches a label by name, as
     /// a label page is opened before its id is known.
     fn browse_restore(&mut self, thread: BrowseThread, id: u64, name: &str) -> bool {
-        if let Some(mut p) = self.browse_panel.take().filter(|p| !p.loading) {
+        // A half-read artist run is dropped too: its pages would land on
+        // nobody, and a fresh read is one request.
+        if let Some(mut p) = self.browse_panel.take().filter(|p| !p.loading && !p.reading()) {
             // Its read-ahead reply, if one is in flight, is dropped by
             // `poll_browse_page`; the next page turn asks again.
             p.ahead = None;
@@ -236,6 +338,10 @@ impl App {
         match hit {
             Some(i) => {
                 self.browse_panel = Some(self.browse_kept.remove(i));
+                // The order setting may have changed while it was parked.
+                if thread == BrowseThread::Artist {
+                    self.adopt_artist_run();
+                }
                 true
             }
             None => false,
@@ -264,6 +370,8 @@ impl App {
             error: None,
             cache: HashMap::new(),
             ahead: None,
+            kin: None,
+            run_pages: 0,
         });
         let token = self.discogs_token();
         let db = self.db_path.clone();
@@ -291,6 +399,7 @@ impl App {
                     page: 1,
                     result: Err("Discogs lists no label for this record.".to_string()),
                     prefetch: false,
+                    kin: None,
                 });
                 ctx.request_repaint();
                 return;
@@ -305,6 +414,7 @@ impl App {
                 page: 1,
                 result,
                 prefetch: false,
+                kin: None,
             });
             ctx.request_repaint();
         });
@@ -329,6 +439,8 @@ impl App {
             error: None,
             cache: HashMap::new(),
             ahead: None,
+            kin: None,
+            run_pages: 0,
         });
         self.fetch_browse_page(1);
     }
@@ -341,6 +453,19 @@ impl App {
             return;
         };
         if panel.id == 0 || panel.loading {
+            return;
+        }
+        if panel.thread == BrowseThread::Artist {
+            // The run is read whole, once; a page turn is a slice of it.
+            if panel.cache.is_empty() {
+                panel.loading = true;
+                panel.error = None;
+                let id = panel.id;
+                self.spawn_artist_run(id);
+            } else {
+                panel.page = page;
+                self.adopt_artist_run();
+            }
             return;
         }
         if let Some(cached) = panel.cache.get(&page).cloned() {
@@ -370,7 +495,8 @@ impl App {
         let Some(panel) = self.browse_panel.as_ref() else {
             return;
         };
-        if panel.id == 0 || panel.loading || panel.ahead.is_some() {
+        // An artist's run reads itself whole (see `spawn_artist_run`).
+        if panel.id == 0 || panel.loading || panel.ahead.is_some() || panel.thread == BrowseThread::Artist {
             return;
         }
         let next = panel.page + 1;
@@ -403,9 +529,111 @@ impl App {
                 page,
                 result,
                 prefetch,
+                kin: None,
             });
             ctx.request_repaint();
         });
+    }
+
+    /// Read an artist's whole run: the first page now, then their kin (the
+    /// alias pills and grouping) and the remaining pages behind it, each
+    /// handed back as it lands so the rows fill in. One thread, so the
+    /// pages take the pace in order and a click elsewhere goes first.
+    fn spawn_artist_run(&mut self, id: u64) {
+        let token = self.discogs_token();
+        let tx = self.browse_tx.clone();
+        let ctx = self.egui_ctx.clone();
+        thread::spawn(move || {
+            let reply = |page: u32,
+                         result: std::result::Result<BrowsePage, String>,
+                         kin: Option<discogs::ArtistDetail>| {
+                let _ = tx.send(BrowseFetched {
+                    thread: BrowseThread::Artist,
+                    id,
+                    name: None,
+                    page,
+                    result,
+                    prefetch: page != 1,
+                    kin,
+                });
+                ctx.request_repaint();
+            };
+            let client = discogs::Client::new(token);
+            let first = client.browse_run(BrowseThread::Artist, id, 1);
+            let pages = first.as_ref().map_or(0, |p| p.pages);
+            reply(1, first.map_err(|e| e.to_string()), None);
+            if pages == 0 {
+                return;
+            }
+            if let Ok(kin) = client.fetch_artist(id) {
+                reply(0, Ok(BrowsePage::default()), Some(kin));
+            }
+            let client = client.background();
+            for page in 2..=pages {
+                reply(
+                    page,
+                    client.browse_run(BrowseThread::Artist, id, page).map_err(|e| e.to_string()),
+                    None,
+                );
+            }
+        });
+    }
+
+    /// Rebuild an artist run's rows from every page read so far: one list,
+    /// one row per record across pages, in the order the setting asks for,
+    /// shown [`RUN_PAGE`] rows at a time.
+    fn adopt_artist_run(&mut self) {
+        let Some(panel) = self.browse_panel.as_ref() else {
+            return;
+        };
+        let mut pages: Vec<(&u32, &BrowsePage)> = panel.cache.iter().collect();
+        pages.sort_by_key(|(n, _)| **n);
+        let all = BrowsePage {
+            pages: 1,
+            items: panel.items,
+            releases: pages.into_iter().flat_map(|(_, p)| p.releases.iter().cloned()).collect(),
+        };
+        let mut rows = crate_rows(&all, &self.vinyl_owned, &self.vinyl_wanted, &self.config);
+        let (own, kin) = panel.names();
+        sort_run(&mut rows, self.config.artist_run_by_alias, &own, &kin);
+        let Some(panel) = self.browse_panel.as_mut() else {
+            return;
+        };
+        panel.pages = (rows.len().max(1) as u32).div_ceil(RUN_PAGE as u32);
+        panel.page = panel.page.clamp(1, panel.pages);
+        panel.releases = rows;
+    }
+
+    /// One reply of an artist run's read (see [`App::spawn_artist_run`]):
+    /// the kin, or a page of the run parked in the cache, and the rows
+    /// rebuilt from every page read so far.
+    fn adopt_artist_reply(&mut self, msg: BrowseFetched) {
+        let Some(panel) = self.browse_panel.as_mut() else {
+            return;
+        };
+        if let Some(kin) = msg.kin {
+            panel.kin = Some(kin);
+            self.adopt_artist_run();
+            return;
+        }
+        match msg.result {
+            Ok(page) => {
+                if msg.page == 1 {
+                    panel.run_pages = page.pages.max(1);
+                    panel.items = page.items;
+                    panel.loading = false;
+                }
+                panel.cache.insert(msg.page, page);
+                self.adopt_artist_run();
+            }
+            // The first page failing is the run failing; a later one leaves
+            // the rows read so far, and says so.
+            Err(e) if msg.page == 1 => {
+                panel.loading = false;
+                panel.error = Some(e);
+            }
+            Err(e) => self.status = format!("Couldn't read all of the run: {e}"),
+        }
     }
 
     /// Turn the panel to `page`, building its rows.
@@ -427,6 +655,10 @@ impl App {
         let Some(panel) = self.browse_panel.as_ref() else {
             return;
         };
+        if panel.thread == BrowseThread::Artist {
+            self.adopt_artist_run();
+            return;
+        }
         let page_no = panel.page;
         if let Some(cached) = panel.cache.get(&page_no).cloned() {
             self.adopt_browse_page(page_no, &cached);
@@ -443,6 +675,10 @@ impl App {
             // the panel still has no id; everything else must match the run
             // on screen.
             if msg.thread != panel.thread || (panel.id != 0 && msg.id != panel.id) {
+                continue;
+            }
+            if panel.thread == BrowseThread::Artist {
+                self.adopt_artist_reply(msg);
                 continue;
             }
             if msg.prefetch && panel.ahead == Some(msg.page) {
@@ -518,14 +754,31 @@ impl App {
             panel.error.clone(),
         );
         let thread = panel.thread;
+        let (own, kin) = panel.names();
+        // An artist's run is one sorted list shown a page at a time; a
+        // label's rows are the page Discogs served.
+        let offset = match thread {
+            BrowseThread::Artist => (panel.page.max(1) as usize - 1) * RUN_PAGE,
+            BrowseThread::Label => 0,
+        };
+        let end = (offset + RUN_PAGE).min(panel.releases.len());
+        let shown = match thread {
+            BrowseThread::Artist => &panel.releases[offset.min(end)..end],
+            BrowseThread::Label => &panel.releases[..],
+        };
         // Snapshot the rows, then fill sleeves through the shared URL cache
         // (`dig_cover` needs `&mut self`, so two passes like the versions
         // panel).
-        let specs: Vec<(String, u64, String, String, String, bool)> = panel
-            .releases
+        let specs: Vec<(String, u64, String, String, String, bool, Option<String>)> = shown
             .iter()
             .map(|r| {
                 let (artist, title) = crate::dig::row_artist_title(r);
+                // A label panel has no kin, so only an artist's rows can
+                // come out an alias.
+                let alias = match credit_of(&artist, &own, &kin) {
+                    Credit::Alias(a) => Some(a.to_string()),
+                    _ => None,
+                };
                 let imprint = match thread {
                     // A label page is the imprint; naming it on every row
                     // says nothing. An artist's run hops labels, so there it
@@ -548,12 +801,13 @@ impl App {
                     title,
                     sub,
                     thread == BrowseThread::Artist && !r.main,
+                    alias,
                 )
             })
             .collect();
         let shown_release = self.vinyl_sheet.as_ref().map(|s| s.release_id);
         let mut rows: Vec<BrowseRow> = Vec::with_capacity(specs.len());
-        for (thumb, release_id, artist, title, sub, remix) in specs {
+        for (thumb, release_id, artist, title, sub, remix, alias) in specs {
             // By record, not pressing: the run may list another pressing of a
             // record you own.
             let owned = self.owns_record(release_id, &artist, &title);
@@ -574,6 +828,7 @@ impl App {
                 title,
                 sub,
                 remix,
+                alias,
                 owned,
                 wanted,
                 pending,
@@ -581,7 +836,18 @@ impl App {
             });
         }
 
-        Some(BrowseSnap { thread, name, page, pages, loading, error, rows })
+        Some(BrowseSnap {
+            thread,
+            name,
+            page,
+            pages,
+            loading,
+            error,
+            rows,
+            offset,
+            reading: panel.reading(),
+            by_alias: self.config.artist_run_by_alias,
+        })
     }
 
     /// The run's rows and pager, drawn in whatever frame holds them: the
@@ -592,6 +858,7 @@ impl App {
     pub(crate) fn browse_rows_ui(ui: &mut egui::Ui, snap: &BrowseSnap, out: &mut BrowseOut, fill: bool) {
         let (thread, page, pages, loading) = (snap.thread, snap.page, snap.pages, snap.loading);
         let (error, rows) = (&snap.error, &snap.rows);
+        let base = snap.offset;
         ui.add_space(6.0);
         if let Some(e) = &error {
             ui.label(egui::RichText::new(e).weak());
@@ -625,6 +892,9 @@ impl App {
                     ui.set_min_height(440.0);
                 }
                 for (i, r) in rows.iter().enumerate() {
+                    // Acts name the release in the panel, not the row on
+                    // the page.
+                    let i = base + i;
                     let bg = ui.painter().add(egui::Shape::Noop);
                     let row = ui.horizontal(|ui| {
                         let (trect, tresp) = ui.allocate_exact_size(
@@ -710,6 +980,17 @@ impl App {
                                                 .count() as f32
                                                 * (14.0 + 6.0)
                                                 + remix.as_ref().map_or(0.0, |g| g.size().x + 6.0);
+                                            // A record under another of the
+                                            // artist's names wears that name
+                                            // as a pill where the credit
+                                            // would read.
+                                            let line = match &r.alias {
+                                                Some(a) => {
+                                                    crate::ui::chip::tag(ui, a);
+                                                    r.title.clone()
+                                                }
+                                                None => format!("{} — {}", r.artist, r.title),
+                                            };
                                             let t = ui
                                                 .scope(|ui| {
                                                     ui.set_max_width(
@@ -717,11 +998,7 @@ impl App {
                                                     );
                                                     ui.add(
                                                         egui::Label::new(
-                                                            egui::RichText::new(format!(
-                                                                "{} — {}",
-                                                                r.artist, r.title
-                                                            ))
-                                                            .strong(),
+                                                            egui::RichText::new(line).strong(),
                                                         )
                                                         .truncate()
                                                         .sense(egui::Sense::click()),
@@ -786,9 +1063,10 @@ impl App {
                 }
             });
         };
-        // Pager, only when the run outgrows one page.
+        // Pager, when the run outgrows one page; an artist's run always has
+        // its order to choose, so its row is always there.
         let pager = |ui: &mut egui::Ui, out: &mut BrowseOut| {
-            if pages <= 1 {
+            if pages <= 1 && thread != BrowseThread::Artist {
                 return;
             }
             // Pinned, the pager sits on the edge like the tracks footer does.
@@ -797,25 +1075,44 @@ impl App {
             }
             // At its buttons' height, so it never reaches past a held frame.
             crate::ui::control_row(ui, |ui| ui.horizontal(|ui| {
-                if ui
-                    .add_enabled(page > 1 && !loading, egui::Button::new("←"))
-                    .on_hover_note("Earlier in the run")
-                    .clicked()
-                {
-                    out.act = Some(Act::Page(page - 1));
+                if thread == BrowseThread::Artist {
+                    let order = [
+                        crate::ui::button::Segment { icon: "", label: "By date", tip: "One timeline, oldest first" },
+                        crate::ui::button::Segment {
+                            icon: "",
+                            label: "By alias",
+                            tip: "Their own records first, then each other name they record under",
+                        },
+                    ];
+                    if let Some(i) = crate::ui::button::segmented(ui, Some(snap.by_alias as usize), &order) {
+                        out.act = Some(Act::Sort(i == 1));
+                    }
                 }
-                if ui
-                    .add_enabled(page < pages && !loading, egui::Button::new("→"))
-                    .on_hover_note("Later in the run")
-                    .clicked()
-                {
-                    out.act = Some(Act::Page(page + 1));
+                if pages > 1 {
+                    if ui
+                        .add_enabled(page > 1 && !loading, egui::Button::new("←"))
+                        .on_hover_note("Earlier in the run")
+                        .clicked()
+                    {
+                        out.act = Some(Act::Page(page - 1));
+                    }
+                    if ui
+                        .add_enabled(page < pages && !loading, egui::Button::new("→"))
+                        .on_hover_note("Later in the run")
+                        .clicked()
+                    {
+                        out.act = Some(Act::Page(page + 1));
+                    }
+                    ui.label(egui::RichText::new(format!("Page {page} of {pages}")).weak());
                 }
-                ui.label(egui::RichText::new(format!("Page {page} of {pages}")).weak());
                 // After the label, so the page number holds still
                 // while a page loads.
                 if loading {
                     ui.spinner();
+                }
+                if snap.reading {
+                    ui.spinner();
+                    ui.label(egui::RichText::new("Reading the rest of the run…").weak());
                 }
             }));
             // The footer's hairline, over the pager: drawn after the row,
@@ -893,6 +1190,11 @@ impl App {
                 }
             }
             Some(Act::Page(p)) => self.fetch_browse_page(p),
+            Some(Act::Sort(by_alias)) => {
+                self.config.artist_run_by_alias = by_alias;
+                self.save_config();
+                self.adopt_artist_run();
+            }
             None => {}
         }
         // Resting on a row: have its tracklist ready before the click.
@@ -1011,6 +1313,42 @@ mod tests {
     /// records-only collector. The filter would leave the page blank, so every
     /// format is shown instead; a page with any record on it still shows only
     /// the records.
+    /// Discogs lists a run by role, each group starting over at the first
+    /// year; by date the groups interleave into one timeline, by alias the
+    /// artist's own records lead, then each other name A to Z, then others'.
+    #[test]
+    fn sort_run_orders_the_whole_run() {
+        let row = |id, artist: &str, title: &str, year| BrowseRelease {
+            year: Some(year),
+            ..release(id, artist, title, "12\"")
+        };
+        let ids = |rows: &[BrowseRelease]| rows.iter().map(|r| r.release_id).collect::<Vec<_>>();
+        let kin = vec!["AFX".to_string(), "Polygon Window".to_string()];
+        let mut rows = vec![
+            row(1, "Aphex Twin", "On", 1993),
+            row(2, "AFX*", "Analord 01", 2005),
+            row(3, "Aphex Twin", "Syro", 2014),
+            row(4, "Mescalinum United", "We Have Arrived", 1992),
+            row(5, "Polygon Window", "Surfing On Sine Waves", 1993),
+            row(6, "Aphex Twin", "Undated", 0),
+        ];
+        sort_run(&mut rows, false, "Aphex Twin", &kin);
+        assert_eq!(ids(&rows), [4, 1, 5, 2, 3, 6]);
+        sort_run(&mut rows, true, "Aphex Twin", &kin);
+        assert_eq!(ids(&rows), [1, 3, 6, 2, 5, 4]);
+    }
+
+    /// A name variation's `*` and a disambiguating `(2)` are Discogs's
+    /// marks, not the name; a stranger's name variation is still a stranger.
+    #[test]
+    fn credit_of_reads_names_the_way_discogs_writes_them() {
+        let kin = vec!["Point Blank (2)".to_string(), "AFX".to_string()];
+        assert!(matches!(credit_of("Swag", "Swag", &kin), Credit::Own));
+        assert!(matches!(credit_of("afx*", "Aphex Twin", &kin), Credit::Alias(a) if a == "AFX"));
+        assert!(matches!(credit_of("Point Blank", "Swag", &kin), Credit::Alias(a) if a == "Point Blank"));
+        assert!(matches!(credit_of("The Bobby Hughes Experience*", "Swag", &kin), Credit::Other));
+    }
+
     #[test]
     fn crate_rows_show_every_format_when_a_run_has_no_records() {
         let cfg = vinyl_only();

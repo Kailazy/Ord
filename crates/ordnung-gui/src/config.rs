@@ -147,6 +147,10 @@ pub struct Config {
     /// older configs that predate the field): the drawer opens, as it always
     /// did. Empty means a double-click only selects the row.
     pub double_click: Vec<String>,
+    /// An artist's run grouped by the name each record is credited to (the
+    /// artist's own first, then each alias) rather than in one timeline.
+    /// Off by default: by date.
+    pub artist_run_by_alias: bool,
     /// Which section the app opens on: `"library"` (Library, the default),
     /// `"vinyl"` (the vinyl collection), or `"recent"` (new imports). Unknown
     /// values fall back to `"library"`. See `StartupView`.
@@ -738,6 +742,7 @@ impl Default for Config {
             inspector_density: crate::inspector::InspectorDensity::Expanded,
             inspector_open: false,
             double_click: vec![DoubleClick::Inspector.key().to_string()],
+            artist_run_by_alias: false,
             startup_view: StartupView::Library,
             auto_analyze: true,
             cue_bar_open: false,
@@ -1164,6 +1169,7 @@ mod tests {
             inspector_density: InspectorDensity::Compact,
             inspector_open: true,
             double_click: ["play", "release"].map(String::from).to_vec(),
+            artist_run_by_alias: true,
             startup_view: StartupView::Recent,
             auto_analyze: false,
             cue_bar_open: true,
