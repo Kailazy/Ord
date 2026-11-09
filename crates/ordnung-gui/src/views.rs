@@ -736,7 +736,7 @@ impl App {
                 .is_some_and(|p| p.thread == thread && p.name == name);
             if !same {
                 match thread {
-                    discogs::BrowseThread::Artist => self.open_artist_page(sp.run_id, name),
+                    discogs::BrowseThread::Artist => self.open_run_page(thread, sp.run_id, name),
                     discogs::BrowseThread::Label => self.open_label_page(sp.release_id, Some(name)),
                 }
             }

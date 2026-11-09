@@ -31,7 +31,7 @@
 use super::*;
 use crate::search_box::clipped_line;
 use crate::ui::tokens::{color, radius, space};
-use ordnung_core::discogs::{self, ArtistHit, RecordHit};
+use ordnung_core::discogs::{self, BrowseThread, RecordHit, RunHit};
 use std::thread;
 
 /// How long the box waits after the last keystroke before asking Discogs.
@@ -58,15 +58,16 @@ const RECORD_HITS_SHOWN: usize = 3;
 /// `color::GREEN`, a status hue tuned for small marks that glares as text.
 const LANE_DISCOGS: egui::Color32 = egui::Color32::from_rgb(58, 158, 92);
 
-/// How many artists one lookup asks for. A few more than are shown, so a row
-/// Discogs returns blank doesn't leave a gap.
-const ARTIST_PER_PAGE: u32 = 8;
+/// How many artists, and then labels, one lookup asks for. A few more than
+/// are shown, so a row Discogs returns blank doesn't leave a gap.
+const RUN_PER_PAGE: u32 = 8;
 
-/// How many artist chips the band under the records shows at most. Fewer
-/// still fit the width when names run long; the rest are simply not drawn.
-const ARTIST_HITS_SHOWN: usize = 4;
+/// How many chips each band under the records (artists, labels) shows at
+/// most. Fewer still fit the width when names run long; the rest are simply
+/// not drawn.
+const RUN_HITS_SHOWN: usize = 4;
 
-/// The artist band's height (the chips sit centred in it) and how wide a
+/// A band's height (the chips sit centred in it) and how wide a
 /// name may run before it's truncated.
 const BAND_H: f32 = crate::ui::chip::H + 2.0 * space::S2 + 4.0;
 const CHIP_NAME_MAX_W: f32 = 150.0;
@@ -106,7 +107,7 @@ pub(crate) enum RecordSearch {
     Loading(String),
     /// Results for the query, possibly empty.
     Done {
-        /// The query these answer, so a follow-up (the artist lookup) can be
+        /// The query these answer, so a follow-up (the name lookup) can be
         /// matched to the rows it belongs under.
         query: String,
         hits: Vec<RecordHit>,
@@ -114,45 +115,49 @@ pub(crate) enum RecordSearch {
         /// page we fetched — worth saying so the count doesn't read as "that's
         /// all there is".
         items: u32,
-        /// The artists the same words name, which arrive a beat after the
-        /// records — see [`ArtistLookup`].
-        artists: ArtistLookup,
+        /// The artists and labels the same words name, which arrive a beat
+        /// after the records — see [`RunLookup`].
+        runs: RunLookup,
     },
     /// The lookup failed. Carries a plain-language reason.
     Failed(String),
 }
 
-/// The artist half of a Discogs lookup.
+/// The name half of a Discogs lookup: the artists, then the labels.
 ///
-/// A typed name means two things on Discogs — records with those words in the
-/// title, and artists called that — and the second is a different kind of
-/// answer: a door onto a whole discography rather than one record. Both are
-/// asked for, but *in turn*, on one worker, records first. The API is paced at
-/// one request a second process-wide, so asking for artists first would hold
-/// the records back by that second on every keystroke; asking after costs the
-/// records nothing, and the artists join the popup below them when they land.
+/// A typed name means more than one thing on Discogs — records with those
+/// words in the title, and artists or labels called that — and the latter are
+/// a different kind of answer: a door onto a whole run rather than one record.
+/// All are asked for, but *in turn*, on one worker, records first. The API is
+/// paced at one request a second process-wide, so asking for names first would
+/// hold the records back on every keystroke; asking after costs the records
+/// nothing, and the artists, then the labels, join the popup below them as
+/// they land.
 #[derive(Clone, Debug)]
-pub(crate) enum ArtistLookup {
-    /// Still on its way (or lost — a failed artist lookup is treated as "none";
+pub(crate) enum RunLookup {
+    /// Still on its way (or lost — a failed name lookup is treated as "none";
     /// records are the primary answer and shouldn't fail on account of it).
     Pending,
-    Ready(Vec<ArtistHit>),
+    /// The artists, then the labels once they land.
+    Ready(Vec<RunHit>),
 }
 
-/// One answered query, as memoised in `record_cache`. `artists` is `None` when
-/// the artist half never landed (the user typed on before it did); a cache hit
-/// then re-asks for just that half.
+/// One answered query, as memoised in `record_cache`. `runs` is `None` until
+/// the whole name half has landed (the user may type on before it does); a
+/// cache hit then re-asks for just that half.
 #[derive(Clone, Debug)]
 pub(crate) struct CachedLookup {
     pub(crate) hits: Vec<RecordHit>,
     pub(crate) items: u32,
-    pub(crate) artists: Option<Vec<ArtistHit>>,
+    pub(crate) runs: Option<Vec<RunHit>>,
 }
 
-/// What a worker handed back — the two halves of a lookup arrive separately.
+/// What a worker handed back — the halves of a lookup arrive separately.
 pub(crate) enum FetchedAnswer {
     Records(std::result::Result<(Vec<RecordHit>, u32), String>),
-    Artists(Vec<ArtistHit>),
+    /// The names found so far: the artists alone, then (`done`) artists and
+    /// labels.
+    Runs { hits: Vec<RunHit>, done: bool },
 }
 
 /// A finished lookup, handed back from the worker thread.
@@ -164,14 +169,16 @@ pub(crate) struct RecordFetched {
     pub(crate) answer: FetchedAnswer,
 }
 
-/// One row of the Discogs list the user can open: a record, or an artist.
+/// One row of the Discogs list the user can open: a record, or an artist or
+/// label.
 ///
 /// The keyboard cursor runs over one flat index — the record rows, then the
-/// artist chips under them — so this is what "the thing at position `i`" is.
+/// artist chips, then the label chips — so this is what "the thing at
+/// position `i`" is.
 #[derive(Clone, Debug)]
 pub(crate) enum Pick {
     Record(RecordHit),
-    Artist(ArtistHit),
+    Run(RunHit),
 }
 
 impl App {
@@ -199,22 +206,24 @@ impl App {
         // Already answered this exact query in this session: show it now and
         // spend no request. This is what makes backspacing feel instant.
         if let Some(cached) = self.record_cache.get(&q).cloned() {
-            // Both halves known — or the artist half already on its way for
-            // this very query, which a second worker would only duplicate.
-            let artists_inflight = matches!(
-                &self.record_search,
-                RecordSearch::Done { query, artists: ArtistLookup::Pending, .. } if *query == q
-            );
+            // Both halves known — or the name half already on its way for this
+            // very query (the lane shows it and the cache doesn't hold it
+            // whole yet), which a second worker would only duplicate.
+            if cached.runs.is_none()
+                && matches!(&self.record_search, RecordSearch::Done { query, .. } if *query == q)
+            {
+                return;
+            }
             self.record_search = RecordSearch::Done {
                 query: q.clone(),
                 hits: cached.hits,
                 items: cached.items,
-                artists: match &cached.artists {
-                    Some(a) => ArtistLookup::Ready(a.clone()),
-                    None => ArtistLookup::Pending,
+                runs: match &cached.runs {
+                    Some(a) => RunLookup::Ready(a.clone()),
+                    None => RunLookup::Pending,
                 },
             };
-            if cached.artists.is_none() && !artists_inflight {
+            if cached.runs.is_none() {
                 self.spawn_record_worker(q, false);
             }
             return;
@@ -235,7 +244,7 @@ impl App {
     }
 
     /// Start the worker for one query. With `records` it asks for the record
-    /// page first and the artists after; without, only the artist half (the
+    /// page first and the artists and labels after; without, only the name half (the
     /// records are already on screen from the cache). Bumps the generation, so
     /// anything still in flight for an earlier call is dropped on arrival.
     fn spawn_record_worker(&mut self, query: String, records: bool) {
@@ -266,17 +275,19 @@ impl App {
                     return;
                 }
             }
-            // A failed artist lookup is "no artists": the records are already
-            // up, and an error line under them would say more than it's worth.
-            let artists = client
-                .search_artists(&query, ARTIST_PER_PAGE)
-                .unwrap_or_default();
-            let _ = tx.send(RecordFetched {
-                generation,
-                query,
-                answer: FetchedAnswer::Artists(artists),
-            });
-            ctx.request_repaint();
+            // A failed name lookup is "none": the records are already up, and
+            // an error line under them would say more than it's worth. Artists
+            // show as soon as they land; labels join them a paced beat later.
+            let mut hits = Vec::new();
+            for (thread, done) in [(BrowseThread::Artist, false), (BrowseThread::Label, true)] {
+                hits.extend(client.search_runs(thread, &query, RUN_PER_PAGE).unwrap_or_default());
+                let _ = tx.send(RecordFetched {
+                    generation,
+                    query: query.clone(),
+                    answer: FetchedAnswer::Runs { hits: hits.clone(), done },
+                });
+                ctx.request_repaint();
+            }
         });
     }
 
@@ -298,24 +309,26 @@ impl App {
                         CachedLookup {
                             hits: hits.clone(),
                             items,
-                            artists: None,
+                            runs: None,
                         },
                     );
                     self.record_search = RecordSearch::Done {
                         query: msg.query,
                         hits,
                         items,
-                        artists: ArtistLookup::Pending,
+                        runs: RunLookup::Pending,
                     };
                 }
                 FetchedAnswer::Records(Err(e)) => self.record_search = RecordSearch::Failed(e),
-                FetchedAnswer::Artists(list) => {
-                    if let Some(cached) = self.record_cache.get_mut(&msg.query) {
-                        cached.artists = Some(list.clone());
+                FetchedAnswer::Runs { hits, done } => {
+                    if done {
+                        if let Some(cached) = self.record_cache.get_mut(&msg.query) {
+                            cached.runs = Some(hits.clone());
+                        }
                     }
-                    if let RecordSearch::Done { query, artists, .. } = &mut self.record_search {
+                    if let RecordSearch::Done { query, runs, .. } = &mut self.record_search {
                         if *query == msg.query {
-                            *artists = ArtistLookup::Ready(list);
+                            *runs = RunLookup::Ready(hits);
                         }
                     }
                 }
@@ -367,16 +380,10 @@ impl App {
                 None
             }
             RecordSearch::Done {
-                hits,
-                items,
-                artists,
-                ..
+                hits, items, runs, ..
             } => {
-                let artists: Vec<ArtistHit> = match artists {
-                    ArtistLookup::Ready(a) => a.into_iter().take(ARTIST_HITS_SHOWN).collect(),
-                    ArtistLookup::Pending => Vec::new(),
-                };
-                if hits.is_empty() && artists.is_empty() {
+                let runs = shown_runs(&runs);
+                if hits.is_empty() && runs.is_empty() {
                     note(ui, "No records on Discogs match that");
                     return None;
                 }
@@ -429,11 +436,18 @@ impl App {
                 if hits.is_empty() {
                     note(ui, "No records on Discogs match that");
                 }
-                // The artists those words name, as a strip of chips under the
-                // records. The chips continue the cursor's index space, so the
-                // keyboard walks records then artists.
-                if !artists.is_empty() {
-                    let portraits: Vec<Option<Tex>> = artists
+                // The artists, then the labels, those words name, each as a
+                // strip of chips under the records. The chips continue the
+                // cursor's index space, so the keyboard walks records, then
+                // artists, then labels.
+                let mut start = shown;
+                for thread in [BrowseThread::Artist, BrowseThread::Label] {
+                    let band: Vec<RunHit> =
+                        runs.iter().filter(|r| r.thread == thread).cloned().collect();
+                    if band.is_empty() {
+                        continue;
+                    }
+                    let portraits: Vec<Option<Tex>> = band
                         .iter()
                         .map(|a| match self.dig_covers.get(&a.thumb_url) {
                             Some(ThumbState::Ready(t)) => t.clone(),
@@ -446,10 +460,11 @@ impl App {
                             }
                         })
                         .collect();
-                    let selected = cursor.and_then(|c| c.checked_sub(shown));
-                    if let Some(i) = artist_band(ui, &artists, &portraits, selected) {
-                        chosen = Some(Pick::Artist(artists[i].clone()));
+                    let selected = cursor.and_then(|c| c.checked_sub(start));
+                    if let Some(i) = run_band(ui, thread, &band, &portraits, selected) {
+                        chosen = Some(Pick::Run(band[i].clone()));
                     }
+                    start += band.len();
                 }
                 // Account for everything the rows didn't show, so the list
                 // never implies it's the whole answer.
@@ -523,9 +538,8 @@ impl App {
     /// versions", marketplace price, and links to any copies already in the
     /// catalog.
     ///
-    /// An artist opens their whole discography as a page (the same list the
-    /// label page shows for an imprint), because "show me what they made" is
-    /// what typing an artist's name into a record search asks for.
+    /// An artist or label opens its whole run as a page, because "show me
+    /// what they made" is what typing such a name into a search asks for.
     pub(crate) fn open_pick(&mut self, pick: Pick, ctx: &egui::Context) {
         self.search_popup_open = false;
         self.search_cursor = None;
@@ -545,9 +559,7 @@ impl App {
                     ctx,
                 );
             }
-            Pick::Artist(artist) => {
-                self.open_artist_page(artist.artist_id, artist.name);
-            }
+            Pick::Run(run) => self.open_run_page(run.thread, run.id, run.name),
         }
     }
 
@@ -555,56 +567,59 @@ impl App {
     ///
     /// Counts what's *drawn*, not what was fetched: arrowing past the last
     /// visible row would otherwise highlight nothing and Enter would open a
-    /// record the user can't see. Artist chips count after the record rows.
+    /// record the user can't see. Artist, then label, chips count after the
+    /// record rows.
     pub(crate) fn pick_count(&self) -> usize {
         match &self.record_search {
-            RecordSearch::Done { hits, artists, .. } => {
-                hits.len().min(RECORD_HITS_SHOWN) + shown_artists(artists)
+            RecordSearch::Done { hits, runs, .. } => {
+                hits.len().min(RECORD_HITS_SHOWN) + shown_runs(runs).len()
             }
             _ => 0,
         }
     }
 
-    /// The record or artist at `i` in the current results, if any.
+    /// The record, artist or label at `i` in the current results, if any.
     pub(crate) fn pick_at(&self, i: usize) -> Option<Pick> {
         match &self.record_search {
-            RecordSearch::Done { hits, artists, .. } => {
+            RecordSearch::Done { hits, runs, .. } => {
                 let shown = hits.len().min(RECORD_HITS_SHOWN);
                 if i < shown {
                     return hits.get(i).cloned().map(Pick::Record);
                 }
-                match artists {
-                    ArtistLookup::Ready(a) if i - shown < shown_artists(artists) => {
-                        a.get(i - shown).cloned().map(Pick::Artist)
-                    }
-                    _ => None,
-                }
+                shown_runs(runs).into_iter().nth(i - shown).map(Pick::Run)
             }
             _ => None,
         }
     }
 }
 
-/// How many artist chips the band draws for this lookup.
-fn shown_artists(artists: &ArtistLookup) -> usize {
-    match artists {
-        ArtistLookup::Ready(a) => a.len().min(ARTIST_HITS_SHOWN),
-        ArtistLookup::Pending => 0,
-    }
+/// The chips the bands draw for this lookup, in cursor order: up to
+/// [`RUN_HITS_SHOWN`] artists, then as many labels.
+fn shown_runs(runs: &RunLookup) -> Vec<RunHit> {
+    let RunLookup::Ready(all) = runs else {
+        return Vec::new();
+    };
+    [BrowseThread::Artist, BrowseThread::Label]
+        .into_iter()
+        .flat_map(|t| all.iter().filter(move |r| r.thread == t).take(RUN_HITS_SHOWN))
+        .cloned()
+        .collect()
 }
 
-/// The strip of artist chips under the record rows. Returns the chip clicked.
+/// A strip of artist or label chips under the record rows. Returns the chip
+/// clicked.
 ///
-/// A chip, not a row: an artist has no format, year or label to stack, only a
-/// name and a face, and four names side by side read as "the artists called
+/// A chip, not a row: an artist or label has no format or year to stack, only
+/// a name and a face, and four names side by side read as "the artists called
 /// this" where four tall rows would look like four more records. Chips that
 /// don't fit the width are simply not drawn — the strip is a quick offer, not
 /// a list to scroll.
 ///
 /// `selected` is the keyboard cursor within the band, if it's here.
-fn artist_band(
+fn run_band(
     ui: &mut egui::Ui,
-    artists: &[ArtistHit],
+    thread: BrowseThread,
+    runs: &[RunHit],
     portraits: &[Option<Tex>],
     selected: Option<usize>,
 ) -> Option<usize> {
@@ -621,14 +636,23 @@ fn artist_band(
     let label = ui.painter().text(
         egui::pos2(band.left() + space::S3, band.center().y),
         egui::Align2::LEFT_CENTER,
-        "Artists",
+        match thread {
+            BrowseThread::Artist => "Artists",
+            BrowseThread::Label => "Labels",
+        },
         small.clone(),
         color::LABEL_3,
     );
-    let mut x = label.right() + space::S3;
+    // Both captions take the wider one's column, so the artist and label
+    // chips start on one line.
+    let caption_w = ["Artists", "Labels"]
+        .map(|t| ui.fonts(|f| f.layout_no_wrap(t.into(), small.clone(), color::LABEL_3).size().x))
+        .into_iter()
+        .fold(0.0, f32::max);
+    let mut x = label.left() + caption_w + space::S3;
     let right = band.right() - space::S3;
     let mut clicked = None;
-    for (i, a) in artists.iter().enumerate() {
+    for (i, a) in runs.iter().enumerate() {
         let name = crate::dig::strip_disambiguator(&a.name).to_string();
         let chip = crate::ui::chip::measure(ui, &name, CHIP_NAME_MAX_W);
         if x + chip.width > right {
@@ -638,12 +662,17 @@ fn artist_band(
             ui,
             &chip,
             egui::pos2(x, band.center().y - crate::ui::chip::H / 2.0),
-            ui.id().with(("artist-chip", a.artist_id)),
+            ui.id().with(("run-chip", a.thread == BrowseThread::Label, a.id)),
             portraits.get(i).and_then(|p| p.as_ref()),
+            crate::browse_page::thread_icon(thread),
             selected == Some(i),
         );
+        let note = match thread {
+            BrowseThread::Artist => format!("Every release by {}", a.name),
+            BrowseThread::Label => format!("Every release on {}", a.name),
+        };
         if resp
-            .on_hover_note(format!("Every release by {}", a.name))
+            .on_hover_note(note)
             .clicked()
         {
             clicked = Some(i);

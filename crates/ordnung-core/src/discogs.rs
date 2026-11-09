@@ -212,16 +212,17 @@ pub struct RecordHit {
     pub cover_image_url: String,
 }
 
-/// One artist returned by a free-text artist lookup ([`Client::search_artists`]).
+/// One artist or label returned by a free-text name lookup ([`Client::search_runs`]).
 ///
 /// The search box's Discogs lane answers "what exists?" with records; this is
-/// the other thing a typed name can mean. An artist hit is a door rather than a
-/// destination — it opens the artist's whole discography (browsed by id, see
-/// [`Client::browse_by_id`]) instead of one record — so it carries only what a
-/// row needs to be recognised: the name and a portrait.
+/// the other thing a typed name can mean. A run hit is a door rather than a
+/// destination — it opens the whole run of an artist or label (browsed by id,
+/// see [`Client::browse_by_id`]) instead of one record — so it carries only
+/// what a chip needs to be recognised: the name and a portrait or logo.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ArtistHit {
-    pub artist_id: u64,
+pub struct RunHit {
+    pub thread: BrowseThread,
+    pub id: u64,
     /// The name as Discogs lists it, disambiguator and all (`Lawrence (2)`).
     /// Kept verbatim because the number is what tells two artists apart; strip
     /// it for display only.
@@ -1656,30 +1657,35 @@ impl Client {
         })
     }
 
-    /// Free-text lookup of **artists** by name, for the search box's Discogs
-    /// mode: the rows that let a typed name open a discography rather than
-    /// one record.
+    /// Free-text lookup of **artists** or **labels** by name, for the search
+    /// box's Discogs lane: the chips that let a typed name open a whole run
+    /// rather than one record.
     ///
-    /// Same endpoint as [`Client::search_records`] with `type=artist`, so it
+    /// Same endpoint as [`Client::search_records`] with `type=artist` or
+    /// `type=label`, so it
     /// matches as loosely — `Lawrence` returns every Lawrence Discogs knows,
     /// each with its own id, and the caller shows them side by side for the
     /// user to tell apart. Rows without a name are dropped. One API request
     /// per call, paced by the shared throttle; an empty query returns an empty
     /// list without touching the network.
-    pub fn search_artists(&self, query: &str, per_page: u32) -> Result<Vec<ArtistHit>> {
+    pub fn search_runs(&self, thread: BrowseThread, query: &str, per_page: u32) -> Result<Vec<RunHit>> {
         let query = query.trim();
         if query.is_empty() {
             return Ok(Vec::new());
         }
         let per_page = per_page.clamp(1, 100).to_string();
-        let body: SearchResponse = self.get_json("artist search", || {
+        let kind = match thread {
+            BrowseThread::Artist => "artist",
+            BrowseThread::Label => "label",
+        };
+        let body: SearchResponse = self.get_json("name search", || {
             self.authed(self.agent.get(SEARCH_URL))
                 .query("q", query)
-                .query("type", "artist")
+                .query("type", kind)
                 .query("per_page", &per_page)
                 .query("page", "1")
         })?;
-        Ok(artist_hits(body.results))
+        Ok(run_hits(thread, body.results))
     }
 
     /// Every candidate release (up to ~10) for one track, with metadata and
@@ -2660,16 +2666,17 @@ fn candidate_from_hit(h: SearchHit) -> ReleaseCandidate {
     }
 }
 
-/// Shape artist-search rows into [`ArtistHit`]s. An artist row reuses the
+/// Shape artist- or label-search rows into [`RunHit`]s. Such a row reuses the
 /// release row's fields — `title` is the name, `thumb` the portrait — and a
 /// row Discogs returns with no name or no id is unusable, so it's dropped
 /// rather than shown as a blank chip.
-fn artist_hits(results: Vec<SearchHit>) -> Vec<ArtistHit> {
+fn run_hits(thread: BrowseThread, results: Vec<SearchHit>) -> Vec<RunHit> {
     results
         .into_iter()
         .filter(|h| h.id > 0 && !h.title.trim().is_empty())
-        .map(|h| ArtistHit {
-            artist_id: h.id,
+        .map(|h| RunHit {
+            thread,
+            id: h.id,
             name: h.title.trim().to_string(),
             thumb_url: h.thumb,
         })
@@ -4583,7 +4590,7 @@ mod tests {
     }
 
     #[test]
-    fn artist_hits_keep_named_rows_and_drop_blank_ones() {
+    fn run_hits_keep_named_rows_and_drop_blank_ones() {
         let body: SearchResponse = serde_json::from_str(
             r#"{"pagination":{"pages":1,"items":3},"results":[
                 {"id":6644,"type":"artist","title":"Lawrence","thumb":"https://i/l.jpg","cover_image":"https://i/L.jpg"},
@@ -4593,17 +4600,19 @@ mod tests {
             ]}"#,
         )
         .unwrap();
-        let hits = artist_hits(body.results);
+        let hits = run_hits(BrowseThread::Artist, body.results);
         assert_eq!(
             hits,
             vec![
-                ArtistHit {
-                    artist_id: 6644,
+                RunHit {
+                    thread: BrowseThread::Artist,
+                    id: 6644,
                     name: "Lawrence".into(),
                     thumb_url: "https://i/l.jpg".into(),
                 },
-                ArtistHit {
-                    artist_id: 12,
+                RunHit {
+                    thread: BrowseThread::Artist,
+                    id: 12,
                     name: "Lawrence (2)".into(),
                     thumb_url: String::new(),
                 },

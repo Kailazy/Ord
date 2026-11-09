@@ -44,7 +44,7 @@ pub fn measure(ui: &egui::Ui, name: &str, max_name_w: f32) -> Chip {
 }
 
 /// Paint the chip with its top-left corner at `min`. `face` is the portrait,
-/// or a placeholder note when there is none; `selected` lights it as the
+/// or the `mark` icon glyph when there is none; `selected` lights it as the
 /// hover does (a keyboard cursor).
 pub fn show(
     ui: &mut egui::Ui,
@@ -52,6 +52,7 @@ pub fn show(
     min: egui::Pos2,
     id: egui::Id,
     face: Option<&Tex>,
+    mark: &str,
     selected: bool,
 ) -> egui::Response {
     let rect = egui::Rect::from_min_size(min, egui::vec2(chip.width, H));
@@ -82,8 +83,8 @@ pub fn show(
             ui.painter().text(
                 face_rect.center(),
                 egui::Align2::CENTER_CENTER,
-                "♪",
-                font::footnote(),
+                mark,
+                font::icon(font::footnote().size),
                 color::LABEL_3,
             );
         }

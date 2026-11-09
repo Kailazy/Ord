@@ -420,16 +420,16 @@ impl App {
         });
     }
 
-    /// Open the browse page on an artist's discography. The id is known up
-    /// front (it comes from a Discogs artist search hit), so this spends its
-    /// one paced call straight on the first page of the run.
-    pub(crate) fn open_artist_page(&mut self, artist_id: u64, name: String) {
-        if self.browse_restore(BrowseThread::Artist, artist_id, &name) {
+    /// Open the browse page on an artist's or label's run. The id is known up
+    /// front (it comes from a credit or a Discogs name search hit), so this
+    /// spends its one paced call straight on the first page of the run.
+    pub(crate) fn open_run_page(&mut self, thread: BrowseThread, id: u64, name: String) {
+        if self.browse_restore(thread, id, &name) {
             return;
         }
         self.browse_panel = Some(BrowsePanel {
-            thread: BrowseThread::Artist,
-            id: artist_id,
+            thread,
+            id,
             name,
             page: 1,
             pages: 1,

@@ -2566,7 +2566,7 @@ impl App {
                     .as_ref()
                     .is_some_and(|p| p.thread == discogs::BrowseThread::Artist && p.id == id);
                 if !same {
-                    self.open_artist_page(id, name);
+                    self.open_run_page(discogs::BrowseThread::Artist, id, name);
                 }
                 self.set_sheet_pane(SheetPane::Run);
             }
