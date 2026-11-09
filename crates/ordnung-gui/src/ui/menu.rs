@@ -41,6 +41,9 @@ const GAP: f32 = 4.0;
 const ROW_ANIM: f32 = 0.16;
 /// Delay between successive rows' entrances — the cascade.
 const ROW_STAGGER: f32 = 0.02;
+/// Rows past this one enter together with it, so a long list (the Market
+/// seller picker) lands in one beat instead of unrolling for most of a second.
+const STAGGER_ROWS: usize = 6;
 /// Hover highlight ease, matched to the app's row highlights.
 const HOVER_ANIM: f32 = 0.11;
 /// Height of one menu row.
@@ -164,7 +167,7 @@ impl Panel {
     /// cascade outlives it slightly, so frames must keep coming until the
     /// last row has fully entered.
     fn rows_entering(&self) -> bool {
-        self.since_open < ROW_ANIM + ROW_STAGGER * self.rows as f32
+        self.since_open < ROW_ANIM + ROW_STAGGER * self.rows.min(STAGGER_ROWS) as f32
     }
 }
 
@@ -680,9 +683,9 @@ impl MenuUi<'_> {
     ) -> egui::Response {
         let i = self.row;
         self.row += 1;
-        // This row's entrance, 0 → 1: rows trail each other by `ROW_STAGGER`
-        // so the list unrolls top-down instead of appearing at once.
-        let t = ((self.since_open - ROW_STAGGER * i as f32) / ROW_ANIM).clamp(0.0, 1.0);
+        // This row's entrance, 0 → 1: the first `STAGGER_ROWS` rows trail each
+        // other by `ROW_STAGGER`, the rest arrive with the last of them.
+        let t = ((self.since_open - ROW_STAGGER * i.min(STAGGER_ROWS) as f32) / ROW_ANIM).clamp(0.0, 1.0);
         let enter = egui::emath::easing::cubic_out(t);
 
         let (rect, resp) = match self.grid {
