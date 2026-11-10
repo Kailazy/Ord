@@ -2350,12 +2350,19 @@ impl App {
                     crate::App::browse_rows_ui(ui, snap, &mut run_out, true);
                 } else {
                     if loading {
-                        ui.add_space(10.0);
-                        ui.horizontal(|ui| {
-                            ui.spinner();
-                            ui.label(egui::RichText::new("Loading tracklist…").weak());
-                        });
-                        ui.add_space(10.0);
+                        // In the middle of the body the rows will fill, not
+                        // its top-left corner.
+                        let body = ui.available_rect_before_wrap();
+                        ui.allocate_rect(body, egui::Sense::hover());
+                        let c = body.center();
+                        ui.put(
+                            egui::Rect::from_center_size(c - egui::vec2(0.0, 12.0), egui::vec2(20.0, 20.0)),
+                            egui::Spinner::new(),
+                        );
+                        ui.put(
+                            egui::Rect::from_center_size(c + egui::vec2(0.0, 14.0), egui::vec2(body.width(), 18.0)),
+                            egui::Label::new(egui::RichText::new("Loading tracklist…").weak()),
+                        );
                         return;
                     }
                     if let Some(e) = &error {
@@ -3201,9 +3208,11 @@ fn video_transport_ui(
                 // Scrubber: the width left over once the controls that follow
                 // it have been accounted for. Only the trailing ones need
                 // subtracting — `available_width` has already shed the play
-                // button and elapsed clock behind it.
-                const TRAILING: f32 = space::S4 + CLOCK_W; // gap, total clock
-                let track_w = (ui.available_width() - TRAILING).max(60.0);
+                // button and elapsed clock behind it. The item spacing egui
+                // puts after the scrubber counts too: without it the row ran
+                // 8 pt past the sheet and widened it as the bar appeared.
+                let trailing = ui.spacing().item_spacing.x + space::S4 + CLOCK_W;
+                let track_w = (ui.available_width() - trailing).max(60.0);
                 let (rect, resp) = ui
                     .allocate_exact_size(egui::vec2(track_w, 26.0), egui::Sense::click_and_drag());
                 let y = rect.center().y;
