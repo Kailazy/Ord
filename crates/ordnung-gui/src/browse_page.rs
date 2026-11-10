@@ -85,6 +85,8 @@ pub(crate) struct BrowsePanel {
     /// from the first run's kin and carried along as the bar switches runs,
     /// so it holds still under the cursor. Empty until the kin lands.
     pub family: Vec<(discogs::NamedRef, bool)>,
+    /// A label's profile, parent and sublabels, once read. An artist has none.
+    pub about: Option<discogs::LabelDetail>,
 }
 
 impl BrowsePanel {
@@ -128,6 +130,8 @@ pub(crate) struct BrowseFetched {
     pub prefetch: bool,
     /// An artist run's kin, when this reply carries it instead of a page.
     pub kin: Option<discogs::ArtistDetail>,
+    /// A label's detail, when this reply carries it instead of a page.
+    pub about: Option<discogs::LabelDetail>,
 }
 
 /// What a row asked for, applied after the window releases its borrows.
@@ -150,6 +154,7 @@ pub(crate) struct BrowseSnap {
     /// The alias bar's names (group or not), and which one is open.
     family: Vec<(String, bool)>,
     at: Option<usize>,
+    about: Option<discogs::LabelDetail>,
 }
 
 /// What one pass of the rows asked for (see [`App::browse_apply`]).
@@ -196,6 +201,8 @@ enum Act {
     Sort(bool),
     /// Open the run of the alias bar's name at this index.
     Name(usize),
+    /// Open another label's run: the parent or a sublabel.
+    Label(discogs::NamedRef),
 }
 
 /// Keep the rows a record digger wants: pressings (or format-unknown master
@@ -323,6 +330,75 @@ pub(crate) fn thread_icon(thread: BrowseThread) -> &'static str {
     }
 }
 
+/// Read a label's detail, background-paced so a click goes first, and hand
+/// it to the open run.
+fn send_label_about(
+    client: &discogs::Client,
+    id: u64,
+    tx: &std::sync::mpsc::Sender<BrowseFetched>,
+    ctx: &egui::Context,
+) {
+    let Ok(about) = client.clone().background().fetch_label(id) else {
+        return;
+    };
+    let _ = tx.send(BrowseFetched {
+        thread: BrowseThread::Label,
+        id,
+        name: None,
+        page: 0,
+        result: Ok(BrowsePage::default()),
+        prefetch: true,
+        kin: None,
+        about: Some(about),
+    });
+    ctx.request_repaint();
+}
+
+/// What the label page says about the label, over its run: the profile
+/// (a few lines, scrolling when long), the parent, the sublabels. Each
+/// named label opens its own run.
+fn label_about_ui(ui: &mut egui::Ui, about: &discogs::LabelDetail, out: &mut BrowseOut) {
+    if about.profile.is_empty() && about.parent.is_none() && about.sublabels.is_empty() {
+        return;
+    }
+    ui.add_space(crate::ui::tokens::space::S2);
+    egui::Grid::new(("label-about", about.id))
+        .num_columns(2)
+        .spacing([crate::ui::tokens::space::S3, crate::ui::tokens::space::S1])
+        .show(ui, |ui| {
+            let links = |ui: &mut egui::Ui, refs: &[discogs::NamedRef], out: &mut BrowseOut| {
+                ui.horizontal_wrapped(|ui| {
+                    for r in refs {
+                        if ui.link(crate::dig::strip_disambiguator(&r.name)).clicked() {
+                            out.act = Some(Act::Label(r.clone()));
+                        }
+                    }
+                });
+            };
+            if !about.profile.is_empty() {
+                ui.label(egui::RichText::new("Profile").weak());
+                egui::ScrollArea::vertical()
+                    .id_salt(("label-profile", about.id))
+                    .max_height(60.0)
+                    .min_scrolled_height(0.0)
+                    .show(ui, |ui| ui.add(egui::Label::new(&about.profile).wrap()));
+                ui.end_row();
+            }
+            if let Some(p) = &about.parent {
+                ui.label(egui::RichText::new("Parent label").weak());
+                links(ui, std::slice::from_ref(p), out);
+                ui.end_row();
+            }
+            if !about.sublabels.is_empty() {
+                ui.label(egui::RichText::new("Sublabels").weak());
+                links(ui, &about.sublabels, out);
+                ui.end_row();
+            }
+        });
+    ui.add_space(crate::ui::tokens::space::S2);
+    ui.separator();
+}
+
 impl App {
     /// Swap in the run asked for when it was open earlier this session: a
     /// run another one replaces is parked, not dropped, so artist → label
@@ -383,6 +459,7 @@ impl App {
             kin: None,
             run_pages: 0,
             family: Vec::new(),
+            about: None,
         });
         let token = self.discogs_token();
         let db = self.db_path.clone();
@@ -411,6 +488,7 @@ impl App {
                     result: Err("Discogs lists no label for this record.".to_string()),
                     prefetch: false,
                     kin: None,
+                    about: None,
                 });
                 ctx.request_repaint();
                 return;
@@ -426,8 +504,10 @@ impl App {
                 result,
                 prefetch: false,
                 kin: None,
+                about: None,
             });
             ctx.request_repaint();
+            send_label_about(&client, label_id, &tx, &ctx);
         });
     }
 
@@ -453,6 +533,7 @@ impl App {
             kin: None,
             run_pages: 0,
             family: Vec::new(),
+            about: None,
         });
         self.fetch_browse_page(1);
     }
@@ -542,8 +623,12 @@ impl App {
                 result,
                 prefetch,
                 kin: None,
+                about: None,
             });
             ctx.request_repaint();
+            if thread == BrowseThread::Label && page == 1 && !prefetch {
+                send_label_about(&client, id, &tx, &ctx);
+            }
         });
     }
 
@@ -567,6 +652,7 @@ impl App {
                     result,
                     prefetch: page != 1,
                     kin,
+                    about: None,
                 });
                 ctx.request_repaint();
             };
@@ -698,6 +784,10 @@ impl App {
             }
             if panel.thread == BrowseThread::Artist {
                 self.adopt_artist_reply(msg);
+                continue;
+            }
+            if msg.about.is_some() {
+                panel.about = msg.about;
                 continue;
             }
             if msg.prefetch && panel.ahead == Some(msg.page) {
@@ -893,6 +983,7 @@ impl App {
                 .map(|(r, g)| (crate::dig::strip_disambiguator(&r.name).to_string(), *g))
                 .collect(),
             at: panel.family.iter().position(|(r, _)| r.id == panel.id),
+            about: panel.about.clone(),
         })
     }
 
@@ -1167,6 +1258,9 @@ impl App {
                 ui.separator();
             }
         };
+        if let Some(about) = &snap.about {
+            label_about_ui(ui, about, out);
+        }
         if fill {
             ui.with_layout(egui::Layout::bottom_up(egui::Align::Min), |ui| {
                 pager(ui, out);
@@ -1245,6 +1339,7 @@ impl App {
                     }
                 }
             }
+            Some(Act::Label(r)) => self.open_run_page(BrowseThread::Label, r.id, r.name),
             Some(Act::Sort(by_alias)) => {
                 self.config.artist_run_by_alias = by_alias;
                 self.save_config();

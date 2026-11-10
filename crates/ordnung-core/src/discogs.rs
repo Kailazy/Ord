@@ -541,6 +541,10 @@ pub struct LabelDetail {
     pub name: String,
     pub parent: Option<NamedRef>,
     pub sublabels: Vec<NamedRef>,
+    /// What the label page says about it, Discogs markup read to plain text
+    /// (see [`plain_profile`]).
+    #[serde(default)]
+    pub profile: String,
     /// The label's own links, like [`ArtistDetail::urls`].
     #[serde(default)]
     pub urls: Vec<String>,
@@ -2448,6 +2452,7 @@ impl Client {
                 .into_iter()
                 .filter_map(RefEntry::into_ref)
                 .collect(),
+            profile: plain_profile(&body.profile),
             urls: body.urls,
         })
     }
@@ -3924,7 +3929,39 @@ struct LabelResponse {
     #[serde(default, deserialize_with = "null_as_default")]
     sublabels: Vec<RefEntry>,
     #[serde(default, deserialize_with = "null_as_default")]
+    profile: String,
+    #[serde(default, deserialize_with = "null_as_default")]
     urls: Vec<String>,
+}
+
+/// A Discogs profile as plain text: `[a=Name]` and `[l=Name]` read as the
+/// name, `[url=…]text[/url]` as the text, style tags (`[b]`, `[i]`, `[u]`)
+/// and bare id links (`[a123]`, `[r456]`) dropped. Any other bracket is the
+/// writer's own and stays.
+pub fn plain_profile(s: &str) -> String {
+    let mut out = String::new();
+    let mut rest = s.trim();
+    while let Some(open) = rest.find('[') {
+        out.push_str(&rest[..open]);
+        let Some(close) = rest[open..].find(']').map(|c| open + c) else {
+            break;
+        };
+        let tag = &rest[open + 1..close];
+        let id_link = tag.len() > 1
+            && tag.starts_with(['a', 'l', 'r', 'm'])
+            && tag[1..].bytes().all(|b| b.is_ascii_digit());
+        if let Some(name) = tag.strip_prefix("a=").or_else(|| tag.strip_prefix("l=")) {
+            out.push_str(name);
+        } else if !(id_link
+            || tag.starts_with("url=")
+            || matches!(tag, "b" | "/b" | "i" | "/i" | "u" | "/u" | "url" | "/url"))
+        {
+            out.push_str(&rest[open..=close]);
+        }
+        rest = &rest[close + 1..];
+    }
+    out.push_str(rest);
+    out.replace("\r\n", "\n").trim().to_string()
 }
 
 /// An `{id, name}` reference as artist and label pages list their kin.
@@ -5192,6 +5229,14 @@ mod tests {
                 id: 501,
                 name: "Chain Reaction".to_string()
             }]
+        );
+    }
+
+    #[test]
+    fn label_profiles_read_as_plain_text() {
+        assert_eq!(
+            plain_profile("[b]Label[/b] run by [a=Peter Croce] and [a123].\r\nSee [url=http://x.y]the site[/url], [l=False Aralia] [sic]."),
+            "Label run by Peter Croce and .\nSee the site, False Aralia [sic]."
         );
     }
 
