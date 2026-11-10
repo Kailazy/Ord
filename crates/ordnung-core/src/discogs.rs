@@ -35,8 +35,12 @@ const RELEASE_URL: &str = "https://api.discogs.com/releases";
 /// endpoints (which are keyed by username) can be addressed without asking the
 /// user to type their handle.
 const IDENTITY_URL: &str = "https://api.discogs.com/oauth/identity";
-/// Discogs returns at most 100 collection items per page; we walk every page.
-const COLLECTION_PER_PAGE: u32 = 100;
+/// Rows per page of the collection walk. Discogs's docs say 100; the
+/// collection endpoint answers 500.
+const COLLECTION_PER_PAGE: u32 = 500;
+/// Rows per page of the wantlist walk: it serves 250, and asked for more it
+/// answers 250 rows while saying that was the only page.
+const WANTLIST_PER_PAGE: u32 = 250;
 /// Discogs's built-in "Uncategorized" collection folder. Folder `0` ("All") is a
 /// read-only view — adds must name a real folder — so a record added by Ordnung
 /// lands here, exactly where the discogs.com "Add to collection" button puts it.
@@ -262,7 +266,7 @@ pub struct MasterVersion {
 }
 
 /// Which association a browse follows — the two threads a crate dig can pull.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum BrowseThread {
     Artist,
     Label,
@@ -1369,11 +1373,12 @@ impl PaceState {
 /// and remember it. For artist and label pages: they change on the scale of
 /// months, and a dig walking one label thread lands on the same label (and its
 /// parent) every step, each a paced request. Failures aren't remembered.
-// ponytail: session-only and uncapped; the ids one session reaches number in
-// the hundreds. A catalog table if they should survive restarts.
-fn session_memo<T: Clone>(
-    seen: &OnceLock<Mutex<HashMap<u64, T>>>,
-    id: u64,
+// ponytail: session-only, and a map past 256 entries is cleared whole; the
+// ids one session reaches number in the hundreds. An LRU if a long dig
+// re-fetches after the clear, a catalog table to survive restarts.
+fn session_memo<K: std::hash::Hash + Eq, T: Clone>(
+    seen: &OnceLock<Mutex<HashMap<K, T>>>,
+    id: K,
     fetch: impl FnOnce() -> Result<T>,
 ) -> Result<T> {
     let seen = seen.get_or_init(Default::default);
@@ -1382,6 +1387,9 @@ fn session_memo<T: Clone>(
     }
     let fresh = fetch()?;
     if let Ok(mut m) = seen.lock() {
+        if m.len() >= 256 {
+            m.clear();
+        }
         m.insert(id, fresh.clone());
     }
     Ok(fresh)
@@ -1876,9 +1884,10 @@ impl Client {
     pub fn fetch_collection_for(&self, username: &str) -> Result<Vec<VinylRecord>> {
         let base =
             format!("https://api.discogs.com/users/{username}/collection/folders/0/releases");
-        self.fetch_vinyl_pages(&base, "collection", |body: CollectionResponse| {
+        self.fetch_vinyl_pages(&base, "collection", COLLECTION_PER_PAGE, |body: CollectionResponse| {
+            let rows = body.releases.len();
             let recs = body.releases.into_iter().filter_map(|i| i.into_record()).collect();
-            (recs, body.pagination.pages)
+            (recs, rows, body.pagination)
         })
     }
 
@@ -1889,23 +1898,29 @@ impl Client {
     /// pacing match [`Client::fetch_collection_for`].
     pub fn fetch_wantlist_for(&self, username: &str) -> Result<Vec<VinylRecord>> {
         let base = format!("https://api.discogs.com/users/{username}/wants");
-        self.fetch_vinyl_pages(&base, "wantlist", |body: WantlistResponse| {
+        self.fetch_vinyl_pages(&base, "wantlist", WANTLIST_PER_PAGE, |body: WantlistResponse| {
+            let rows = body.wants.len();
             let recs = body.wants.into_iter().filter_map(|i| i.into_record()).collect();
-            (recs, body.pagination.pages)
+            (recs, rows, body.pagination)
         })
     }
 
     /// Walk every page of a user list (collection or wantlist), newest added
-    /// first; `split` turns one decoded page into its vinyl records and the
-    /// page count.
+    /// first; `split` turns one decoded page into its vinyl records, its row
+    /// count before the vinyl filter, and the pagination.
+    ///
+    /// A short walk is an Err: the caller mirrors it and would prune the rest.
     fn fetch_vinyl_pages<T: serde::de::DeserializeOwned>(
         &self,
         base: &str,
         what: &str,
-        split: impl Fn(T) -> (Vec<VinylRecord>, u32),
+        per_page: u32,
+        split: impl Fn(T) -> (Vec<VinylRecord>, usize, CollectionPagination),
     ) -> Result<Vec<VinylRecord>> {
         let mut out = Vec::new();
-        let per_page = COLLECTION_PER_PAGE.to_string();
+        let mut rows = 0;
+        let mut items = 0;
+        let per_page = per_page.to_string();
         for page in 1u32.. {
             let page_str = page.to_string();
             let body: T = self.get_json(&format!("{what} response"), || {
@@ -1915,12 +1930,15 @@ impl Client {
                     .query("sort", "added")
                     .query("sort_order", "desc")
             })?;
-            let (recs, pages) = split(body);
+            let (recs, n, pagination) = split(body);
             out.extend(recs);
-            if page >= pages.max(1) {
+            rows += n;
+            items = pagination.items;
+            if page >= pagination.pages.max(1) {
                 break;
             }
         }
+        short_read(what, rows, items)?;
         Ok(out)
     }
 
@@ -2275,8 +2293,17 @@ impl Client {
         self.browse_pages(thread, id, page, 500)
     }
 
+    /// Memoised for the session, see [`session_memo`].
     fn browse_pages(&self, thread: BrowseThread, id: u64, page: u32, per_page: u32) -> Result<BrowsePage> {
+        static SEEN: OnceLock<Mutex<HashMap<(BrowseThread, u64, u32, u32), BrowsePage>>> =
+            OnceLock::new();
         let page = page.max(1);
+        session_memo(&SEEN, (thread, id, page, per_page), || {
+            self.browse_pages_uncached(thread, id, page, per_page)
+        })
+    }
+
+    fn browse_pages_uncached(&self, thread: BrowseThread, id: u64, page: u32, per_page: u32) -> Result<BrowsePage> {
         let url = match thread {
             BrowseThread::Artist => format!("{ARTISTS_URL}/{id}/releases"),
             BrowseThread::Label => format!("{LABELS_URL}/{id}/releases"),
@@ -2767,6 +2794,19 @@ struct CollectionResponse {
 struct CollectionPagination {
     #[serde(default, deserialize_with = "null_as_default")]
     pages: u32,
+    #[serde(default, deserialize_with = "null_as_default")]
+    items: usize,
+}
+
+/// `Err` when a list walk read fewer rows than the `items` Discogs reported
+/// (0 means it reported none).
+fn short_read(what: &str, rows: usize, items: usize) -> Result<()> {
+    if rows < items {
+        return Err(Error::Network(format!(
+            "Discogs listed {items} {what} items but served {rows}"
+        )));
+    }
+    Ok(())
 }
 
 /// `GET /marketplace/stats/{release_id}`. `lowest_price` is null when nothing is
@@ -4480,6 +4520,14 @@ mod tests {
         assert_eq!(get(1, true).unwrap(), "v1");
         assert_eq!(get(1, true).unwrap(), "v1");
         assert_eq!(calls, 2, "a failure is retried, a success is not refetched");
+    }
+
+    #[test]
+    fn a_list_walk_short_of_its_items_fails() {
+        use super::*;
+        assert!(short_read("wantlist", 250, 600).is_err());
+        assert!(short_read("wantlist", 600, 600).is_ok());
+        assert!(short_read("wantlist", 250, 0).is_ok(), "no count reported");
     }
 
     use super::*;

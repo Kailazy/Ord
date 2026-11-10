@@ -3156,19 +3156,22 @@ pub(crate) fn run_refresh_vinyl(
         let _ = tx.send(JobMsg::Status("Fetching Discogs wantlist…".into()));
         ctx.request_repaint();
     }
-    // The wantlist is a bonus section, not the point of the sync: if it fails
-    // (or the account has none), keep the collection we just fetched rather than
-    // failing the whole run.
-    let wants = client.fetch_wantlist_for(&username).unwrap_or_default();
+    // The wantlist is a bonus section, not the point of the sync: if it fails,
+    // keep the collection we just fetched and leave the cached wantlist as it
+    // was (mirroring nothing would prune it), and say so at the end.
+    let (wants, wants_failed) = match client.fetch_wantlist_for(&username) {
+        Ok(w) => (Some(w), None),
+        Err(e) => (None, Some(format!("Couldn't fetch your wantlist. {e}."))),
+    };
 
     // Upsert metadata and prune records dropped from each list, so the caches
     // mirror Discogs exactly — except where Discogs itself is behind an edit
     // it confirmed minutes ago (see [`Confirmed`]). Cover bytes survive the
     // metadata upsert.
     let records = reconcile_live(&ledger, VinylList::Collection, records);
-    let wants = reconcile_live(&ledger, VinylList::Wantlist, wants);
+    let wants = wants.map(|w| reconcile_live(&ledger, VinylList::Wantlist, w));
     let removed = mirror_vinyl_list(&catalog, VinylList::Collection, &records)
-        + mirror_vinyl_list(&catalog, VinylList::Wantlist, &wants);
+        + wants.as_ref().map_or(0, |w| mirror_vinyl_list(&catalog, VinylList::Wantlist, w));
 
     // Download covers we don't already have, reporting progress across both
     // lists as one run so the grid fills top to bottom.
@@ -3312,13 +3315,18 @@ pub(crate) fn run_refresh_vinyl(
         ""
     };
     let done = if quiet {
+        // The quiet sync reports on the tail, where `Failed` ends nothing.
+        if let Some(e) = wants_failed {
+            let _ = tx.send(JobMsg::Failed(e));
+        }
         String::new()
     } else {
         format!(
             "Vinyl synced: {} record(s), {} wantlisted{removed_note}, \
-             {fetched} new cover(s), {detailed} song list(s), {priced} price(s){stopped}.",
+             {fetched} new cover(s), {detailed} song list(s), {priced} price(s){stopped}.{}",
             records.len(),
-            wants.len()
+            wants.as_ref().map_or(0, Vec::len),
+            wants_failed.map(|e| format!(" {e}")).unwrap_or_default()
         )
     };
     let _ = tx.send(JobMsg::Done(done));
