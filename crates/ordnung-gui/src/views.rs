@@ -1562,28 +1562,63 @@ impl App {
         seller_tagged: usize,
         import_genredb: &mut bool,
     ) {
+        use crate::ui::tokens::{color, font, space};
         // Free-form facet rows (inputs, chips) indent to the menu's row text
-        // inset so they align with the animated rows around them.
-        let pad = crate::ui::tokens::space::S3;
+        // inset so they align with the animated rows around them, and every
+        // facet's label takes one column so the controls after it line up.
+        let pad = space::S3;
+        let label_w = 64.0;
+        let facet_label = |ui: &mut egui::Ui, text: &str| {
+            ui.add_space(pad);
+            let r = ui.label(egui::RichText::new(text).color(color::LABEL_3));
+            ui.add_space((label_w - r.rect.width()).max(0.0));
+        };
 
-        // Clear-all sits top right as a small button rather than a menu row:
-        // it's the popup's escape hatch, not one of the facets, and the
-        // corner placement keeps the facet list starting at the top. It
-        // keeps its row while greyed out, so the first filter picked doesn't
-        // push every facet down a row.
+        // The tag finder and Clear share the top row. The finder's text, like
+        // the shop picker's, lives in egui's memory under the menu and starts
+        // empty, focused, on every open: typing a style's name is how a digger
+        // reaches one in a list of a hundred. Clear keeps its slot while
+        // greyed, so the first filter picked moves nothing.
+        let fresh = m.just_opened();
+        let find_id = m.ui().id().with("tag_find");
+        let all_id = m.ui().id().with("tag_all");
+        let mut find: String = if fresh {
+            String::new()
+        } else {
+            m.ui().data(|d| d.get_temp(find_id)).unwrap_or_default()
+        };
+        // Whether each list shows whole: [genres, styles].
+        let mut show_all: [bool; 2] = if fresh {
+            [false; 2]
+        } else {
+            m.ui().data(|d| d.get_temp(all_id)).unwrap_or_default()
+        };
         let active = self.vinyl_flt.active(seller_mode) > 0;
-        m.ui().horizontal(|ui| {
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                let clear = ui
-                    .add_enabled_ui(active, |ui| crate::ui::button::compact(ui, "Clear", false))
-                    .inner
-                    .on_hover_note("Clear every filter")
-                    .clicked();
-                if clear {
-                    self.vinyl_flt.clear();
-                }
+        let mut enter = false;
+        crate::ui::control_row(m.ui(), |ui| {
+            ui.horizontal(|ui| {
+                ui.add_space(pad);
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    ui.add_space(pad);
+                    let clear = ui
+                        .add_enabled(active, egui::Button::new("Clear"))
+                        .on_hover_note("Clear every filter")
+                        .clicked();
+                    if clear {
+                        self.vinyl_flt.clear();
+                    }
+                    let field = crate::ui::field::Field::singleline(&mut find)
+                        .hint("Find a style or genre")
+                        .width(ui.available_width() - crate::ui::field::MARGIN.sum().x)
+                        .show(ui);
+                    enter = field.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+                    if fresh || enter {
+                        field.request_focus();
+                    }
+                });
             });
         });
+        let mut query = find.trim().to_lowercase();
 
         // Saved sets sit above the facets. The section is always drawn and
         // the action row keeps its slot whichever way it reads (Save greyed
@@ -1630,191 +1665,246 @@ impl App {
                 }
             }
         }
+        m.separator();
 
-        m.header("Year");
-        m.ui().horizontal(|ui| {
-            ui.add_space(pad);
-            ui.add(
-                crate::ui::field::Field::singleline(&mut self.vinyl_flt.year_from)
-                    .width(48.0)
-                    .hint("from"),
-            );
-            ui.label("–");
-            ui.add(
-                crate::ui::field::Field::singleline(&mut self.vinyl_flt.year_to)
-                    .width(48.0)
-                    .hint("to"),
-            );
+        crate::ui::control_row(m.ui(), |ui| {
+            ui.horizontal(|ui| {
+                facet_label(ui, "Year");
+                ui.add(
+                    crate::ui::field::Field::singleline(&mut self.vinyl_flt.year_from)
+                        .width(56.0)
+                        .hint("from"),
+                );
+                ui.label("–");
+                ui.add(
+                    crate::ui::field::Field::singleline(&mut self.vinyl_flt.year_to)
+                        .width(56.0)
+                        .hint("to"),
+                );
+            });
         });
-
-        m.header("Format");
-        m.ui().horizontal(|ui| {
-            ui.add_space(pad);
-            for fam in FORMAT_FAMILIES {
-                let on = self.vinyl_flt.formats.iter().any(|f| f == fam);
-                if ui.selectable_label(on, fam).clicked() {
-                    if on {
-                        self.vinyl_flt.formats.retain(|f| f != fam);
-                    } else {
-                        self.vinyl_flt.formats.push(fam.to_string());
+        crate::ui::control_row(m.ui(), |ui| {
+            ui.horizontal(|ui| {
+                facet_label(ui, "Format");
+                for fam in FORMAT_FAMILIES {
+                    let on = self.vinyl_flt.formats.iter().any(|f| f == fam);
+                    if ui.selectable_label(on, fam).clicked() {
+                        if on {
+                            self.vinyl_flt.formats.retain(|f| f != fam);
+                        } else {
+                            self.vinyl_flt.formats.push(fam.to_string());
+                        }
                     }
                 }
-            }
+            });
         });
 
         if seller_mode {
-            m.header("This copy");
-            m.ui().horizontal(|ui| {
-                ui.add_space(pad);
-                ui.label("Price up to");
-                ui.add(
-                    crate::ui::field::Field::singleline(&mut self.vinyl_flt.price_max)
-                        .width(56.0)
-                        .hint("any"),
-                )
-                .on_hover_note("Ceiling in the shop's own listing currency");
-            });
-            m.ui().horizontal(|ui| {
-                ui.add_space(pad);
-                ui.label("Condition");
-                let current = self.vinyl_flt.min_grade;
-                let label = current
-                    .and_then(|r| {
-                        crate::sellers::GRADE_FLOORS
-                            .iter()
-                            .find(|(_, g)| *g == r)
-                            .map(|(l, _)| *l)
-                    })
-                    .unwrap_or("Any");
-                egui::ComboBox::from_id_salt("vinyl-grade-floor")
-                    .selected_text(label)
-                    .show_ui(ui, |ui| {
-                        if ui.selectable_label(current.is_none(), "Any").clicked() {
-                            self.vinyl_flt.min_grade = None;
-                        }
-                        for (l, rank) in crate::sellers::GRADE_FLOORS {
-                            if ui.selectable_label(current == Some(rank), l).clicked() {
-                                self.vinyl_flt.min_grade = Some(rank);
+            crate::ui::control_row(m.ui(), |ui| {
+                ui.horizontal(|ui| {
+                    facet_label(ui, "Price");
+                    ui.add(
+                        crate::ui::field::Field::singleline(&mut self.vinyl_flt.price_max)
+                            .width(56.0)
+                            .hint("any"),
+                    )
+                    .on_hover_note("Ceiling in the shop's own listing currency");
+                    ui.add_space(space::S3);
+                    ui.label(egui::RichText::new("Condition").color(color::LABEL_3));
+                    let current = self.vinyl_flt.min_grade;
+                    let label = current
+                        .and_then(|r| {
+                            crate::sellers::GRADE_FLOORS
+                                .iter()
+                                .find(|(_, g)| *g == r)
+                                .map(|(l, _)| *l)
+                        })
+                        .unwrap_or("Any");
+                    egui::ComboBox::from_id_salt("vinyl-grade-floor")
+                        .selected_text(label)
+                        .show_ui(ui, |ui| {
+                            if ui.selectable_label(current.is_none(), "Any").clicked() {
+                                self.vinyl_flt.min_grade = None;
                             }
-                        }
-                    });
+                            for (l, rank) in crate::sellers::GRADE_FLOORS {
+                                if ui.selectable_label(current == Some(rank), l).clicked() {
+                                    self.vinyl_flt.min_grade = Some(rank);
+                                }
+                            }
+                        });
+                });
             });
-            if m.selectable(self.vinyl_flt.hide_owned, "Hide records I own") {
-                self.vinyl_flt.hide_owned = !self.vinyl_flt.hide_owned;
-            }
-            if m.selectable(self.vinyl_flt.hide_wanted, "Hide wantlist records") {
-                self.vinyl_flt.hide_wanted = !self.vinyl_flt.hide_wanted;
-            }
-            if m.selectable(self.vinyl_flt.hide_viewed, "Hide records I've seen") {
-                self.vinyl_flt.hide_viewed = !self.vinyl_flt.hide_viewed;
-            }
+            crate::ui::control_row(m.ui(), |ui| {
+                ui.horizontal(|ui| {
+                    facet_label(ui, "Hide");
+                    let f = &mut self.vinyl_flt;
+                    for (on, label, note) in [
+                        (&mut f.hide_owned, "Owned", "Hide records I own"),
+                        (&mut f.hide_wanted, "Wantlist", "Hide wantlist records"),
+                        (&mut f.hide_viewed, "Seen", "Hide records I've seen"),
+                    ] {
+                        if ui.selectable_label(*on, label).on_hover_note(note).clicked() {
+                            *on = !*on;
+                        }
+                    }
+                });
+            });
         }
+        m.separator();
 
         // Genres and styles, split back out of the merged tag census: the
         // coarse Discogs vocabulary is a closed set, so a tag on it is a
         // genre and everything else is a style. Both toggle into the same
-        // selection, combined as the mode row says.
-        let (genres, styles): (Vec<&(String, usize)>, Vec<&(String, usize)>) = genre_options
-            .iter()
-            .partition(|(t, _)| is_coarse_genre(t));
-        // How the picked tags combine: every one (narrowing a dig) or any
-        // one (a whole taste at once). The first row of the tag lists, under
-        // whichever header comes first.
-        let mut mode_row = |m: &mut crate::ui::menu::MenuUi| {
-            m.ui().horizontal(|ui| {
-                ui.add_space(pad);
-                if ui.selectable_label(!self.vinyl_flt.tags_any, "All of these").clicked() {
-                    self.vinyl_flt.tags_any = false;
-                }
-                if ui.selectable_label(self.vinyl_flt.tags_any, "Any of these").clicked() {
-                    self.vinyl_flt.tags_any = true;
-                }
-            });
-        };
-        let mut tag_row = |m: &mut crate::ui::menu::MenuUi, tag: &str, n: usize| {
-            let selected = self
-                .vinyl_flt
-                .genres
-                .iter()
-                .any(|g| g.eq_ignore_ascii_case(tag));
-            if m.selectable_detail(selected, tag, n.to_string()) {
-                if selected {
-                    self.vinyl_flt
-                        .genres
-                        .retain(|g| !g.eq_ignore_ascii_case(tag));
-                } else {
-                    self.vinyl_flt.genres.push(tag.to_string());
-                }
-            }
-        };
-        if !genres.is_empty() {
-            m.header("Genres");
-            mode_row(m);
-            for (tag, n) in &genres {
-                tag_row(m, tag, *n);
-            }
-        }
-        if !styles.is_empty() {
-            m.header("Styles");
-            if genres.is_empty() {
-                mode_row(m);
-            }
-            m.scroll(220.0, |m| {
-                for (tag, n) in &styles {
-                    tag_row(m, tag, *n);
-                }
-            });
-        }
+        // selection, combined as the All/Any switch says.
         if genre_options.is_empty() {
-            m.header("Genres");
+            m.header("Genres and styles");
             m.note(if seller_mode {
                 "No genre tags known for these crates yet."
             } else {
                 "No genre tags yet. Refresh to pull them from Discogs."
             });
-        }
-
-        if seller_mode {
-            m.separator();
-            let n = self.seller_listings.len();
-            if !genre_options.is_empty() {
-                m.note(if seller_tagged < n {
+        } else {
+            let coverage = seller_mode.then(|| {
+                let n = self.seller_listings.len();
+                let mut s = if seller_tagged < n {
                     format!("Tags known for {seller_tagged} of {n} records")
                 } else {
                     format!("Tags known for all {n} records")
-                });
-            }
-            // The bulk answer to partial coverage: one dump import tags
-            // (nearly) everything; until then the paced per-release fetch is
-            // the fallback.
-            match &self.genredb_info {
-                Some((dump, kept)) => {
-                    let millions = kept / 1_000_000;
-                    m.note(format!("Genre database: dump {dump}, {millions}M releases"));
+                };
+                if let Some((dump, kept)) = &self.genredb_info {
+                    s += &format!(". Genre database: dump {dump}, {}M releases", kept / 1_000_000);
                 }
-                None => {
-                    let clicked = m
-                        .ui()
-                        .horizontal(|ui| {
-                            ui.add_space(pad);
-                            ui.add_enabled(
-                                !busy,
-                                egui::Button::new("⬇ Import genre database").small(),
-                            )
-                            .on_hover_note(
-                                "Download every vinyl release's genre tags once \
-                                 (a few hundred MB, prebuilt monthly from the \
-                                 Discogs dump) so tags resolve locally and \
-                                 instantly, for every seller",
-                            )
-                            .clicked()
+                s
+            });
+            m.ui().add_space(space::S1);
+            crate::ui::control_row(m.ui(), |ui| {
+                ui.horizontal(|ui| {
+                    ui.add_space(pad);
+                    ui.label(
+                        egui::RichText::new("Genres and styles")
+                            .font(font::strong(font::footnote().size))
+                            .color(color::LABEL_3),
+                    );
+                    if let Some(c) = coverage {
+                        crate::ui::info_note(ui, c);
+                    }
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        ui.add_space(pad);
+                        let seg = crate::ui::button::Segment { icon: "", label: "", tip: "" };
+                        let pick = crate::ui::button::segmented(
+                            ui,
+                            Some(usize::from(self.vinyl_flt.tags_any)),
+                            &[
+                                crate::ui::button::Segment { label: "All", tip: "Every tag picked", ..seg },
+                                crate::ui::button::Segment { label: "Any", tip: "Any tag picked", ..seg },
+                            ],
+                        );
+                        if let Some(i) = pick {
+                            self.vinyl_flt.tags_any = i == 1;
+                        }
+                    });
+                });
+            });
+
+            let (genres, styles): (Vec<&(String, usize)>, Vec<&(String, usize)>) = genre_options
+                .iter()
+                .partition(|(t, _)| is_coarse_genre(t));
+            let is_picked = |genres: &[String], tag: &str| genres.iter().any(|g| g.eq_ignore_ascii_case(tag));
+            // Enter picks the first match not yet picked and empties the
+            // finder for the next name.
+            if enter && !query.is_empty() {
+                let hit = genres.iter().chain(&styles).find(|(t, _)| {
+                    t.to_lowercase().contains(&query) && !is_picked(&self.vinyl_flt.genres, t)
+                });
+                if let Some((t, _)) = hit {
+                    self.vinyl_flt.genres.push(t.clone());
+                }
+                find.clear();
+                query.clear();
+            }
+            // The biggest few of each list show, with every pick wherever it
+            // ranks, all in census order: a pick never moves under the
+            // pointer and never scrolls out of reach. The finder or the
+            // list's All row shows the rest.
+            let mut any_row = false;
+            // The list gives up height before the popup runs past the
+            // window's bottom edge (a short laptop window), never below a
+            // few rows.
+            let room = m.ui().ctx().screen_rect().bottom() - m.ui().cursor().top() - 60.0;
+            m.scroll(room.clamp(120.0, 248.0), |m| {
+                for (k, (title, list, top)) in
+                    [("Genres", &genres, 4), ("Styles", &styles, 8)].into_iter().enumerate()
+                {
+                    let rows: Vec<&(String, usize)> = list
+                        .iter()
+                        .enumerate()
+                        .filter(|(i, (t, _))| {
+                            is_picked(&self.vinyl_flt.genres, t)
+                                || if query.is_empty() {
+                                    show_all[k] || *i < top
+                                } else {
+                                    t.to_lowercase().contains(&query)
+                                }
                         })
-                        .inner;
-                    if clicked {
-                        *import_genredb = true;
-                        m.close();
+                        .map(|(_, r)| *r)
+                        .collect();
+                    if rows.is_empty() {
+                        continue;
+                    }
+                    any_row = true;
+                    m.header(title);
+                    for (tag, n) in rows {
+                        let selected = is_picked(&self.vinyl_flt.genres, tag);
+                        if m.selectable_detail(selected, tag, n.to_string()) {
+                            if selected {
+                                self.vinyl_flt.genres.retain(|g| !g.eq_ignore_ascii_case(tag));
+                            } else {
+                                self.vinyl_flt.genres.push(tag.clone());
+                            }
+                        }
+                    }
+                    if query.is_empty() && list.len() > top {
+                        let label = if show_all[k] {
+                            "Fewer".to_string()
+                        } else {
+                            format!("All {} {}", list.len(), title.to_lowercase())
+                        };
+                        // In the label column, under the names it opens.
+                        if m.selectable(false, label) {
+                            show_all[k] = !show_all[k];
+                        }
                     }
                 }
+                if !any_row {
+                    m.note("No tag matches that");
+                }
+            });
+        }
+        m.ui().data_mut(|d| {
+            d.insert_temp(find_id, find);
+            d.insert_temp(all_id, show_all);
+        });
+
+        // The bulk answer to partial coverage: one dump import tags (nearly)
+        // everything; until then the paced per-release fetch is the fallback.
+        if seller_mode && self.genredb_info.is_none() {
+            let clicked = m
+                .ui()
+                .horizontal(|ui| {
+                    ui.add_space(pad);
+                    ui.add_enabled(!busy, egui::Button::new("⬇ Import genre database").small())
+                        .on_hover_note(
+                            "Download every vinyl release's genre tags once \
+                             (a few hundred MB, prebuilt monthly from the \
+                             Discogs dump) so tags resolve locally and \
+                             instantly, for every seller",
+                        )
+                        .clicked()
+                })
+                .inner;
+            if clicked {
+                *import_genredb = true;
+                m.close();
             }
         }
     }
@@ -2132,7 +2222,7 @@ impl App {
                 return;
             }
             if let Some(flt_btn) = &flt_btn {
-                crate::ui::menu::dropdown(flt_btn, 260.0, |m| {
+                crate::ui::menu::dropdown(flt_btn, 320.0, |m| {
                     self.vinyl_filter_popup(
                         m,
                         seller_mode,
