@@ -819,7 +819,19 @@ impl TableColumn {
             .find(|c| c.key() == s)
     }
 
-    /// Display name: the header text, and the row label in the reorder menu. The
+    /// The row label in the Columns popup, which has the room to spell out
+    /// what the header abbreviates.
+    fn menu_label(self) -> &'static str {
+        match self {
+            TableColumn::Waveform => "Waveform",
+            TableColumn::Duration => "Duration",
+            TableColumn::Bitrate => "Bitrate",
+            TableColumn::Quality => "Quality",
+            _ => self.label(),
+        }
+    }
+
+    /// Display name: the header text, and the sort and filter titles. The
     /// cover header draws no text, but the column still needs a name in the menu.
     fn label(self) -> &'static str {
         match self {

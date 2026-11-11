@@ -448,7 +448,7 @@ impl App {
                                 // Mid-drag this content floats with the pointer, so
                                 // add the column name to make a readable preview.
                                 if ui.ctx().is_being_dragged(src_id) {
-                                    ui.label(col.label());
+                                    ui.label(col.menu_label());
                                 }
                             });
                             // Fade the static copy of the row being dragged (after
@@ -462,7 +462,7 @@ impl App {
                             // this menu.
                             let enabled = !vis || visible_count > 1;
                             if ui
-                                .add_enabled(enabled, egui::Checkbox::new(&mut vis, col.label()))
+                                .add_enabled(enabled, egui::Checkbox::new(&mut vis, col.menu_label()))
                                 .changed()
                             {
                                 if vis {
