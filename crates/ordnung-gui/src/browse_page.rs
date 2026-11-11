@@ -9,8 +9,9 @@
 //! every 12" is worth knowing, reading the run in order *is* the dig.
 //!
 //! Rides `GET /labels/{id}/releases` and `GET /artists/{id}/releases` (the
-//! same browses the dig's threads use). A run is read whole (500 rows a
-//! request, the first page shown as it lands and the rest behind it) and
+//! same browses the dig's threads use). A run is read whole, page by page
+//! as Discogs serves it (500 rows a page for an artist, 100 for a label),
+//! the first shown as it lands and the rest behind it, and
 //! sorted here by date, because Discogs hands neither back in a useful
 //! order: a label's opens on whatever compilations merely credit it, and an
 //! artist's comes by *role* (their own records, then the remixes, then the
@@ -25,7 +26,9 @@
 //! out of the run here too. Master rows with no format of their own are kept
 //! rather than mislabeled. A run with nothing on the shown formats at all (a
 //! digital-only label for a records-only digger) shows every format instead
-//! of an empty page. One paced request per 500 rows.
+//! of an empty page. One paced request per page, at most [`RUN_MAX_PAGES`]
+//! of them: a major label runs to thousands, so a run cut there says what
+//! it holds under its pager.
 
 use super::*;
 use ordnung_core::discogs::{BrowsePage, BrowseRelease, BrowseThread};
@@ -40,6 +43,10 @@ const THUMB: f32 = 48.0;
 /// Rows of a sorted run shown at a time, so a page costs the frame the same
 /// however long the run.
 const RUN_PAGE: usize = 100;
+/// How many pages of a run are read. Discogs serves an artist 500 rows a
+/// page but a label 100, and a major label runs to thousands of pages, so
+/// the read stops here and the pager says what it got.
+const RUN_MAX_PAGES: u32 = 10;
 
 /// The open browse page: whose run (a label's or an artist's), which page of
 /// it, and the rows.
@@ -90,7 +97,14 @@ pub(crate) struct BrowsePanel {
 impl BrowsePanel {
     /// Pages of the run are still on their way.
     fn reading(&self) -> bool {
-        self.cache.len() < self.run_pages as usize
+        self.cache.len() < self.run_pages.min(RUN_MAX_PAGES) as usize
+    }
+
+    /// A run Discogs holds more of than was read: the releases read and
+    /// the total, for the pager to say so. `None` for a run read whole.
+    fn cut(&self) -> Option<(usize, u32)> {
+        (self.run_pages > RUN_MAX_PAGES)
+            .then(|| (self.cache.values().map(|p| p.releases.len()).sum(), self.items))
     }
 
     /// The artist's name as Discogs spells it, and the other names the same
@@ -147,6 +161,9 @@ pub(crate) struct BrowseSnap {
     offset: usize,
     /// More of the run is still being read.
     reading: bool,
+    /// Releases read and the run's total, when Discogs holds more than
+    /// [`RUN_MAX_PAGES`] pages of it.
+    cut: Option<(usize, u32)>,
     by_alias: bool,
     /// The alias bar's names (group or not), and which one is open.
     family: Vec<(String, bool)>,
@@ -350,7 +367,7 @@ fn send_label_about(
     ctx.request_repaint();
 }
 
-/// Read a run whole: the first page now (500 rows a request), then what
+/// Read a run whole, up to [`RUN_MAX_PAGES`]: the first page now, then what
 /// the rows need to read right (an artist's kin for the alias pills and
 /// grouping, a label's profile) and the remaining pages behind it, each
 /// handed back as it lands so the rows fill in. One thread, so the pages
@@ -387,7 +404,7 @@ fn read_run(
         BrowseThread::Label => send_label_about(&client, id, tx, ctx),
     }
     let client = client.background();
-    for page in 2..=pages {
+    for page in 2..=pages.min(RUN_MAX_PAGES) {
         reply(page, client.browse_run(thread, id, page).map_err(|e| e.to_string()), None, None);
     }
 }
@@ -884,6 +901,7 @@ impl App {
             rows,
             offset,
             reading: panel.reading(),
+            cut: panel.cut(),
             by_alias: self.config.artist_run_by_alias,
             family: panel
                 .family
@@ -1157,6 +1175,9 @@ impl App {
                         out.act = Some(Act::Page(page + 1));
                     }
                     ui.label(egui::RichText::new(format!("Page {page} of {pages}")).weak());
+                }
+                if let Some((read, items)) = snap.cut {
+                    ui.label(egui::RichText::new(format!("First {read} of {items} releases")).weak());
                 }
                 // After the label, so the page number holds still
                 // while a page loads.
