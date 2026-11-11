@@ -1170,7 +1170,7 @@ impl App {
                 .unwrap_or_else(|| col.default_width(COVER_PX))
         };
         let slack = |col: TableColumn| (saved(col) - col.min_width(COVER_PX)).max(0.0);
-        let overflow = order
+        let rest_overflow = order
             .iter()
             .filter(|&&col| Some(col) != last_col)
             .map(|&col| saved(col) + col_spacing_x)
@@ -1180,7 +1180,7 @@ impl App {
             + last_col.map_or(0.0, |col| col.min_width(COVER_PX))
             + right_pad
             - viewport_w;
-        if overflow <= 0.0 {
+        if rest_overflow <= 0.0 {
             held.clear();
         }
         let flexible: Vec<TableColumn> = order
@@ -1189,8 +1189,8 @@ impl App {
             .filter(|&col| Some(col) != last_col && col.clips() && !held.contains(&col))
             .collect();
         let total_slack: f32 = flexible.iter().map(|&col| slack(col)).sum();
-        let given: Vec<(TableColumn, f32)> = if overflow > 0.0 && total_slack > 0.0 {
-            let share = (overflow / total_slack).min(1.0);
+        let given: Vec<(TableColumn, f32)> = if rest_overflow > 0.0 && total_slack > 0.0 {
+            let share = (rest_overflow / total_slack).min(1.0);
             flexible
                 .iter()
                 .map(|&col| (col, saved(col) - share * slack(col)))
