@@ -144,7 +144,7 @@ mod imp {
     use objc2::runtime::AnyObject;
     use objc2::{declare_class, msg_send_id, mutability, ClassType, DeclaredClass};
     use objc2_app_kit::{
-        NSAutoresizingMaskOptions, NSBackingStoreType, NSColor, NSPanel, NSView, NSWindow,
+        NSAutoresizingMaskOptions, NSBackingStoreType, NSColor, NSPanel, NSView,
         NSWindowOrderingMode, NSWindowStyleMask,
     };
     use objc2_foundation::{
@@ -154,7 +154,6 @@ mod imp {
         WKAudiovisualMediaTypes, WKUserContentController, WKUserScript, WKUserScriptInjectionTime,
         WKWebView, WKWebViewConfiguration,
     };
-    use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 
     use super::{PlayerStatus, Transport};
 
@@ -364,7 +363,7 @@ mod imp {
         let Some((first, rest)) = youtube_ids.split_first() else {
             return false;
         };
-        let Some(parent) = main_window(frame) else {
+        let Some(parent) = crate::macos_window::main_window(frame) else {
             return false;
         };
 
@@ -1209,16 +1208,4 @@ mod imp {
         }
     );
 
-    /// The app's main `NSWindow`, via eframe's AppKit handle. Borrowed for the
-    /// duration of the call only — never stashed, since eframe may recreate the
-    /// view (same rule as `macos_drag`).
-    fn main_window(frame: &eframe::Frame) -> Option<Retained<NSWindow>> {
-        let handle = frame.window_handle().ok()?;
-        let RawWindowHandle::AppKit(h) = handle.as_raw() else {
-            return None;
-        };
-        let view: Retained<objc2_app_kit::NSView> =
-            unsafe { Retained::retain(h.ns_view.as_ptr() as *mut objc2_app_kit::NSView)? };
-        view.window()
-    }
 }

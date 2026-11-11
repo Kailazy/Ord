@@ -15,9 +15,11 @@ use ordnung_rbdb::edit;
 pub(crate) const SEARCH_DEBOUNCE: Duration = Duration::from_millis(150);
 /// Decoder threads behind the vinyl cover wall; see `spawn_vinyl_cover_loader`.
 const VINYL_COVER_WORKERS: usize = 4;
-/// Narrowest the toolbar search field shrinks to before the counts label
-/// starts giving up its parts. Still wide enough to read a short query.
-const SEARCH_FIELD_MIN_W: f32 = 72.0;
+/// The toolbar search field's floor: the counts slot gives up its spare
+/// width, then the history arrows their place, before the field goes under
+/// it. Wide enough for a short query; a field too narrow for the long hint
+/// shows a short one instead.
+const SEARCH_FIELD_MIN_W: f32 = 180.0;
 
 impl App {
     /// Resolve dragged track ids to their source files for the native
@@ -2402,6 +2404,13 @@ const MAX_UI_ZOOM: f32 = 1.5;
 /// the content's top-right corner: chrome drawn up there keeps clear of it.
 pub(crate) const INSPECTOR_TAB_W: f32 = 18.0;
 
+/// Where the toolbar's controls may start, in native points from the window's
+/// left edge: the zoom light's right edge (69) plus a gap, on the 8-pt grid.
+/// The lights float over the toolbar row since the native title bar is folded
+/// into the content (`main.rs`). Native points, not egui's: the UI zoom
+/// (Cmd +/-) scales egui's, AppKit's stay put.
+const TRAFFIC_LIGHTS_W: f32 = 80.0;
+
 impl eframe::App for App {
     fn raw_input_hook(&mut self, ctx: &egui::Context, raw_input: &mut egui::RawInput) {
         // Snappier wheel scrolling: front-load part of each coarse wheel step
@@ -2883,61 +2892,6 @@ impl App {
             }
         }
 
-        // "New version available" strip, above the toolbar. Shown only while an
-        // update is pending; the user can open the download page or dismiss it.
-        if let Some(info) = self.update_available.clone() {
-            egui::TopBottomPanel::top("update_banner")
-                .frame(
-                    egui::Frame::none()
-                        .fill(crate::ui::tokens::color::nav_accent())
-                        .inner_margin(egui::Margin::symmetric(10.0, 6.0)),
-                )
-                .show(ctx, |ui| {
-                    ui.horizontal(|ui| {
-                        ui.label(
-                            egui::RichText::new(format!("Ord {} is available", info.version))
-                                .color(egui::Color32::WHITE)
-                                .strong(),
-                        );
-                        ui.label(
-                            egui::RichText::new(format!(
-                                "(you have {})",
-                                env!("CARGO_PKG_VERSION")
-                            ))
-                            .color(egui::Color32::from_rgb(220, 230, 245)),
-                        );
-                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            if crate::ui::icon::close_button(ui, "Dismiss until the next launch") {
-                                self.update_available = None;
-                            }
-                            // In-app install when this build can swap itself
-                            // (a bundle, and the release ships a DMG); the
-                            // browser download otherwise.
-                            let can_install = info.dmg_url.is_some()
-                                && ordnung_core::update::running_bundle().is_some();
-                            if can_install {
-                                if ui
-                                    .add_enabled(
-                                        !self.is_busy(),
-                                        egui::Button::new(egui::RichText::new("Update now").strong()),
-                                    )
-                                    .on_hover_note("Download, install and relaunch")
-                                    .clicked()
-                                {
-                                    self.spawn_update_install(ctx.clone(), info.clone());
-                                }
-                            } else if ui
-                                .button(egui::RichText::new("Download").strong())
-                                .on_hover_note("Open the release page in your browser")
-                                .clicked()
-                            {
-                                open_url(&info.url);
-                            }
-                        });
-                    });
-                });
-        }
-
         // Vertical padding is stated once, in the frame, rather than as
         // `add_space` before and after the row. Trailing `item_spacing.y` is
         // appended *after* a widget but never before one, so a leading and
@@ -2945,20 +2899,76 @@ impl App {
         // bottom gap silently inherits an extra `item_spacing.y`. A symmetric
         // frame margin has no such asymmetry, and puts the button row on the
         // 8-pt grid with equal optical weight above and below.
+        // Fullscreen hides the traffic lights and lays the title bar out
+        // afresh; the row gives their room back and leaves the bar alone.
+        let fullscreen = ctx.input(|i| i.viewport().fullscreen.unwrap_or(false));
         egui::TopBottomPanel::top("toolbar")
             .frame(
                 egui::Frame::side_top_panel(&ctx.style())
                     .inner_margin(egui::Margin::symmetric(space::S3, space::S3)),
             )
             .show(ctx, |ui| {
+                // This row is the window's title bar (`main.rs` folds the
+                // native one into the content): bare space on it moves the
+                // window, a double-click zooms it. Registered before the
+                // controls, so a press on any of them wins (egui takes the
+                // last widget placed on a spot as the top one).
+                let grab = ui.interact(
+                    ui.max_rect().expand(space::S3),
+                    egui::Id::new("toolbar_grab"),
+                    egui::Sense::click_and_drag(),
+                );
+                // egui lets a drag fall through a click-only widget to the
+                // drag widget beneath it (a button in a scroll area), so a
+                // press that began on a control is not a grab of the bar.
+                let on_bare_bar = || {
+                    let Some(press) = ctx.input(|i| i.pointer.press_origin()) else {
+                        return false;
+                    };
+                    ctx.viewport(|v| {
+                        v.prev_pass.widgets.get_layer(grab.layer_id).all(|w| {
+                            w.id == grab.id || !w.sense.click || !w.interact_rect.contains(press)
+                        })
+                    })
+                };
+                // `StartDrag` is one shot, and winit hands AppKit whatever
+                // event is current: a repaint driven by a job or the player
+                // can make that a non-mouse event, which drops the request.
+                // So it goes out on every dragged frame until the window has
+                // left where the drag began.
+                let origin = ctx.input(|i| i.viewport().outer_rect.map(|r| r.min));
+                let from_id = grab.id.with("from");
+                if grab.drag_started_by(egui::PointerButton::Primary) && on_bare_bar() {
+                    ctx.data_mut(|d| d.insert_temp(from_id, origin));
+                }
+                if grab.dragged_by(egui::PointerButton::Primary) {
+                    if ctx.data(|d| d.get_temp(from_id)) == Some(origin) {
+                        ctx.send_viewport_cmd(egui::ViewportCommand::StartDrag);
+                    }
+                } else {
+                    ctx.data_mut(|d| d.remove_temp::<Option<egui::Pos2>>(from_id));
+                }
+                if grab.double_clicked() {
+                    let zoomed = ctx.input(|i| i.viewport().maximized.unwrap_or(false));
+                    if let Some(cmd) = crate::macos_window::title_bar_double_click(zoomed) {
+                        ctx.send_viewport_cmd(cmd);
+                    }
+                }
                 // A row of controls around the search field: every button on
                 // it takes the field's height (see `ui::control_row`).
                 ui.horizontal(|ui| crate::ui::control_row(ui, |ui| {
+                    ui.spacing_mut().item_spacing.x = space::S4;
                     // The window's horizontal center, captured before any group
                     // lays out: the search field anchors to it further down, so
                     // it sits in the same spot whichever view is showing.
                     let toolbar_center_x = ui.max_rect().center().x;
                     let busy = self.is_busy();
+                    // The traffic lights float over the row's left end: start
+                    // past them.
+                    if !fullscreen {
+                        let lights_w = TRAFFIC_LIGHTS_W / ctx.zoom_factor();
+                        ui.add_space((lights_w - ui.max_rect().left()).max(0.0));
+                    }
                     // "Add songs…" opens a small menu: pick individual files, or a
                     // whole folder. Both import into the catalog; source files are
                     // never moved or modified, and unchanged files are skipped on a
@@ -2973,7 +2983,7 @@ impl App {
                     // to Library to bring a new rip in.
                     ui.add_enabled_ui(!busy, |ui| {
                         let add_btn = egui::Button::new(
-                            egui::RichText::new("Add songs…").color(egui::Color32::WHITE),
+                            egui::RichText::new("Add").color(egui::Color32::WHITE),
                         )
                         .fill(crate::ui::tokens::color::nav_accent())
                         .stroke(egui::Stroke::NONE);
@@ -3016,6 +3026,24 @@ impl App {
                             "Add files or a folder to the catalog. Source files are never modified",
                         );
                     });
+                    // Add shares the sidebar's column with the lights; the
+                    // controls after it start at the content column, half a
+                    // gap past the nav's seam, so the bare bar between them
+                    // is a grab zone with the seam inside it. A column too
+                    // narrow for that (the icon rail, the nav slid away)
+                    // just carries on at the normal spacing, as does
+                    // fullscreen, where there is no window to move, and a
+                    // row the UI zoom has made narrower than the window's
+                    // floor, where the room is needed for the controls.
+                    if !fullscreen && ctx.screen_rect().width() >= MIN_WINDOW_W {
+                        let seam = egui::containers::panel::PanelState::load(
+                            ctx,
+                            egui::Id::new("library_nav"),
+                        )
+                        .map_or(0.0, |nav| nav.rect.right());
+                        let content_x = seam + ui.spacing().item_spacing.x / 2.0;
+                        ui.add_space((content_x - ui.available_rect_before_wrap().left()).max(0.0));
+                    }
                     // Every other button in this left group acts on the rows of
                     // the digital library: analysis, conversion, tag writeback,
                     // relocation. The vinyl view shows Discogs records, not
@@ -3234,6 +3262,24 @@ impl App {
                     };
                     let note_count =
                         !matches!(self.view, LibraryView::Liked | LibraryView::CrateSet(_));
+                    // The icon buttons the search group carries beside the
+                    // field, the history arrows and the clipboard mark: their
+                    // widths are reserved with the field's floor, so the
+                    // counts slot never grows into them.
+                    let gap = ui.spacing().item_spacing.x;
+                    let icon_button_w = |glyph: &str| {
+                        ui.fonts(|f| {
+                            f.layout_no_wrap(
+                                glyph.to_owned(),
+                                font::icon(font::body().size + 2.0),
+                                egui::Color32::PLACEHOLDER,
+                            )
+                            .size()
+                            .x
+                        }) + 2.0 * ui.spacing().button_padding.x
+                    };
+                    let arrows_w = 2.0 * (icon_button_w(named(icons::CARET_LEFT)) + gap);
+                    let clipboard_w = icon_button_w(named(icons::CLIPBOARD_TEXT)) + gap;
                     // Right-aligned utility group: counts and Settings live away from
                     // the left-edge library actions so the toolbar reads "do work …
                     // status & config". Laying this out right-to-left FIRST reserves
@@ -3291,10 +3337,13 @@ impl App {
                                 // the label's to use, so it shortens (then
                                 // truncates) instead of the field drawing over
                                 // it in a narrow window.
-                                let gap = ui.spacing().item_spacing.x;
                                 let sep_w = 6.0 + gap;
                                 let field_frame = crate::ui::field::MARGIN.sum().x;
-                                let reserved = SEARCH_FIELD_MIN_W + field_frame + sep_w * 2.0;
+                                let reserved = SEARCH_FIELD_MIN_W
+                                    + field_frame
+                                    + sep_w * 2.0
+                                    + arrows_w
+                                    + clipboard_w;
                                 let room = ui.available_width() - reserved;
                                 let width_of = |ui: &egui::Ui, text: &str| {
                                     ui.painter()
@@ -3327,16 +3376,19 @@ impl App {
                                     }
                                 };
                                 // The slot is the widest text's (plus the
-                                // mark), capped by the room; the text sits at
-                                // its left so the count itself never moves
-                                // when a part is appended.
-                                let w = (count_forms
+                                // mark) while the room allows; the text sits
+                                // at its left so the count itself never moves
+                                // when a part is appended. A window too narrow
+                                // for that reserves only what is drawn now,
+                                // and the count moves only when rows get
+                                // selected or a file goes missing.
+                                let drawn_w = count_forms
                                     .iter()
-                                    .chain(std::iter::once(&count_widest))
                                     .map(|f| width_of(ui, f))
                                     .fold(0.0, f32::max)
-                                    + note_w)
-                                    .min(room);
+                                    + note_w;
+                                let widest_w = drawn_w.max(width_of(ui, &count_widest) + note_w);
+                                let w = if widest_w <= room { widest_w } else { drawn_w.min(room) };
                                 let drawn_note_w = note.map_or(0.0, |_| note_w);
                                 let fitting = count_forms
                                     .iter()
@@ -3389,11 +3441,19 @@ impl App {
                         ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
                             // The field's width is its text area: its frame
                             // adds the margin on either side (see
-                            // `ui::field::MARGIN`), and that is what the
-                            // row has to find room for.
+                            // `ui::field::MARGIN`) and the arrows sit beside
+                            // it, and that is what the row has to find room
+                            // for. Its floor is the counts slot's to honour
+                            // (`SEARCH_FIELD_MIN_W` in that slot's reserve);
+                            // the field itself takes what is left, so a row
+                            // too narrow for the floor never pushes it over
+                            // its neighbours. The arrows yield next, before
+                            // the field drops under its floor: a row the UI
+                            // zoom has squeezed keeps the field.
                             let field_frame = crate::ui::field::MARGIN.sum().x;
-                            let w = (ui.available_width() - field_frame)
-                                .clamp(SEARCH_FIELD_MIN_W, 320.0);
+                            let room = ui.available_width() - field_frame;
+                            let arrows_w = if room - arrows_w >= SEARCH_FIELD_MIN_W { arrows_w } else { 0.0 };
+                            let w = (room - arrows_w).clamp(0.0, 320.0);
                             // Anchor the field to the window's horizontal
                             // center rather than the left edge of whatever
                             // space the other groups left over, so the box
@@ -3409,29 +3469,21 @@ impl App {
                             // Back and forward through the views selected,
                             // a browser's arrows, hard against the field's
                             // left so the field keeps its spot.
-                            let arrow_w = ui.fonts(|f| {
-                                f.layout_no_wrap(
-                                    named(icons::CARET_LEFT).to_owned(),
-                                    font::icon(font::body().size + 2.0),
-                                    egui::Color32::PLACEHOLDER,
-                                )
-                                .size()
-                                .x
-                            }) + 2.0 * ui.spacing().button_padding.x;
-                            let arrows_w = 2.0 * (arrow_w + ui.spacing().item_spacing.x);
                             ui.add_space((left - avail.left() - arrows_w).max(0.0));
-                            for (back, glyph, note) in [
-                                (true, icons::CARET_LEFT, "Back"),
-                                (false, icons::CARET_RIGHT, "Forward"),
-                            ] {
-                                let can = if back { &self.history_back } else { &self.history_fwd };
-                                let resp = ui
-                                    .add_enabled_ui(!can.is_empty(), |ui| {
-                                        crate::ui::button::icon_toggle(ui, named(glyph), false)
-                                    })
-                                    .inner;
-                                if resp.on_hover_note(note).clicked() {
-                                    self.history_go(back, ui.ctx());
+                            if arrows_w > 0.0 {
+                                for (back, glyph, note) in [
+                                    (true, icons::CARET_LEFT, "Back"),
+                                    (false, icons::CARET_RIGHT, "Forward"),
+                                ] {
+                                    let can = if back { &self.history_back } else { &self.history_fwd };
+                                    let resp = ui
+                                        .add_enabled_ui(!can.is_empty(), |ui| {
+                                            crate::ui::button::icon_toggle(ui, named(glyph), false)
+                                        })
+                                        .inner;
+                                    if resp.on_hover_note(note).clicked() {
+                                        self.history_go(back, ui.ctx());
+                                    }
                                 }
                             }
                             // A touch squarer than the buttons beside it:
@@ -3517,6 +3569,73 @@ impl App {
                     });
                 }));
             });
+        // The traffic lights sit centred on the toolbar row, whatever its
+        // height (egui points; AppKit takes native ones, so the UI zoom is
+        // applied).
+        if !fullscreen {
+            if let Some(bar) =
+                egui::containers::panel::PanelState::load(ctx, egui::Id::new("toolbar"))
+            {
+                let native_h = bar.rect.height() * ctx.zoom_factor();
+                crate::macos_window::set_titlebar_height(frame, native_h);
+            }
+        }
+
+        // "New version available" strip, under the toolbar so the traffic
+        // lights never sit over it. Shown only while an update is pending;
+        // the user can open the download page or dismiss it.
+        if let Some(info) = self.update_available.clone() {
+            egui::TopBottomPanel::top("update_banner")
+                .frame(
+                    egui::Frame::none()
+                        .fill(crate::ui::tokens::color::nav_accent())
+                        .inner_margin(egui::Margin::symmetric(10.0, 6.0)),
+                )
+                .show(ctx, |ui| {
+                    ui.horizontal(|ui| {
+                        ui.label(
+                            egui::RichText::new(format!("Ord {} is available", info.version))
+                                .color(egui::Color32::WHITE)
+                                .strong(),
+                        );
+                        ui.label(
+                            egui::RichText::new(format!(
+                                "(you have {})",
+                                env!("CARGO_PKG_VERSION")
+                            ))
+                            .color(egui::Color32::from_rgb(220, 230, 245)),
+                        );
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            if crate::ui::icon::close_button(ui, "Dismiss until the next launch") {
+                                self.update_available = None;
+                            }
+                            // In-app install when this build can swap itself
+                            // (a bundle, and the release ships a DMG); the
+                            // browser download otherwise.
+                            let can_install = info.dmg_url.is_some()
+                                && ordnung_core::update::running_bundle().is_some();
+                            if can_install {
+                                if ui
+                                    .add_enabled(
+                                        !self.is_busy(),
+                                        egui::Button::new(egui::RichText::new("Update now").strong()),
+                                    )
+                                    .on_hover_note("Download, install and relaunch")
+                                    .clicked()
+                                {
+                                    self.spawn_update_install(ctx.clone(), info.clone());
+                                }
+                            } else if ui
+                                .button(egui::RichText::new("Download").strong())
+                                .on_hover_note("Open the release page in your browser")
+                                .clicked()
+                            {
+                                open_url(&info.url);
+                            }
+                        });
+                    });
+                });
+        }
 
         egui::TopBottomPanel::bottom("status").show(ctx, |ui| {
             ui.add_space(2.0);

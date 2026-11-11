@@ -25,6 +25,7 @@ mod song_rows;
 mod macos_drag;
 mod macos_menu;
 mod macos_pasteboard;
+mod macos_window;
 mod modals;
 mod onboarding;
 mod pick;
@@ -117,7 +118,14 @@ fn main() -> eframe::Result<()> {
     let mut viewport = egui::ViewportBuilder::default()
         .with_inner_size([1100.0, 680.0])
         .with_min_inner_size([MIN_WINDOW_W, MIN_WINDOW_H])
-        .with_title("Ord");
+        .with_title("Ord")
+        // No native title bar: the content runs to the top edge and the
+        // toolbar row is the title bar (it moves the window, see `App`), with
+        // the traffic lights floating over its left end. The title stays for
+        // the Dock and the app switcher.
+        .with_fullsize_content_view(true)
+        .with_titlebar_shown(false)
+        .with_title_shown(false);
     if let Some(icon) = load_app_icon() {
         viewport = viewport.with_icon(icon);
     }
