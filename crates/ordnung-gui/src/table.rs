@@ -1142,6 +1142,67 @@ impl App {
         // table builder `ui` is mutably borrowed.
         let col_spacing_x = ui.spacing().item_spacing.x;
         let scrollbar_w = ui.spacing().scroll.bar_width;
+        // The right margin is the scrollbar plus a little breathing room,
+        // so a dragged edge stays clear of the viewport border.
+        let right_pad = scrollbar_w + 8.0;
+
+        // When the saved layout overflows the viewport at rest (the inspector
+        // open beside the table), the last column would be pushed to its
+        // floor and clipped. Instead the flexible columns give first, each in
+        // proportion to its slack above its minimum, so the last column stays
+        // whole until nothing can give; only then does the table scroll. A
+        // column the user resizes while squeezed is held at that width and the
+        // squeeze falls on the others. The widths given this frame, and the
+        // held columns, live in egui's memory like `viewport_narrowed`:
+        // egui_extras reads `Column::initial` only after a reset, so the
+        // builder resets on the frame the squeeze changes, and a width the
+        // squeeze gave is never written back as the user's choice.
+        let squeeze_id = ui.id().with("songs_table_squeeze");
+        let (given_last, mut held): (Vec<(TableColumn, f32)>, Vec<TableColumn>) =
+            ui.data_mut(|d| d.get_temp(squeeze_id)).unwrap_or_default();
+        if reset_widths {
+            held.clear();
+        }
+        let saved = |col: TableColumn| {
+            self.column_widths
+                .get(&col)
+                .copied()
+                .unwrap_or_else(|| col.default_width(COVER_PX))
+        };
+        let slack = |col: TableColumn| (saved(col) - col.min_width(COVER_PX)).max(0.0);
+        let overflow = order
+            .iter()
+            .filter(|&&col| Some(col) != last_col)
+            .map(|&col| saved(col) + col_spacing_x)
+            .sum::<f32>()
+            + index_w
+            + col_spacing_x
+            + last_col.map_or(0.0, |col| col.min_width(COVER_PX))
+            + right_pad
+            - viewport_w;
+        if overflow <= 0.0 {
+            held.clear();
+        }
+        let flexible: Vec<TableColumn> = order
+            .iter()
+            .copied()
+            .filter(|&col| Some(col) != last_col && col.clips() && !held.contains(&col))
+            .collect();
+        let total_slack: f32 = flexible.iter().map(|&col| slack(col)).sum();
+        let given: Vec<(TableColumn, f32)> = if overflow > 0.0 && total_slack > 0.0 {
+            let share = (overflow / total_slack).min(1.0);
+            flexible
+                .iter()
+                .map(|&col| (col, saved(col) - share * slack(col)))
+                .collect()
+        } else {
+            Vec::new()
+        };
+        let squeeze_changed = given.len() != given_last.len()
+            || given
+                .iter()
+                .zip(&given_last)
+                .any(|(a, b)| a.0 != b.0 || (a.1 - b.1).abs() > 0.5);
 
         // Wrap the table in a horizontal scroll area so a wide column layout
         // (or a narrow window) can be scrolled left/right. The trailing
@@ -1204,13 +1265,14 @@ impl App {
                 // stops exactly where it would otherwise scroll itself out of
                 // sight. `spec` floors the cap at the column's minimum, so a window
                 // too narrow to fit the layout still allows a normal drag.
-                //
-                // The right margin is the scrollbar plus a little breathing room,
-                // so the dragged edge stays clear of the viewport border.
-                let right_pad = scrollbar_w + 8.0;
                 let mut x = index_w + col_spacing_x;
                 for &col in &order {
-                    let w = self.column_widths.get(&col).copied();
+                    // The width the squeeze gave this frame, else the saved one.
+                    let w = given
+                        .iter()
+                        .find(|(c, _)| *c == col)
+                        .map(|&(_, w)| w)
+                        .or_else(|| self.column_widths.get(&col).copied());
                     // The last column reaches the viewport's right edge: it
                     // takes the slack a spacer used to, so its divider is the
                     // table's edge, and it is the column that gives when the
@@ -1230,9 +1292,10 @@ impl App {
                 // remainder column shrink below the width its cells used last
                 // frame, and the last column's cells fill it, so without this
                 // the column kept its stretched width and the table scrolled
-                // sideways instead of giving way to the inspector. The reset is
+                // sideways instead of giving way to the inspector. And whenever
+                // the squeeze changes, so the widths it gives take. The reset is
                 // lossless, since every width lives in `column_widths` too.
-                if reset_widths || viewport_narrowed {
+                if reset_widths || viewport_narrowed || squeeze_changed {
                     builder.reset();
                 }
                 builder
@@ -2479,6 +2542,15 @@ impl App {
             if at_cap {
                 continue;
             }
+            // A width the squeeze gave is the viewport's doing, not the
+            // user's; one they changed under the squeeze is theirs, and held
+            // against it from here on.
+            if let Some(&(_, q)) = given.iter().find(|(c, _)| *c == col) {
+                if (q - w).abs() <= 0.5 {
+                    continue;
+                }
+                held.push(col);
+            }
             let changed = self
                 .column_widths
                 .get(&col)
@@ -2488,6 +2560,7 @@ impl App {
                 self.column_widths_dirty = true;
             }
         }
+        ui.data_mut(|d| d.insert_temp(squeeze_id, (given, held)));
         if self.column_widths_dirty && !ctx_clone.input(|i| i.pointer.any_down()) {
             self.save_column_widths();
             self.column_widths_dirty = false;
