@@ -741,17 +741,24 @@ impl App {
             // read-only.
             let g = &t.tags;
             crate::ui::sidebar::section(ui, "Dates & numbering", |ui| {
-                opt_row(ui, "Recording date", &g.recording_date);
-                opt_row(ui, "Release date", &g.release_date);
-                opt_row(ui, "Original release", &g.original_release_date);
-                if let (Some(n), Some(t)) = (g.track_number, g.track_total) {
+                // Zeros are a tag's way of saying none: a date of all zeros
+                // ("0000", "0000-00-00") and a number or total of 0 count as
+                // absent, like an empty string does.
+                let dated = |d: &Option<String>| {
+                    d.clone().filter(|s| s.chars().any(|c| c.is_ascii_digit() && c != '0'))
+                };
+                let some = |n: Option<u16>| n.filter(|n| *n > 0);
+                opt_row(ui, "Recording date", &dated(&g.recording_date));
+                opt_row(ui, "Release date", &dated(&g.release_date));
+                opt_row(ui, "Original release", &dated(&g.original_release_date));
+                if let (Some(n), Some(t)) = (some(g.track_number), some(g.track_total)) {
                     inspector_row(ui, "Track #", &format!("{n} of {t}"));
-                } else if let Some(n) = g.track_number {
+                } else if let Some(n) = some(g.track_number) {
                     inspector_row(ui, "Track #", &n.to_string());
                 }
-                if let (Some(n), Some(t)) = (g.disc_number, g.disc_total) {
+                if let (Some(n), Some(t)) = (some(g.disc_number), some(g.disc_total)) {
                     inspector_row(ui, "Disc #", &format!("{n} of {t}"));
-                } else if let Some(n) = g.disc_number {
+                } else if let Some(n) = some(g.disc_number) {
                     inspector_row(ui, "Disc #", &n.to_string());
                 }
                 if let Some(c) = g.compilation {
