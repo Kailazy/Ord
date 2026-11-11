@@ -54,6 +54,8 @@ pub enum MenuCommand {
     BackupCatalog,
     /// Put a backup zip's catalog in place of the live one.
     RestoreCatalog,
+    /// Analyze the selected tracks, or every track not yet analyzed.
+    Analyze,
 }
 
 /// Slot holding at most one pending command. A `u8` rather than a channel so the
@@ -76,6 +78,7 @@ fn decode(v: u8) -> Option<MenuCommand> {
         FocusSearch,
         BackupCatalog,
         RestoreCatalog,
+        Analyze,
     ];
     all.into_iter().find(|&c| c as u8 == v)
 }
@@ -368,6 +371,21 @@ mod imp {
             Some(&target),
         ));
 
+        // ── Analysis ───────────────────────────────────────────────────────
+        // Analysis is a menu command, not a toolbar button: it acts on the
+        // selection when there is one and on the whole library otherwise, and
+        // the row menu covers the one-track case.
+        let analysis = submenu(mtm, &bar, "Analysis");
+        analysis.addItem(&item(
+            mtm,
+            "Analyze Tracks",
+            "",
+            NONE,
+            Some(MenuCommand::Analyze),
+            None,
+            Some(&target),
+        ));
+
         // ── Playback ───────────────────────────────────────────────────────
         // Space is handled in egui (it must yield to focused text fields), so
         // this item carries no key equivalent — claiming the chord here would
@@ -421,11 +439,11 @@ mod tests {
 
     #[test]
     fn every_command_round_trips_through_its_tag() {
-        for v in 1..=10u8 {
-            let cmd = decode(v).expect("tags 1-10 are commands");
+        for v in 1..=11u8 {
+            let cmd = decode(v).expect("tags 1-11 are commands");
             assert_eq!(cmd as u8, v);
         }
         assert_eq!(decode(0), None);
-        assert_eq!(decode(11), None);
+        assert_eq!(decode(12), None);
     }
 }

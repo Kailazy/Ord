@@ -2741,6 +2741,31 @@ impl App {
                         pick::Then::RestoreCatalog,
                     );
                 }
+                // The selection in visible order, else every track not yet
+                // analyzed. Device rows carry synthetic ids and the vinyl
+                // views show records, so neither has anything to analyze;
+                // analysis has its own lane, so a mid-run call just queues.
+                macos_menu::MenuCommand::Analyze => {
+                    let catalog_rows = !matches!(
+                        self.view,
+                        LibraryView::Vinyl | LibraryView::CrateSet(_) | LibraryView::Usb(..)
+                    ) || self.tag_table_view();
+                    if !catalog_rows {
+                        self.status = "Nothing to analyze here".to_string();
+                    } else {
+                        let ids: Vec<Id> = self
+                            .rows
+                            .iter()
+                            .filter(|r| self.selection.contains(&r.id))
+                            .map(|r| r.id)
+                            .collect();
+                        if ids.is_empty() {
+                            self.spawn_analyze(false);
+                        } else {
+                            self.spawn_analyze_ids(ids, false);
+                        }
+                    }
+                }
             }
         }
 
@@ -2981,52 +3006,12 @@ impl App {
                     // the vinyl side too: songs on records.
                     // A tag showing its tracks is the library table again.
                     if !matches!(self.view, LibraryView::Vinyl | LibraryView::CrateSet(_)) || self.tag_table_view() {
-                        // When rows are selected, the toolbar buttons act on just that
-                        // selection (in visible order); otherwise they fall back to the
-                        // whole filtered view. The label reflects which, so a user who
-                        // picked a few tracks isn't surprised by a full-library run.
-                        // USB rows have synthetic non-catalog ids, so a device-view
-                        // selection is ignored here — the buttons keep their
-                        // whole-catalog fallback meaning instead of no-op'ing.
+                        // The buttons act on the selection (in visible order).
+                        // USB rows have synthetic non-catalog ids, so the
+                        // catalog-only actions hide on a device view. Analysis
+                        // is in the menu bar (Analysis › Analyze Tracks), not
+                        // here.
                         let usb_view = matches!(self.view, LibraryView::Usb(..));
-                        let sel_ids: Vec<Id> = if usb_view {
-                            Vec::new()
-                        } else {
-                            self.rows
-                                .iter()
-                                .filter(|x| self.selection.contains(&x.id))
-                                .map(|x| x.id)
-                                .collect()
-                        };
-                        // Analysis: one button. Force re-analyze and bulk Discogs
-                        // fetches were dropped — the per-track ↻ re-pick covers the
-                        // metadata case, and re-analysis is rarely wanted in bulk.
-                        // It stays live while a job runs: analysis has its own
-                        // lane, and a click mid-run adds to the queue. One
-                        // label in every state; the top bar's readout carries
-                        // the selection count.
-                        if ui
-                            .add_enabled(
-                                !self.rows.is_empty(),
-                                egui::Button::new(crate::ui::icon_text(
-                                    named(icons::LIGHTNING),
-                                    "Analyze",
-                                    font::body(),
-                                )),
-                            )
-                            .on_hover_note(
-                                "Detect BPM, key, beatgrid, and quality for the selected \
-                         tracks, or all of them. Skips tracks already analyzed.",
-                            )
-                            .on_disabled_hover_note("Nothing to analyze here")
-                            .clicked()
-                        {
-                            if sel_ids.is_empty() {
-                                self.spawn_analyze(false);
-                            } else {
-                                self.spawn_analyze_ids(sel_ids.clone(), false);
-                            }
-                        }
                         ui.add_enabled_ui(!busy, |ui| {
                             // Selection-only actions keep their place and grey
                             // out when nothing is selected, rather than
