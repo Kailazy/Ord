@@ -600,11 +600,6 @@ fn vinyl_cell_menu(
         *action = Some(VinylGridAction::Remove(c.key));
         ui.close_menu();
     }
-    ui.separator();
-    if ui.button("Open on Discogs ↗").clicked() {
-        open_url(release_url);
-        ui.close_menu();
-    }
 }
 
 impl App {
