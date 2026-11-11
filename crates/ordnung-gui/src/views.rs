@@ -529,7 +529,7 @@ fn vinyl_cell_menu(
         ui.close_menu();
     }
     if ui
-        .button(crate::ui::icon_label(icons::MAGNIFYING_GLASS, "Dig from here"))
+        .button("Dig from here")
         .on_hover_note("Walk the collection from this record, by artist or label")
         .clicked()
     {
@@ -547,7 +547,7 @@ fn vinyl_cell_menu(
         ui.close_menu();
     }
     if ui
-        .button(crate::ui::icon_label(icons::HOUSE, "Browse the label"))
+        .button("Browse the label")
         .on_hover_note("The label's whole run as a list, your shelves marked")
         .clicked()
     {

@@ -1388,8 +1388,11 @@ impl App {
                     act = Some(SellerAct::Open(idx));
                 }
                 crate::ui::menu::context(&resp, |ui| {
+                    crate::ui::menu::text(ui, egui::RichText::new(&title).strong());
+                    crate::ui::menu::text(ui, egui::RichText::new(&artist).weak());
+                    ui.separator();
                     if ui
-                        .button(crate::ui::icon_label(icons::SHOPPING_CART, "Add to cart on Discogs ↗"))
+                        .button("Add to cart on Discogs ↗")
                         .on_hover_note("Opens the listing; cart and checkout live on discogs.com")
                         .clicked()
                     {
@@ -1397,7 +1400,7 @@ impl App {
                         ui.close_menu();
                     }
                     if ui
-                        .button(crate::ui::icon_label(icons::MAGNIFYING_GLASS, "Dig from here"))
+                        .button("Dig from here")
                         .on_hover_note("Walk Discogs outward from this record, by artist or label")
                         .clicked()
                     {
@@ -1405,27 +1408,22 @@ impl App {
                         ui.close_menu();
                     }
                     let already = owned || wanted;
-                    if crate::ui::icon::shelf_button(
-                        ui,
-                        VinylList::Wantlist,
-                        false,
-                        "Add to wantlist",
-                        !already,
-                    )
-                    .clicked()
+                    if ui
+                        .add_enabled(!already, egui::Button::new("Add to wantlist"))
+                        .clicked()
                     {
                         act = Some(SellerAct::Want(idx));
                         ui.close_menu();
                     }
                     if ui
-                        .button(crate::ui::icon_label(icons::HOUSE, "Browse the label"))
+                        .button("Browse the label")
                         .on_hover_note("The label's whole run as a list, your shelves marked")
                         .clicked()
                     {
                         act = Some(SellerAct::LabelPage(idx));
                         ui.close_menu();
                     }
-                    if ui.button("↗ Open release page").clicked() {
+                    if ui.button("Open release page ↗").clicked() {
                         open_url(&format!("https://www.discogs.com/release/{release_id}"));
                         ui.close_menu();
                     }
@@ -1675,8 +1673,11 @@ impl App {
             act = Some(SellerAct::Open(idx));
         }
         crate::ui::menu::context(&resp, |ui| {
+            crate::ui::menu::text(ui, egui::RichText::new(&title).strong());
+            crate::ui::menu::text(ui, egui::RichText::new(&artist).weak());
+            ui.separator();
             if ui
-                .button(crate::ui::icon_label(icons::SHOPPING_CART, "Add to cart on Discogs ↗"))
+                .button("Add to cart on Discogs ↗")
                 .on_hover_note("Opens the listing; cart and checkout live on discogs.com")
                 .clicked()
             {
@@ -1684,7 +1685,7 @@ impl App {
                 ui.close_menu();
             }
             if ui
-                .button(crate::ui::icon_label(icons::MAGNIFYING_GLASS, "Dig from here"))
+                .button("Dig from here")
                 .on_hover_note("Walk Discogs outward from this record, by artist or label")
                 .clicked()
             {
@@ -1692,13 +1693,14 @@ impl App {
                 ui.close_menu();
             }
             let already = owned || wanted;
-            if crate::ui::icon::shelf_button(ui, VinylList::Wantlist, false, "Add to wantlist", !already)
+            if ui
+                .add_enabled(!already, egui::Button::new("Add to wantlist"))
                 .clicked()
             {
                 act = Some(SellerAct::Want(idx));
                 ui.close_menu();
             }
-            if ui.button("↗ Open release page").clicked() {
+            if ui.button("Open release page ↗").clicked() {
                 open_url(&format!("https://www.discogs.com/release/{release_id}"));
                 ui.close_menu();
             }
