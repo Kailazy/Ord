@@ -3598,12 +3598,12 @@ fn sheet_row_ui(
                             // nothing beside it shifts.
                             // One text in every state; the hover note
                             // carries the match percentage.
-                            let text = "▶ video";
-                            let chip = ui.label(
-                                egui::RichText::new(text)
-                                    .small()
-                                    .color(crate::ui::tokens::color::NEGATIVE),
-                            );
+                            let chip = ui.label(crate::ui::icon_text_in(
+                                named(icons::VIDEO),
+                                "video",
+                                crate::ui::tokens::font::caption(),
+                                crate::ui::tokens::color::NEGATIVE,
+                            ));
                             if let Some(c) = row.guess {
                                 let title = sheet
                                     .detail
