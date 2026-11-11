@@ -3200,8 +3200,7 @@ impl App {
                         // table isn't `rows`: counted here through the same
                         // filter its view applies.
                         let mut counts = if self.view == LibraryView::Liked {
-                            let n = self.liked_shown().len();
-                            if n == 1 { "1 song".to_string() } else { format!("{n} songs") }
+                            util::count(self.liked_shown().len(), "song")
                         } else if let LibraryView::CrateSet(id) = self.view {
                             self.crate_count_words(id)
                         } else {
@@ -4710,8 +4709,7 @@ impl App {
         // While songs are being carried to a crate, say how many at the
         // pointer, the way a track drag does.
         if let Some(payload) = egui::DragAndDrop::payload::<DraggedSongs>(ctx) {
-            let n = payload.0.len();
-            crate::ui::drag_chip(ctx, if n == 1 { "1 song".to_string() } else { format!("{n} songs") });
+            crate::ui::drag_chip(ctx, util::count(payload.0.len(), "song"));
         }
 
         // Drop a folder / audio files from Finder anywhere on the window to import.

@@ -404,8 +404,7 @@ impl App {
         match self.crate_layout(self.crate_kind(id)) {
             CrateLayout::Tracks => format!("{} tracks", self.rows.len()),
             CrateLayout::Songs => {
-                let n = shown.count();
-                if n == 1 { "1 song".to_string() } else { format!("{n} songs") }
+                util::count(shown.count(), "song")
             }
             CrateLayout::Records => {
                 // Songs without a record add nothing: the heading counts
@@ -413,8 +412,7 @@ impl App {
                 let mut ids: Vec<u64> = shown.filter_map(|s| s.release_id).collect();
                 ids.sort_unstable();
                 ids.dedup();
-                let n = ids.len();
-                if n == 1 { "1 record".to_string() } else { format!("{n} records") }
+                util::count(ids.len(), "record")
             }
         }
     }
@@ -447,18 +445,11 @@ impl App {
         ui.horizontal(|ui| {
             ui.add(egui::Label::new(egui::RichText::new(&set.name).font(font::headline())).truncate());
             if !songs.is_empty() {
-                let records = match set.records {
-                    1 => "1 record".to_string(),
-                    n => format!("{n} records"),
-                };
+                let records = util::count(set.records as usize, "record");
+                let songs = util::count(set.songs as usize, "song");
                 // Songs met without a record (a tag full of library
                 // files, say) are counted alone.
-                let mut words = match (set.songs, set.records) {
-                    (1, 0) => "1 song".to_string(),
-                    (n, 0) => format!("{n} songs"),
-                    (1, _) => format!("1 song on {records}"),
-                    (n, _) => format!("{n} songs on {records}"),
-                };
+                let mut words = if set.records == 0 { songs } else { format!("{songs} on {records}") };
                 if to_get > 0 {
                     words.push_str(&format!(" · {to_get} not in your library"));
                 }
@@ -667,8 +658,7 @@ impl App {
                                 }
                             })
                             .collect();
-                        let n = g.songs.len();
-                        let count = if n == 1 { "1 song".to_string() } else { format!("{n} songs") };
+                        let count = util::count(g.songs.len(), "song");
                         two_line(ui, egui::RichText::new(words.join(" · ")).color(color::LABEL_2), Some(count));
                     });
                     // Owned / Want for the shelf, Files when every song of

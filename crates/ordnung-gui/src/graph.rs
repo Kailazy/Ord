@@ -2350,12 +2350,7 @@ impl App {
                 });
             } else if g.nodes[i].kind == Kind::Hub {
                 let n = &g.nodes[i];
-                let words = format!(
-                    "{} · {} record{}",
-                    n.name,
-                    n.weight,
-                    if n.weight == 1 { "" } else { "s" }
-                );
+                let words = format!("{} · {}", n.name, crate::util::count(n.weight, "record"));
                 resp.clone().on_hover_note_at_pointer(|ui| {
                     ui.label(words);
                 });
@@ -2622,11 +2617,8 @@ impl App {
                         if count > 0 {
                             ui.label(egui::RichText::new(caption).weak());
                             ui.label(
-                                egui::RichText::new(format!(
-                                    "· {count} record{}",
-                                    if count == 1 { "" } else { "s" }
-                                ))
-                                .weak(),
+                                egui::RichText::new(format!("· {}", crate::util::count(count, "record")))
+                                    .weak(),
                             );
                         }
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -2946,10 +2938,7 @@ impl App {
                     self.dug.iter().map(|d| d.release_id).collect();
                 self.dug_genres.retain(|id, _| keep.contains(id));
                 self.graph.wake();
-                self.status = format!(
-                    "Forgot {n} discovered record{}",
-                    if n == 1 { "" } else { "s" }
-                );
+                self.status = format!("Forgot {}", crate::util::count(n, "discovered record"));
             }
             Err(e) => self.status = format!("Couldn't clear discovered records: {e}"),
         }
