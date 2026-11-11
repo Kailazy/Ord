@@ -935,8 +935,8 @@ impl App {
             ui.horizontal(|ui| {
                 ui.spinner();
                 let reading = match thread {
-                    BrowseThread::Label => "Reading the label's crate…",
-                    BrowseThread::Artist => "Reading the artist's crate…",
+                    BrowseThread::Label => "Reading the label's run…",
+                    BrowseThread::Artist => "Reading the artist's run…",
                 };
                 ui.label(egui::RichText::new(reading).weak());
             });
