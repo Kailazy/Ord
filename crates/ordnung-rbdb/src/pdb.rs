@@ -26,7 +26,7 @@ pub enum ReadError {
     Format(&'static str),
     #[error("device library plus: {0}")]
     Dlp(String),
-    #[error("export.pdb is not in the shape rekordbox writes: {0}")]
+    #[error("export.pdb is not in the shape the player writes: {0}")]
     Lint(String),
     /// Converting a stick's file in place failed (see `edit::convert_stick_track`).
     #[error("couldn't convert {path}: {msg}")]
