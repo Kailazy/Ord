@@ -54,7 +54,7 @@ over whether it is being liked, dragged or added through a menu.
   track; click opens the sheet, the menu takes the whole record out.
   **Songs** is the shared table (`App::song_rows`), the Liked view's rows
   with a ✕ beside the heart. The top bar's count follows the layout.
-- The digital-library toolbar (Add songs, Analyze) hides on a crate as it
+- The digital-library toolbar (Add songs, Convert) hides on a crate as it
   does on the vinyl wall; the inspector doesn't apply.
 
 ## 4. Reuse
