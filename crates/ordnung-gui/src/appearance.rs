@@ -9,12 +9,7 @@ impl App {
     pub(crate) fn draw_appearance_tab(&mut self, ui: &mut egui::Ui) {
         let mut dirty = false;
 
-        heading(
-            ui,
-            "Look",
-            "The app background and the accent that suits it, as a set. Pick \
-             one, then tune the accent below.",
-        );
+        heading(ui, "Look");
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = space::S3;
             let (bg, accent) = (color::bg(), color::accent());
@@ -29,12 +24,7 @@ impl App {
         });
 
         divider(ui);
-        heading(
-            ui,
-            "Table rows",
-            "Every other row of a song or record table is a touch darker, so a \
-             wide row can be followed across its columns.",
-        );
+        heading(ui, "Table rows");
         dirty |= ui
             .checkbox(&mut self.config.zebra_rows, "Shade alternating rows")
             .changed();
@@ -56,13 +46,7 @@ impl App {
         });
 
         divider(ui);
-        heading(
-            ui,
-            "Accent",
-            "The colour of selections, links and the primary button. The \
-             presets first; the picker sets any colour, and + keeps it as a \
-             preset.",
-        );
+        heading(ui, "Accent");
         let current = color::accent();
         ui.horizontal_wrapped(|ui| {
             ui.spacing_mut().item_spacing.x = space::S2;
@@ -128,11 +112,9 @@ fn stored(c: egui::Color32, stock: egui::Color32) -> String {
     }
 }
 
-/// A settings section's title and the line under it, as the other tabs
-/// set them.
-fn heading(ui: &mut egui::Ui, title: &str, note: &str) {
+/// A settings section's title, as the other tabs set it.
+fn heading(ui: &mut egui::Ui, title: &str) {
     ui.label(egui::RichText::new(title).strong());
-    ui.label(egui::RichText::new(note).small().weak());
     ui.add_space(4.0);
 }
 

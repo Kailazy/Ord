@@ -902,13 +902,6 @@ impl App {
                                         ui.label(
                                             egui::RichText::new("Getting started").strong(),
                                         );
-                                        ui.label(
-                    egui::RichText::new(
-                        "The tour shown on first launch: what Ord does, what Discogs adds, and how tag writeback works.",
-                    )
-                    .small()
-                    .weak(),
-                );
                                         ui.add_space(4.0);
                                         if ui
                                             .button("Show welcome tour")
@@ -939,16 +932,14 @@ impl App {
                 }
                                     }
                                     SettingsTab::Waveform => {
-                                        ui.label(egui::RichText::new("Waveform").strong());
-                                        ui.label(
-                                    egui::RichText::new(
-                                        "How the player's waveform is colored. Energy shades each \
-                         section by its loudness (cool → hot); Spectrum colors by \
-                         frequency content (low = red, mid = green, high = blue).",
-                                    )
-                                    .small()
-                                    .weak(),
-                                );
+                                        ui.horizontal(|ui| {
+                                            ui.label(egui::RichText::new("Waveform").strong());
+                                            crate::ui::info_note(
+                                                ui,
+                                                "Energy shades each section by loudness, cool to hot. \
+                                                 Spectrum colours by frequency: low red, mid green, high blue.",
+                                            );
+                                        });
                                         ui.add_space(4.0);
                                         let current = self.config.waveform_color_mode;
                                         let mut picked = current;
@@ -1423,14 +1414,6 @@ impl App {
                                     }
                                     SettingsTab::Sorting => {
                                         ui.label(egui::RichText::new("Sorting").strong());
-                                        ui.label(
-                    egui::RichText::new(
-                        "How the track table is sorted when the app launches. You can \
-                         still click any column header to re-sort during a session.",
-                    )
-                    .small()
-                    .weak(),
-                );
                                         ui.add_space(4.0);
                                         let mut sort_dirty = false;
                                         // Sortable columns, in display order, plus a "Natural order"
