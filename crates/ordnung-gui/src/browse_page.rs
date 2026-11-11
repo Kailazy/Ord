@@ -354,49 +354,106 @@ fn send_label_about(
     ctx.request_repaint();
 }
 
-/// What the label page says about the label, over its run: the profile
-/// (a few lines, scrolling when long), the parent, the sublabels. Each
-/// named label opens its own run.
-fn label_about_ui(ui: &mut egui::Ui, about: &discogs::LabelDetail, out: &mut BrowseOut) {
+/// What the label page says about the label, read like a header under the
+/// title: one quiet line of family (the parent, the sublabels: one named,
+/// more behind a count that opens a list), then the profile clamped to
+/// two lines (one in the record sheet's pane, `fill`), a click reading it
+/// all. Each named label opens its run. Returns how much taller the open
+/// profile stands than the cut one, for the window's list to give back so
+/// the window keeps its height.
+fn label_about_ui(ui: &mut egui::Ui, about: &discogs::LabelDetail, out: &mut BrowseOut, fill: bool) -> f32 {
+    use crate::ui::tokens::{color, font, space};
     if about.profile.is_empty() && about.parent.is_none() && about.sublabels.is_empty() {
-        return;
+        return 0.0;
     }
-    ui.add_space(crate::ui::tokens::space::S2);
-    egui::Grid::new(("label-about", about.id))
-        .num_columns(2)
-        .spacing([crate::ui::tokens::space::S3, crate::ui::tokens::space::S1])
-        .show(ui, |ui| {
-            let links = |ui: &mut egui::Ui, refs: &[discogs::NamedRef], out: &mut BrowseOut| {
-                ui.horizontal_wrapped(|ui| {
-                    for r in refs {
-                        if ui.link(crate::dig::strip_disambiguator(&r.name)).clicked() {
-                            out.act = Some(Act::Label(r.clone()));
-                        }
-                    }
-                });
+    let mut grow = 0.0;
+    let name = |r: &discogs::NamedRef| crate::dig::strip_disambiguator(&r.name).to_string();
+    if about.parent.is_some() || !about.sublabels.is_empty() {
+        ui.add_space(space::S2);
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 0.0;
+            let text = |ui: &mut egui::Ui, t: &str, ink| {
+                ui.label(egui::RichText::new(t).font(font::footnote()).color(ink));
             };
-            if !about.profile.is_empty() {
-                ui.label(egui::RichText::new("Profile").weak());
-                egui::ScrollArea::vertical()
-                    .id_salt(("label-profile", about.id))
-                    .max_height(60.0)
-                    .min_scrolled_height(0.0)
-                    .show(ui, |ui| ui.add(egui::Label::new(&about.profile).wrap()));
-                ui.end_row();
-            }
+            // A name cut to the room left on the line, so a long one never
+            // widens the window.
+            let link = |ui: &mut egui::Ui, r: &discogs::NamedRef, out: &mut BrowseOut| {
+                let g = crate::ui::text::truncated(ui, name(r), font::footnote(), color::LABEL_2, ui.available_width(), false);
+                let (rect, _) = ui.allocate_exact_size(g.size(), egui::Sense::hover());
+                if crate::ui::button::name_link_at(ui, rect, ui.id().with(("label-link", r.id)), g, color::LABEL_2).clicked() {
+                    out.act = Some(Act::Label(r.clone()));
+                }
+            };
             if let Some(p) = &about.parent {
-                ui.label(egui::RichText::new("Parent label").weak());
-                links(ui, std::slice::from_ref(p), out);
-                ui.end_row();
+                text(ui, "Part of ", color::LABEL_2);
+                link(ui, p, out);
+                if !about.sublabels.is_empty() {
+                    text(ui, " · ", color::LABEL_3);
+                }
             }
-            if !about.sublabels.is_empty() {
-                ui.label(egui::RichText::new("Sublabels").weak());
-                links(ui, &about.sublabels, out);
-                ui.end_row();
+            match about.sublabels.as_slice() {
+                [] => {}
+                [one] => {
+                    text(ui, "Sublabel ", color::LABEL_2);
+                    link(ui, one, out);
+                }
+                many => {
+                    let resp = crate::ui::button::inline(ui, &format!("{} sublabels", many.len()));
+                    crate::ui::menu::dropdown(&resp, 260.0, |m| {
+                        m.scroll(320.0, |m| {
+                            for r in many {
+                                if m.item(name(r)) {
+                                    out.act = Some(Act::Label(r.clone()));
+                                    m.close();
+                                }
+                            }
+                        })
+                    });
+                }
             }
         });
-    ui.add_space(crate::ui::tokens::space::S2);
+    }
+    if !about.profile.is_empty() {
+        ui.add_space(space::S2);
+        let id = egui::Id::new(("label-profile", about.id));
+        let open = ui.data_mut(|d| d.get_temp::<bool>(id)).unwrap_or(false);
+        let ink = egui::TextFormat::simple(font::body(), color::LABEL_2);
+        let mut job = egui::text::LayoutJob::single_section(about.profile.clone(), ink.clone());
+        job.wrap.max_width = ui.available_width();
+        // The cut one reads as one run of prose, so its lines fill rather
+        // than stop at the first paragraph's full stop.
+        let mut cut = egui::text::LayoutJob::single_section(about.profile.split_whitespace().collect::<Vec<_>>().join(" "), ink);
+        cut.wrap.max_width = job.wrap.max_width;
+        cut.wrap.max_rows = if fill { 1 } else { 2 };
+        cut.wrap.overflow_character = Some('…');
+        let cut = ui.fonts(|f| f.layout_job(cut));
+        // Open, the whole profile scrolls under a cap so the run keeps its
+        // room; shut, it is cut short and a click opens it.
+        let (resp, more) = if open {
+            let cap = if fill { ui.available_height() * 0.4 } else { 120.0 };
+            let r = egui::ScrollArea::vertical()
+                .id_salt(id)
+                .max_height(cap)
+                .min_scrolled_height(0.0)
+                .show(ui, |ui| ui.add(egui::Label::new(job).sense(egui::Sense::click())));
+            grow = (r.inner_rect.height() - cut.size().y).max(0.0);
+            (r.inner, true)
+        } else {
+            let elided = cut.elided;
+            (ui.add(egui::Label::new(cut).sense(egui::Sense::click())), elided)
+        };
+        if more {
+            let resp = resp
+                .on_hover_cursor(egui::CursorIcon::PointingHand)
+                .on_hover_note(if open { "Show less" } else { "Read all" });
+            if resp.clicked() {
+                ui.data_mut(|d| d.insert_temp(id, !open));
+            }
+        }
+    }
+    ui.add_space(space::S3);
     ui.separator();
+    grow
 }
 
 impl App {
@@ -1014,19 +1071,21 @@ impl App {
             ui.add_space(4.0);
             return;
         }
+        let grow = snap.about.as_ref().map_or(0.0, |a| label_about_ui(ui, a, out, fill));
         if rows.is_empty() {
             ui.label(egui::RichText::new("No records on this page of the run").weak());
         }
+        let list_h = 440.0 - grow;
         let list = |ui: &mut egui::Ui, out: &mut BrowseOut| {
         egui::ScrollArea::vertical()
             .id_salt((thread as u8, &snap.name))
-            .max_height(if fill { f32::INFINITY } else { 440.0 })
+            .max_height(if fill { f32::INFINITY } else { list_h })
             .show(ui, |ui| {
                 // A paged run keeps the list at full height on every
                 // page, so the pager under it stays put under the
                 // cursor when a short last page turns up.
                 if pages > 1 && !fill {
-                    ui.set_min_height(440.0);
+                    ui.set_min_height(list_h);
                 }
                 for (i, r) in rows.iter().enumerate() {
                     // Acts name the release in the panel, not the row on
@@ -1258,9 +1317,6 @@ impl App {
                 ui.separator();
             }
         };
-        if let Some(about) = &snap.about {
-            label_about_ui(ui, about, out);
-        }
         if fill {
             ui.with_layout(egui::Layout::bottom_up(egui::Align::Min), |ui| {
                 pager(ui, out);
