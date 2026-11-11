@@ -9,7 +9,7 @@ impl App {
     pub(crate) fn draw_appearance_tab(&mut self, ui: &mut egui::Ui) {
         let mut dirty = false;
 
-        heading(ui, "Look");
+        crate::modals::settings_heading(ui, "Look");
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = space::S3;
             let (bg, accent) = (color::bg(), color::accent());
@@ -24,7 +24,7 @@ impl App {
         });
 
         divider(ui);
-        heading(ui, "Table rows");
+        crate::modals::settings_heading(ui, "Table rows");
         dirty |= ui
             .checkbox(&mut self.config.zebra_rows, "Shade alternating rows")
             .changed();
@@ -46,7 +46,7 @@ impl App {
         });
 
         divider(ui);
-        heading(ui, "Accent");
+        crate::modals::settings_heading(ui, "Accent");
         let current = color::accent();
         ui.horizontal_wrapped(|ui| {
             ui.spacing_mut().item_spacing.x = space::S2;
@@ -110,12 +110,6 @@ fn stored(c: egui::Color32, stock: egui::Color32) -> String {
     } else {
         color::to_hex(c)
     }
-}
-
-/// A settings section's title, as the other tabs set it.
-fn heading(ui: &mut egui::Ui, title: &str) {
-    ui.label(egui::RichText::new(title).strong());
-    ui.add_space(4.0);
 }
 
 fn divider(ui: &mut egui::Ui) {

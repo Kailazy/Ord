@@ -899,10 +899,7 @@ impl App {
                                         ui.add_space(14.0);
                                         ui.separator();
                                         ui.add_space(10.0);
-                                        ui.label(
-                                            egui::RichText::new("Getting started").strong(),
-                                        );
-                                        ui.add_space(4.0);
+                                        settings_heading(ui, "Getting started");
                                         if ui
                                             .button("Show welcome tour")
                                             .on_hover_note("Replay the first-run tour")
@@ -1413,8 +1410,7 @@ impl App {
                                         }
                                     }
                                     SettingsTab::Sorting => {
-                                        ui.label(egui::RichText::new("Sorting").strong());
-                                        ui.add_space(4.0);
+                                        settings_heading(ui, "Sorting");
                                         let mut sort_dirty = false;
                                         // Sortable columns, in display order, plus a "Natural order"
                                         // sentinel (empty key) that keeps catalog/playlist order.
@@ -3707,4 +3703,11 @@ fn confirm(
         answer.get_or_insert(false);
     }
     answer
+}
+
+/// A settings section's title: one strong line, 4 pt of air, then its
+/// controls. Every tab sets its headers through here.
+pub(crate) fn settings_heading(ui: &mut egui::Ui, title: &str) {
+    ui.label(egui::RichText::new(title).strong());
+    ui.add_space(4.0);
 }
