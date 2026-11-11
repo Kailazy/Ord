@@ -966,14 +966,17 @@ impl App {
                         return;
                     }
                     if memory.is_empty() {
-                        ui.label(
-                            egui::RichText::new(if editable {
-                                "None yet. + Cue marks the playhead."
-                            } else {
-                                "None on the stick."
-                            })
-                            .font(font::footnote())
-                            .color(color::LABEL_4),
+                        ui.add(
+                            egui::Label::new(
+                                egui::RichText::new(if editable {
+                                    "None yet. + Cue marks the playhead."
+                                } else {
+                                    "None on the stick."
+                                })
+                                .font(font::footnote())
+                                .color(color::LABEL_4),
+                            )
+                            .truncate(),
                         );
                         return;
                     }
