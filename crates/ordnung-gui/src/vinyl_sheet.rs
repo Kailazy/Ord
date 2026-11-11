@@ -2009,18 +2009,34 @@ impl App {
                                     ui.label(egui::RichText::new("Bandcamp").weak());
                                     room = ui.available_size_before_wrap().x - word_w - menu_w - 6.0;
                                 }
-                                let shown = crate::ui::text::truncated(
-                                    ui,
-                                    line.clone(),
-                                    egui::TextStyle::Body.resolve(ui.style()),
-                                    price_ink,
-                                    room,
-                                    true,
-                                )
-                                .rows
-                                .first()
-                                .map(|r| r.text())
-                                .unwrap_or_default();
+                                // The whole line when it fits; else the
+                                // longest run of whole parts that does, cut
+                                // at a " · " with no ellipsis (the Formats
+                                // chip says there is more); mid-word only
+                                // when not even the first part fits.
+                                let fits = |s: &str| text_w(s) <= room;
+                                let shown = if fits(line) {
+                                    line.clone()
+                                } else {
+                                    line.rmatch_indices(" · ")
+                                        .map(|(i, _)| &line[..i])
+                                        .find(|s| fits(s))
+                                        .map(str::to_owned)
+                                        .unwrap_or_else(|| {
+                                            crate::ui::text::truncated(
+                                                ui,
+                                                line.clone(),
+                                                egui::TextStyle::Body.resolve(ui.style()),
+                                                price_ink,
+                                                room,
+                                                true,
+                                            )
+                                            .rows
+                                            .first()
+                                            .map(|r| r.text())
+                                            .unwrap_or_default()
+                                        })
+                                };
                                 // The price is the link, as on the Discogs
                                 // side: to the one format's page, or to the
                                 // album when there are several, which a chip
