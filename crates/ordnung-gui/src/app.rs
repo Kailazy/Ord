@@ -3006,15 +3006,19 @@ impl App {
                         // label in every state; the top bar's readout carries
                         // the selection count.
                         if ui
-                            .button(crate::ui::icon_text(
-                                named(icons::LIGHTNING),
-                                "Analyze",
-                                font::body(),
-                            ))
+                            .add_enabled(
+                                !self.rows.is_empty(),
+                                egui::Button::new(crate::ui::icon_text(
+                                    named(icons::LIGHTNING),
+                                    "Analyze",
+                                    font::body(),
+                                )),
+                            )
                             .on_hover_note(
                                 "Detect BPM, key, beatgrid, and quality for the selected \
                          tracks, or all of them. Skips tracks already analyzed.",
                             )
+                            .on_disabled_hover_note("Nothing to analyze here")
                             .clicked()
                         {
                             if sel_ids.is_empty() {
