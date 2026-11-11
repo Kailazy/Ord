@@ -100,13 +100,6 @@ impl BrowsePanel {
         self.cache.len() < self.run_pages.min(RUN_MAX_PAGES) as usize
     }
 
-    /// A run Discogs holds more of than was read: the releases read and
-    /// the total, for the pager to say so. `None` for a run read whole.
-    fn cut(&self) -> Option<(usize, u32)> {
-        (self.run_pages > RUN_MAX_PAGES)
-            .then(|| (self.cache.values().map(|p| p.releases.len()).sum(), self.items))
-    }
-
     /// The artist's name as Discogs spells it, and the other names the same
     /// act records under (aliases, groups, name variations), once the kin
     /// has arrived.
@@ -904,7 +897,8 @@ impl App {
             rows,
             offset,
             reading: panel.reading(),
-            cut: panel.cut(),
+            cut: (panel.run_pages > RUN_MAX_PAGES)
+                .then(|| (panel.cache.values().map(|p| p.releases.len()).sum(), panel.items)),
             by_alias: self.config.artist_run_by_alias,
             family: panel
                 .family
