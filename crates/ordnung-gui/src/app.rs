@@ -3812,7 +3812,7 @@ impl App {
                         // group reads as one list.
                         if missing_count > 0 {
                             ui.add_space(space::S2);
-                            if playlist_row(
+                            let health = playlist_row(
                                 ui,
                                 density,
                                 "Missing",
@@ -3822,10 +3822,15 @@ impl App {
                                 },
                                 *view == LibraryView::Duplicates || *view == LibraryView::Missing,
                                 missing_count as usize,
-                            )
-                            .on_hover_note("Library health: missing files and duplicate copies")
-                            .clicked()
-                            {
+                            );
+                            // The rail's note already names the tile; the
+                            // sentence rides only where the row shows the name.
+                            let health = if density.icons_only() {
+                                health
+                            } else {
+                                health.on_hover_note("Library health: missing files and duplicate copies")
+                            };
+                            if health.clicked() {
                                 *sidebar_action = Some(SidebarAction::OpenHealth);
                             }
                         }
@@ -3841,17 +3846,20 @@ impl App {
                             if missing_count == 0 {
                                 ui.add_space(space::S2);
                             }
-                            if playlist_row(
+                            let liked = playlist_row(
                                 ui,
                                 density,
                                 "Liked",
                                 RowMark::plain(icons::HEART),
                                 *view == LibraryView::Liked,
                                 liked_count,
-                            )
-                            .on_hover_note("Songs you liked on records, tracklists and the radio")
-                            .clicked()
-                            {
+                            );
+                            let liked = if density.icons_only() {
+                                liked
+                            } else {
+                                liked.on_hover_note("Songs you liked on records, tracklists and the radio")
+                            };
+                            if liked.clicked() {
                                 *view = LibraryView::Liked;
                             }
                         }
