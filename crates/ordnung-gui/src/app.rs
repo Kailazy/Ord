@@ -3442,10 +3442,27 @@ impl App {
                                         s.rounding =
                                             egui::Rounding::same(crate::ui::tokens::radius::XS);
                                     }
+                                    // The long hint only where it fits whole: a
+                                    // cut word in the one field every view
+                                    // shares reads as a defect. The field's
+                                    // text area is `w` or what the row has
+                                    // left after the arrows, whichever is less.
+                                    let long = "Search songs, records and Discogs";
+                                    let long_w = ui
+                                        .painter()
+                                        .layout_no_wrap(
+                                            long.to_owned(),
+                                            egui::TextStyle::Body.resolve(ui.style()),
+                                            egui::Color32::PLACEHOLDER,
+                                        )
+                                        .size()
+                                        .x;
+                                    let text_w = w.min(ui.available_width() - field_frame);
+                                    let hint = if text_w < long_w { "Search" } else { long };
                                     ui.add(
                                         crate::ui::field::Field::singleline(&mut self.search_query)
                                             .width(w)
-                                            .hint("Search songs, records and Discogs"),
+                                            .hint(hint),
                                     )
                                 })
                                 .inner;
