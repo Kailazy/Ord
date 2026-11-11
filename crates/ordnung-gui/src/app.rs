@@ -1432,7 +1432,7 @@ impl App {
     /// Every path that writes to a stick asks this first.
     pub(crate) fn stick_write_blocked(&mut self, vol: &Path) -> bool {
         if ordnung_core::usb::rekordbox_running() {
-            self.fail("Quit rekordbox first: it rewrites device libraries it sees change.".into());
+            self.fail("Quit your DJ app first: it rewrites device libraries it sees change.".into());
             return true;
         }
         if self.export_running_to.as_deref() == Some(vol) {
@@ -4138,7 +4138,7 @@ impl App {
                                     font::body(),
                                 )
                                 .on_hover_note(if v.is_rekordbox_export {
-                                    "Removable volume with a rekordbox export. \
+                                    "Removable volume set up for performance. \
                                      Browse and edit its files directly."
                                 } else {
                                     "Removable volume. Browse and edit its files directly."
@@ -4586,7 +4586,7 @@ impl App {
                                 ui.add_space(6.0);
                                 ui.label("Drag tracks here from “Library” to add them");
                                 ui.label(
-                                    "Hold ⌥ Option while dragging to drop straight into rekordbox.",
+                                    "Hold ⌥ Option while dragging to drop straight into your DJ app.",
                                 );
                             } else {
                                 ui.heading("Your catalog is empty");

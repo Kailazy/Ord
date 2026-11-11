@@ -679,7 +679,7 @@ impl ExportComment {
     /// rekordbox itself puts there: the track's comment tag.
     pub fn label(self) -> &'static str {
         match self {
-            ExportComment::Notes => "Track notes (what rekordbox shows)",
+            ExportComment::Notes => "Track notes (what the player shows)",
             ExportComment::Tags => "Ord tags",
             ExportComment::NotesAndTags => "Notes and tags",
             ExportComment::None => "Nothing",

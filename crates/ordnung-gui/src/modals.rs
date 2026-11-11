@@ -1024,7 +1024,7 @@ impl App {
                                 .fixed_decimals(2),
                             )
                             .on_hover_note(
-                                "1.0 lifts quiet detail; 2.0 is linear like rekordbox",
+                                "1.0 lifts quiet detail; 2.0 is linear, as players draw it",
                             )
                             .changed()
                         {
@@ -1096,8 +1096,8 @@ impl App {
                                         }
                                         ui.label(
                                     egui::RichText::new(
-                                        "Irons the envelope's small jaggies into a connected, \
-                                         rekordbox-style silhouette. Strength scales the attack \
+                                        "Irons the envelope's small jaggies into a connected \
+                                         silhouette, as players draw it. Strength scales the attack \
                                          (rising edges) and release (tails) together, and the \
                                          result is identical at every zoom level.",
                                     )
@@ -1786,8 +1786,8 @@ same name is updated, others are left alone",
                         ui.add_space(4.0);
                         ui.label(
                             egui::RichText::new(format!(
-                                "⚠ Everything else on {name} goes: other playlists, cues or \
-grids made in rekordbox, and the files of tracks not in this selection."
+                                "⚠ Everything else on {name} goes: other playlists, player-set cues \
+and grids, and the files of tracks not in this selection."
                             ))
                             .color(ui.visuals().warn_fg_color),
                         );
@@ -2019,7 +2019,7 @@ Converted copies go on the stick; your library files stay as they are. Needs ffm
         .response
         .on_hover_note(
             "CDJs show a comment line under the song info. Track notes is the \
-file's comment tag, which rekordbox exports too; Ord tags are the song's tags, as in \
+file's comment tag, which DJ apps export too; Ord tags are the song's tags, as in \
 the table's Tags column.",
         );
         if picked != current {

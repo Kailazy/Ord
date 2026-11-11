@@ -712,14 +712,14 @@ impl App {
                                     "Export to a USB stick",
                                     "Right-click a playlist and choose Export to device: \
                                      tracks, playlists, beatgrids, keys, cues and waveforms \
-                                     land on the stick in rekordbox's own format.",
+                                     land on the stick in the format the players read.",
                                 );
                                 feature_row(
                                     ui,
                                     crate::ui::icon::tag,
-                                    "Or drop into rekordbox",
+                                    "Or drop into your DJ app",
                                     "Artwork and release data end up in the files' own \
-                                     tags, so adding them to rekordbox as you always have \
+                                     tags, so adding them to your DJ app as you always have \
                                      works too.",
                                 );
                             }
@@ -740,14 +740,14 @@ impl App {
                                          Discogs fills in what they're missing: genre, label, \
                                          year and cover art. Write to file copies those tags \
                                          and the cover into the song file itself, so they \
-                                         travel with it to rekordbox or anywhere else. The \
+                                         travel with it to your DJ app or anywhere else. The \
                                          audio is never touched."
                                     } else {
                                         "When a song is imported, Ord reads its tags; \
                                          edits and any Discogs release you match land in the \
                                          catalog. Write to file copies those tags and the \
                                          cover into the song file itself, so they travel with \
-                                         it to rekordbox or anywhere else. The audio is never \
+                                         it to your DJ app or anywhere else. The audio is never \
                                          touched."
                                     })
                                     .font(crate::ui::tokens::font::body())

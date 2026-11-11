@@ -378,7 +378,7 @@ impl App {
             .file_name()
             .map(|n| n.to_string_lossy().into_owned())
             .unwrap_or_else(|| dest.display().to_string());
-        let status = format!("Setting up {name} for rekordbox…");
+        let status = format!("Setting up {name} for performance…");
         let to = dest.clone();
         if self.spawn_job(ctx, status, true, move |_, cancel, tx, ctx| {
             run_usb_setup(dest, name, cancel, tx, ctx)
@@ -1275,7 +1275,7 @@ fn run_usb_setup(
     let result = ordnung_rbdb::export::setup_device(&dest, &cancel);
     let msg = match result {
         Ok(_) => JobMsg::Done(format!(
-            "{name} is now a rekordbox device. Exports can target it."
+            "{name} is set up for performance. Exports can target it."
         )),
         Err(e) => JobMsg::Failed(format!("Couldn't set up {name}: {e}")),
     };

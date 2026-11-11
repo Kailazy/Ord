@@ -450,7 +450,7 @@ impl App {
                 return;
             }
             if np.cues.iter().filter(|c| !c.is_hot()).count() >= MAX_MEMORY_CUES {
-                self.status = format!("rekordbox keeps at most {MAX_MEMORY_CUES} memory cues on a track");
+                self.status = format!("Players keep at most {MAX_MEMORY_CUES} memory cues on a track");
                 return;
             }
             np.cues.push(Cue {

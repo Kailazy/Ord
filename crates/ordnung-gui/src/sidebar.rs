@@ -501,7 +501,7 @@ pub(crate) fn export_menu_items(
             };
             if ui
                 .button(label)
-                .on_hover_note("Write this selection to the device as a native rekordbox export")
+                .on_hover_note("Write this selection to the device, ready for the player")
                 .clicked()
             {
                 picked = Some(v.path.clone());
@@ -513,7 +513,7 @@ pub(crate) fn export_menu_items(
                 egui::Button::new(format!("Export to {} (plain storage)", v.name)),
             )
             .on_disabled_hover_note(
-                "Not a rekordbox device. Open it and click Set up for rekordbox first",
+                "Not set up for performance. Open the device and click Set up for performance… first",
             );
         }
     }
@@ -1430,10 +1430,10 @@ pub(crate) fn source_tabs(
             }
             for v in volumes {
                 let tip = if v.is_rekordbox_export && cfg!(feature = "usb-export") {
-                    "This USB's files and rekordbox playlists. Drop library tracks \
+                    "This USB's files and playlists. Drop library tracks \
                      here to add them to the stick"
                 } else if v.is_rekordbox_export {
-                    "This USB's files and rekordbox playlists"
+                    "This USB's files and playlists"
                 } else {
                     "This volume's files"
                 };
