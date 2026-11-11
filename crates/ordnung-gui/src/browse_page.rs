@@ -959,7 +959,7 @@ impl App {
                                 out.want_covers.push(u.clone());
                             }
                         }
-                        crate::ui::cover::paint_at(ui, trect, r.cover.as_ref(), 4.0, None);
+                        crate::ui::cover::paint_at(ui, trect, r.cover.as_ref(), 4.0, Some(THUMB * 0.45));
                         let tresp = tresp
                             .on_hover_cursor(egui::CursorIcon::PointingHand)
                             .on_hover_note("Open the record");
