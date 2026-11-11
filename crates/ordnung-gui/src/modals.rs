@@ -2229,20 +2229,18 @@ Everything already on it stays as it is."
         }
     }
 
-    /// "Delete N tracks from the catalog?" confirmation. Catalog rows (and their
+    /// "Delete N tracks?" confirmation. Catalog rows (and their
     /// playlist links + analysis cache) are removed; source files are left on
     /// disk untouched. Destructive and not undoable, so it's an explicit gate.
     pub(crate) fn draw_delete_confirm(&mut self, ctx: &egui::Context) {
         let Some(ids) = self.confirm_delete.clone() else {
             return;
         };
-        let n = ids.len();
         let answer = danger_confirm(
             ctx,
-            "Delete from catalog?",
-            &format!("Remove {n} track{} from the catalog?", if n == 1 { "" } else { "s" }),
-            "They are dropped from every playlist and the analysis cache. \
-             The original files on disk are NOT deleted. This can't be undone.",
+            &format!("Delete {}?", util::count(ids.len(), "track")),
+            "They leave the catalog and every playlist. The files on disk stay.",
+            "This can't be undone.",
             "Delete",
         );
         if answer.is_some() {
@@ -2251,10 +2249,7 @@ Everything already on it stays as it is."
         if answer == Some(true) {
             match Catalog::open(&self.db_path).and_then(|c| c.delete_tracks(&ids)) {
                 Ok(removed) => {
-                    self.status = format!(
-                        "Deleted {removed} track{} from the catalog.",
-                        if removed == 1 { "" } else { "s" }
-                    );
+                    self.status = format!("Deleted {} from the catalog.", util::count(removed, "track"));
                     self.selection.retain(|id| !ids.contains(id));
                 }
                 Err(e) => self.status = format!("Delete failed: {e}"),
