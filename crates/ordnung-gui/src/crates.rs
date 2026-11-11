@@ -408,7 +408,9 @@ impl App {
                 if n == 1 { "1 song".to_string() } else { format!("{n} songs") }
             }
             CrateLayout::Records => {
-                let mut ids: Vec<Option<u64>> = shown.map(|s| s.release_id).collect();
+                // Songs without a record add nothing: the heading counts
+                // records too, and says those songs are counted alone.
+                let mut ids: Vec<u64> = shown.filter_map(|s| s.release_id).collect();
                 ids.sort_unstable();
                 ids.dedup();
                 let n = ids.len();
