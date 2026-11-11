@@ -3193,12 +3193,7 @@ impl App {
                         // table isn't `rows`: counted here through the same
                         // filter its view applies.
                         let mut counts = if self.view == LibraryView::Liked {
-                            let query = self.filter.trim().to_lowercase();
-                            let n = self
-                                .liked
-                                .iter()
-                                .filter(|s| crate::song_rows::song_matches(s, &query))
-                                .count();
+                            let n = self.liked_shown().len();
                             if n == 1 { "1 song".to_string() } else { format!("{n} songs") }
                         } else if let LibraryView::CrateSet(id) = self.view {
                             self.crate_count_words(id)

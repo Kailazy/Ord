@@ -156,10 +156,28 @@ impl App {
         self.library_index.resolve(song, known)
     }
 
+    /// The liked songs the view lists, as indexes into `liked`: those the
+    /// filter matches and, with `liked_to_get_only`, no file in the
+    /// library is yet. The top bar's count reads the same list.
+    pub(crate) fn liked_shown(&mut self) -> Vec<usize> {
+        self.ensure_library_index();
+        let query = self.filter.trim().to_lowercase();
+        let to_get_only = self.liked_to_get_only;
+        self.liked
+            .iter()
+            .enumerate()
+            .filter(|(_, s)| {
+                song_matches(s, &query)
+                    && !(to_get_only && self.local_track(&s.song(), s.local_track_id).is_some())
+            })
+            .map(|(i, _)| i)
+            .collect()
+    }
+
     /// The Liked view: the crate as a table, every song with the record
     /// it was liked on and whether a file in the library is it.
     pub(crate) fn draw_liked(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
-        self.ensure_library_index();
+        let shown = self.liked_shown();
         let rows = self.liked.clone();
         let in_library: Vec<Option<Id>> = rows
             .iter()
@@ -167,12 +185,6 @@ impl App {
             .collect();
         let query = self.filter.trim().to_lowercase();
         let to_get_only = self.liked_to_get_only;
-        let shown: Vec<usize> = rows
-            .iter()
-            .enumerate()
-            .filter(|(i, s)| song_matches(s, &query) && !(to_get_only && in_library[*i].is_some()))
-            .map(|(i, _)| i)
-            .collect();
         let have = in_library.iter().filter(|l| l.is_some()).count();
         let to_get = rows.len() - have;
 
