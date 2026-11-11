@@ -3068,10 +3068,21 @@ impl App {
                         ui.set_max_width(cover_side);
                         // Title and artist sit close: 2pt between the lines.
                         ui.spacing_mut().item_spacing.y = 2.0;
-                        // Title doubles as the textual link to the release page.
-                        // The price, what the sort orders by, sits right after
-                        // it as a small green figure: the cover stays clean, and
-                        // the title yields it the room it needs before
+                        // Title doubles as the textual link to the release page,
+                        // and keeps the whole line.
+                        let title = ui
+                            .add(
+                                egui::Label::new(egui::RichText::new(&c.title).strong())
+                                    .truncate()
+                                    .sense(egui::Sense::click()),
+                            )
+                            .on_hover_cursor(egui::CursorIcon::PointingHand);
+                        if title.clicked() {
+                            open_url(&release_url);
+                        }
+                        // The price, what the sort orders by, ends the artist
+                        // line as a small green figure: the cover stays clean,
+                        // and the artist yields it the room it needs before
                         // truncating. Absent until a sync has priced the record.
                         let price = c
                             .price
@@ -3087,22 +3098,10 @@ impl App {
                                 );
                                 galley.size().x + ui.spacing().item_spacing.x
                             });
-                            let title = ui
-                                .scope(|ui| {
-                                    ui.set_max_width(cover_side - price_w);
-                                    ui.add(
-                                        egui::Label::new(egui::RichText::new(&c.title).strong())
-                                            .truncate()
-                                            .sense(egui::Sense::click()),
-                                    )
-                                })
-                                .inner;
-                            if title
-                                .on_hover_cursor(egui::CursorIcon::PointingHand)
-                                .clicked()
-                            {
-                                open_url(&release_url);
-                            }
+                            ui.scope(|ui| {
+                                ui.set_max_width(cover_side - price_w);
+                                ui.add(egui::Label::new(egui::RichText::new(&c.artist).weak()).truncate());
+                            });
                             if let Some(price) = price {
                                 ui.add(
                                     egui::Label::new(
@@ -3114,7 +3113,6 @@ impl App {
                                 );
                             }
                         });
-                        ui.add(egui::Label::new(egui::RichText::new(&c.artist).weak()).truncate());
                     },
                 );
             }
