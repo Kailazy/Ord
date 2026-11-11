@@ -743,10 +743,13 @@ impl App {
             let Some(panel) = self.browse_panel.as_ref() else {
                 continue;
             };
-            // A label page's first fetch is the only one that arrives while
-            // the panel still has no id; everything else must match the run
-            // on screen.
-            if msg.thread != panel.thread || (panel.id != 0 && msg.id != panel.id) {
+            // A label page opened by name has no id until its first page
+            // lands, and only a run's first page may bring it one: a later
+            // page of a run read before (another label's) would otherwise
+            // take the panel over. Everything else must match the run on
+            // screen.
+            let first_of_run = panel.id == 0 && msg.page == 1;
+            if msg.thread != panel.thread || !(msg.id == panel.id || first_of_run) {
                 continue;
             }
             self.adopt_run_reply(msg);
