@@ -3304,25 +3304,27 @@ enum RowHit {
     CopyLink(String),
 }
 
-/// How many Discogs users have and want the record: a grey letter and a
-/// short gauge each, the fill in collection green and wantlist amber, on a
-/// log scale that fills at 10,000 so a rare record and a classic read apart.
-/// Rides at the end of the Versions line; the hover note gives the counts.
+/// How many Discogs users have and want the record: the shelf mark the
+/// Collection and Wantlist tabs wear, in quiet ink, and a short gauge each,
+/// the fill in collection green and wantlist amber, on a log scale that
+/// fills at 10,000 so a rare record and a classic read apart. Rides at the
+/// end of the Versions line; the hover note gives the counts.
 fn have_want_bars(ui: &mut egui::Ui, have: u32, want: u32) {
-    use crate::ui::tokens::{color, font, space, stroke};
+    use crate::ui::icon::{shelf, SHELF_R};
+    use crate::ui::tokens::{color, space, stroke};
     // Painted, not laid out: a nested horizontal row is interact_size tall
     // and would sit the group below the line's words.
-    let font = font::caption();
     let h = ui.text_style_height(&egui::TextStyle::Body);
     let (rect, resp) = ui.allocate_exact_size(egui::vec2(HAVE_WANT_W, h), egui::Sense::hover());
     let p = ui.painter();
     let t = stroke::GAUGE - 1.0;
     let mut x = rect.left();
-    for (letter, n, ink) in [("H", have, color::POSITIVE), ("W", want, color::CAUTION)] {
-        let g = p.layout_no_wrap(letter.into(), font.clone(), color::LABEL_3);
-        let w = g.size().x;
-        p.galley(egui::pos2(x, rect.center().y - g.size().y / 2.0), g, color::LABEL_3);
-        x += w + space::S2;
+    for (list, n, ink) in [
+        (VinylList::Collection, have, color::POSITIVE),
+        (VinylList::Wantlist, want, color::CAUTION),
+    ] {
+        shelf(p, egui::pos2(x + SHELF_R, rect.center().y), SHELF_R, color::LABEL_3, true, list);
+        x += 2.0 * SHELF_R + space::S2;
         let line = egui::Rect::from_min_size(
             egui::pos2(x, rect.center().y - t / 2.0),
             egui::vec2(HAVE_WANT_BAR, t),
@@ -3339,8 +3341,8 @@ fn have_want_bars(ui: &mut egui::Ui, have: u32, want: u32) {
 
 const HAVE_WANT_BAR: f32 = 24.0;
 /// The bars' width, reserved on the Versions line before the format is cut:
-/// two letters, two bars and the gaps between them.
-const HAVE_WANT_W: f32 = 2.0 * (8.0 + 4.0 + HAVE_WANT_BAR) + 8.0;
+/// two shelf marks, two bars and the gaps between them.
+const HAVE_WANT_W: f32 = 2.0 * (2.0 * crate::ui::icon::SHELF_R + 4.0 + HAVE_WANT_BAR) + 8.0;
 
 /// What a row of the sheet carries to a like, a crate or a drag: the song
 /// and the record it sits on, as far as the sheet knows it.
