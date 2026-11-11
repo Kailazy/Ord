@@ -982,6 +982,8 @@ impl App {
         ui.horizontal(|ui| {
             switch_tab = health_tabs(ui, &self.view, dup_count, self.missing_count);
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                // The inspector's pull tab overlays this corner: start left of it.
+                ui.add_space(crate::app::INSPECTOR_TAB_W + crate::ui::tokens::space::S2);
                 // The same verb as the Missing tab's button, so the pair
                 // keeps one width across the tab switch.
                 if ui
@@ -3342,6 +3344,8 @@ impl App {
         ui.horizontal(|ui| {
             switch_tab = health_tabs(ui, &self.view, dup_count, self.missing_count);
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                // The inspector's pull tab overlays this corner: start left of it.
+                ui.add_space(crate::app::INSPECTOR_TAB_W + crate::ui::tokens::space::S2);
                 if ui
                     .button("↻ Rescan")
                     .on_hover_note("Re-scan disk for tracks whose source file is gone")
