@@ -4062,7 +4062,7 @@ impl App {
                         }
                     }
                     if open("crates") && crate_sets.iter().any(|c| c.kind == CrateKind::Crate) {
-                        egui::ScrollArea::vertical()
+                        let out = egui::ScrollArea::vertical()
                             .id_salt("nav_crates_scroll")
                             .max_height(if lead { 260.0 } else { 180.0 })
                             .auto_shrink([false, true])
@@ -4077,6 +4077,7 @@ impl App {
                                     sidebar_action,
                                 );
                             });
+                        crate::sidebar::scroll_fades(ui, &out, out.inner_rect.top());
                     }
                 };
 
@@ -4176,7 +4177,7 @@ impl App {
                         // The panel's top edge: where a list's caption pins
                         // once its rows have scrolled under it.
                         let top = ui.max_rect().top();
-                        egui::ScrollArea::vertical()
+                        let out = egui::ScrollArea::vertical()
                             .auto_shrink([false, false])
                             .show(ui, |ui| {
                                 if let LibraryView::Usb(vol, _) = self.view.clone() {
@@ -4197,6 +4198,7 @@ impl App {
                                             &mut sidebar_action,
                                         );
                                     }
+                                    None
                                 } else {
                                     let all = self.playlists.clone();
                                     let volumes = self.usb_volumes.clone();
@@ -4275,9 +4277,10 @@ impl App {
                                             &mut sidebar_action,
                                         );
                                     }
-                                    if let Some(pinned) = crate::sidebar::pin_header(ui, top, &heads, |ui, i| {
+                                    let pinned = crate::sidebar::pin_header(ui, top, &heads, |ui, i| {
                                         head(ui, i, &mut sidebar_action)
-                                    }) {
+                                    });
+                                    if let Some(pinned) = pinned {
                                         // A Finder drop on the pinned caption
                                         // is not a drop on the row under it.
                                         drop_rects.retain(|(_, r)| !r.intersects(pinned));
@@ -4291,8 +4294,12 @@ impl App {
                                     {
                                         self.playlist_selection.ids.clear();
                                     }
+                                    pinned
                                 }
                             });
+                        // The rows fade at the edges they scroll past; under
+                        // a pinned caption, when one is up.
+                        crate::sidebar::scroll_fades(ui, &out, out.inner.map_or(out.inner_rect.top(), |p| p.bottom()));
                     });
             });
         self.nav = nav_state;

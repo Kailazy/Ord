@@ -1275,6 +1275,38 @@ pub(crate) fn pin_header(
     Some(rect)
 }
 
+/// Fade bands at a scrolled list's clip edges, in the panel's fill, so the
+/// rows that ran past an edge dissolve into the panel instead of being cut
+/// there: the rail has no caption or always-on scrollbar to say a list goes
+/// on. Painted after the scroll area, over its rows: one band down from
+/// `top` (the panel's top edge, or a pinned caption's bottom) and one up
+/// from the bottom, each only while the list goes on past that edge.
+pub(crate) fn scroll_fades<R>(ui: &egui::Ui, out: &egui::scroll_area::ScrollAreaOutput<R>, top: f32) {
+    const BAND: f32 = 24.0;
+    // The visible part: a scroll area keeps a minimum height of its own
+    // (egui's `min_scrolled_height`), so in a short panel its rect runs on
+    // under the panel's clip.
+    let inner = out.inner_rect.intersect(ui.clip_rect());
+    let band = |y: f32, from: egui::Color32, to: egui::Color32| {
+        let rect = egui::Rect::from_min_size(egui::pos2(inner.left(), y), egui::vec2(inner.width(), BAND));
+        let mut mesh = egui::Mesh::default();
+        mesh.colored_vertex(rect.left_top(), from);
+        mesh.colored_vertex(rect.right_top(), from);
+        mesh.colored_vertex(rect.left_bottom(), to);
+        mesh.colored_vertex(rect.right_bottom(), to);
+        mesh.add_triangle(0, 1, 2);
+        mesh.add_triangle(1, 3, 2);
+        ui.painter().add(egui::Shape::mesh(mesh));
+    };
+    let (fill, clear) = (color::bg(), egui::Color32::TRANSPARENT);
+    if out.state.offset.y > 0.5 {
+        band(top, fill, clear);
+    }
+    if out.state.offset.y + inner.height() < out.content_size.y - 0.5 {
+        band(inner.bottom() - BAND, clear, fill);
+    }
+}
+
 /// The sidebar's source tabs: the local catalog ("Library") and each mounted
 /// removable volume, drawn as a slim strip of abutting browser-style tabs above
 /// the library group — the same shape as the vinyl view's Collection/Wantlist
