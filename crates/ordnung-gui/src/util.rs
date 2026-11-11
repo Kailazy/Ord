@@ -198,6 +198,26 @@ pub(crate) fn non_empty(s: &str) -> Option<String> {
     }
 }
 
+/// `1 track`, `2 tracks`: a count with its noun, for status text that would
+/// otherwise say "track(s)". Only regular nouns go through here.
+pub(crate) fn count(n: usize, noun: &str) -> String {
+    if n == 1 {
+        format!("1 {noun}")
+    } else {
+        format!("{n} {noun}s")
+    }
+}
+
+#[cfg(test)]
+mod count_tests {
+    #[test]
+    fn count_pluralizes_regular_nouns() {
+        assert_eq!(super::count(1, "track"), "1 track");
+        assert_eq!(super::count(0, "style"), "0 styles");
+        assert_eq!(super::count(71, "style"), "71 styles");
+    }
+}
+
 pub(crate) fn short<'a>(s: &'a str, fallback: &'a str) -> &'a str {
     if s.is_empty() {
         fallback
