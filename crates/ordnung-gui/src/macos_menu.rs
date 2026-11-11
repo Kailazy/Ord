@@ -430,6 +430,10 @@ mod imp {
         unsafe { app.setWindowsMenu(Some(&window)) };
 
         app.setMainMenu(Some(&bar));
+        // The items hold their target weakly, so this reference is the only
+        // thing keeping it alive: dropped here, every item's action would go
+        // to nobody. It lives as long as the menu bar, which is the process.
+        std::mem::forget(target);
     }
 }
 

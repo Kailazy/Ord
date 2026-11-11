@@ -2715,7 +2715,25 @@ impl App {
                     self.token_input = self.config.discogs_token.clone();
                     self.settings_open = true;
                 }
-                macos_menu::MenuCommand::SelectAll => self.select_all_visible(),
+                // The menu claims ⌘A before any field sees it; a focused
+                // field gets the chord back so it keeps its in-field
+                // "select all text" meaning (the same split as the ⌘A
+                // handler above), and the rows select otherwise.
+                macos_menu::MenuCommand::SelectAll => {
+                    if crate::ui::field::wants_keyboard_input(ctx) {
+                        ctx.input_mut(|i| {
+                            i.events.push(egui::Event::Key {
+                                key: egui::Key::A,
+                                physical_key: None,
+                                pressed: true,
+                                repeat: false,
+                                modifiers: egui::Modifiers::COMMAND,
+                            })
+                        });
+                    } else {
+                        self.select_all_visible();
+                    }
+                }
                 macos_menu::MenuCommand::ClearFilters => self.clear_all_filters(),
                 // Re-injected as the OS copy event the table already listens
                 // for, so the menu and ⌘C land in the identical handler (which
