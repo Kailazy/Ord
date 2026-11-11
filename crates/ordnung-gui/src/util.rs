@@ -96,7 +96,7 @@ pub(crate) fn track_list_text(name: &str, entries: &[TrackListEntry]) -> String 
             e.duration
         );
     }
-    let _ = writeln!(s, "\n{name} — {} track(s)", entries.len());
+    let _ = writeln!(s, "\n{name} — {}", count(entries.len(), "track"));
     s
 }
 
@@ -654,7 +654,7 @@ mod tests {
         assert_eq!(lines[0], "#\tArtist\tTrack Title\tAlbum\tBPM\tKey\tTime");
         assert_eq!(lines[1], "1\tA\tT\tL\t128.0\t8A\t5:00");
         assert_eq!(lines[2], "2\tB\tU\t\t\t\t3:21");
-        assert!(text.ends_with("warmup — 2 track(s)\n"));
+        assert!(text.ends_with("warmup — 2 tracks\n"));
     }
 }
 

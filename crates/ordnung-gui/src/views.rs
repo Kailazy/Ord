@@ -1063,8 +1063,8 @@ impl App {
 
         ui.label(
             egui::RichText::new(format!(
-                "{identical_n} identical-audio · {variant_n} same-track variant · \
-                 {acoustic_n} sounds-identical group(s).  \
+                "Groups: {identical_n} identical-audio · {variant_n} same-track variant · \
+                 {acoustic_n} sounds-identical.  \
                  Each group keeps the ★ best copy (lossless, else highest bitrate) and marks \
                  the rest for deletion — click any copy's tile to keep or reject it. When \
                  you're happy, hit \"Delete N marked\" to trash every marked copy at once \
@@ -3390,10 +3390,10 @@ impl App {
 
         ui.label(
             egui::RichText::new(format!(
-                "{} track(s) point at a file that's no longer on disk. Relocate the ones you've \
+                "No file on disk for {}. Relocate the ones you've \
                  moved, or remove the rest — removal only drops the catalog entry (and any \
                  playlist/analysis links); your files are never touched.",
-                items.len()
+                util::count(items.len(), "track")
             ))
             .weak(),
         );
@@ -3470,7 +3470,8 @@ impl App {
                                 Ok(c) => match c.delete_tracks(&ids) {
                                     Ok(removed) => {
                                         self.status = format!(
-                                            "Removed {removed} missing track(s) from the catalog."
+                                            "Removed {} from the catalog.",
+                                            util::count(removed, "missing track")
                                         );
                                         recompute = true;
                                     }

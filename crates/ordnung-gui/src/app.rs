@@ -1248,7 +1248,7 @@ impl App {
                         let (done, _) = self.usb_analysis_progress;
                         self.usb_analysis_progress = (0, 0);
                         if done > 0 {
-                            self.status = format!("Analyzed {done} device track(s).");
+                            self.status = format!("Analyzed {}.", util::count(done, "device track"));
                         }
                         break;
                     }
@@ -1383,7 +1383,7 @@ impl App {
             return;
         }
         self.usb_analysis_progress = (0, pending.len());
-        self.status = format!("Analyzing {} device track(s)…", pending.len());
+        self.status = format!("Analyzing {}…", util::count(pending.len(), "device track"));
         let cancel = Arc::new(AtomicBool::new(false));
         self.usb_analysis_cancel = Some(cancel.clone());
         let (tx, rx) = mpsc::channel::<UsbAnalyzed>();
@@ -1603,9 +1603,13 @@ impl App {
             .map(|n| n.to_string_lossy().into_owned())
             .unwrap_or_default();
         self.status = if failed == 0 {
-            format!("Deleted {deleted} track{} from {name}.", if deleted == 1 { "" } else { "s" })
+            format!("Deleted {} from {name}.", util::count(deleted, "track"))
         } else {
-            format!("Deleted {deleted} track(s) from {name}; {failed} file(s) couldn't be removed.")
+            format!(
+                "Deleted {} from {name}; {} couldn't be removed.",
+                util::count(deleted, "track"),
+                util::count(failed, "file")
+            )
         };
         self.rows.retain(|r| !ids.contains(&r.id));
         self.selection.retain(|id| !ids.contains(id));
@@ -1897,7 +1901,7 @@ impl App {
                 if let Some(path) = first {
                     match std::fs::write(&path, text) {
                         Ok(()) => {
-                            self.status = format!("Saved {count} track(s) to {}.", path.display())
+                            self.status = format!("Saved {} to {}.", util::count(count, "track"), path.display())
                         }
                         Err(e) => self.fail(format!("Couldn't write the track list: {e}")),
                     }
@@ -3094,8 +3098,8 @@ impl App {
                                 if ui
                                     .add(btn)
                                     .on_hover_note(format!(
-                                        "Write the edited tags of {} track(s) into their files",
-                                        self.edited_count
+                                        "Write the edited tags of {} into their files",
+                                        util::count(self.edited_count as usize, "track")
                                     ))
                                     .clicked()
                                 {
@@ -3121,7 +3125,8 @@ impl App {
                                         ui.set_max_width(420.0);
                                         ui.label(
                                             crate::ui::hover::note(format!(
-                                                "{count} track(s) point at a file that's gone"
+                                                "No file on disk for {}",
+                                                util::count(count as usize, "track")
                                             ))
                                             .strong(),
                                         );
@@ -4440,7 +4445,7 @@ impl App {
                 let others_wrote = self.catalog_probe.as_mut().map_or(true, |p| p.changed());
                 if let Ok(cat) = Catalog::open(&self.db_path) {
                     match cat.add_tracks(pid, &ids) {
-                        Ok(n) => self.status = format!("Added {n} track(s) to playlist."),
+                        Ok(n) => self.status = format!("Added {} to playlist.", util::count(n, "track")),
                         Err(e) => self.fail(format!("Couldn't add to the playlist: {e}")),
                     }
                 }

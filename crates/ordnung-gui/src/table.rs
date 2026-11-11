@@ -1909,7 +1909,7 @@ impl App {
                                             if ui
                                                 .button(add_label)
                                                 .on_hover_note(
-                                                    "Copy the file(s) into your library \
+                                                    "Copy the files into your library \
                                                      folder and import them",
                                                 )
                                                 .clicked()
@@ -1990,7 +1990,7 @@ impl App {
                                                         .color(crate::ui::tokens::color::NEGATIVE),
                                                 )
                                                 .on_hover_note(
-                                                    "Remove the file(s) from the device and \
+                                                    "Remove the files from the device and \
                                                      from every playlist on it",
                                                 )
                                                 .clicked()
@@ -2368,7 +2368,7 @@ impl App {
                                             ui.close_menu();
                                         }
                                         ui.separator();
-                                        // Permanently drop the track(s) from the catalog.
+                                        // Permanently drop the tracks from the catalog.
                                         // Destructive (removes them from every playlist and
                                         // the analysis cache) but never touches the source
                                         // files, so it's red and gated behind a confirm.
@@ -2622,10 +2622,10 @@ impl App {
             }
         }
 
-        // While an in-app row-drag is live, float a "N track(s)" chip at the
+        // While an in-app row-drag is live, float a "N tracks" chip at the
         // cursor so it's clear something is being carried toward a playlist.
         if let Some(payload) = egui::DragAndDrop::payload::<DraggedTracks>(&ctx_clone) {
-            crate::ui::drag_chip(&ctx_clone, format!("{} track(s)", payload.0.len()));
+            crate::ui::drag_chip(&ctx_clone, util::count(payload.0.len(), "track"));
         }
 
         if let Some((id, path)) = preview_request {
@@ -2654,7 +2654,7 @@ impl App {
             }
             Some(TrackMenuAction::AddToPlaylist(pid, ids)) => {
                 match Catalog::open(&self.db_path).and_then(|c| c.add_tracks(pid, &ids)) {
-                    Ok(n) => self.status = format!("Added {n} track(s) to playlist."),
+                    Ok(n) => self.status = format!("Added {} to playlist.", util::count(n, "track")),
                     Err(e) => self.status = format!("Add to playlist failed: {e}"),
                 }
                 self.reload();
@@ -2668,7 +2668,7 @@ impl App {
             }
             Some(TrackMenuAction::RemoveFromPlaylist(pid, ids)) => {
                 match Catalog::open(&self.db_path).and_then(|c| c.remove_tracks(pid, &ids)) {
-                    Ok(n) => self.status = format!("Removed {n} track(s) from playlist."),
+                    Ok(n) => self.status = format!("Removed {} from playlist.", util::count(n, "track")),
                     Err(e) => self.status = format!("Remove from playlist failed: {e}"),
                 }
                 self.reload();
@@ -2762,9 +2762,9 @@ impl App {
                     self.cover_inflight.remove(id);
                 }
                 self.status = if done == ids.len() {
-                    format!("Removed the Discogs match from {done} track(s).")
+                    format!("Removed the Discogs match from {}.", util::count(done, "track"))
                 } else {
-                    format!("Removed the Discogs match from {done} of {} track(s).", ids.len())
+                    format!("Removed the Discogs match from {done} of {}.", util::count(ids.len(), "track"))
                 };
                 self.reload();
             }

@@ -114,7 +114,7 @@ pub fn gauge(p: &egui::Painter, line: egui::Rect, frac: f32, ink: egui::Color32)
 }
 
 /// The chip that floats at the pointer while something is dragged inside
-/// the app ("3 track(s)", "1 song"), so it's clear something is being
+/// the app ("3 tracks", "1 song"), so it's clear something is being
 /// carried toward a drop target. Painted in the tooltip layer, above all.
 pub fn drag_chip(ctx: &egui::Context, text: String) {
     let Some(pos) = ctx.pointer_interact_pos() else {

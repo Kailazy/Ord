@@ -287,8 +287,8 @@ impl App {
             return;
         };
         self.status = format!(
-            "Copying {} track(s) from {} to the library…",
-            sources.len(),
+            "Copying {} from {} to the library…",
+            util::count(sources.len(), "track"),
             vol.file_name()
                 .map(|n| n.to_string_lossy().into_owned())
                 .unwrap_or_else(|| vol.display().to_string())
@@ -401,8 +401,8 @@ impl App {
             .map(|n| n.to_string_lossy().into_owned())
             .unwrap_or_else(|| vol.display().to_string());
         let status = format!(
-            "Converting {} track(s) on {name} for older players…",
-            rel_paths.len()
+            "Converting {} on {name} for older players…",
+            util::count(rel_paths.len(), "track")
         );
         let to = vol.clone();
         if self.spawn_job(ctx, status, true, move |_, cancel, tx, ctx| {
@@ -430,7 +430,7 @@ impl App {
             .and_then(|pid| self.playlists.iter().find(|p| p.id == pid))
             .map(|p| format!(" into \u{201C}{}\u{201D}", p.name))
             .unwrap_or_default();
-        self.status = format!("Importing {} dropped item(s){target}…", paths.len());
+        self.status = format!("Importing {}{target}…", util::count(paths.len(), "dropped item"));
         let db = self.db_path.clone();
         let follow = self.import_follow_ups();
         thread::spawn(move || run_import(db, paths, into_playlist, cancel, tx, ctx, follow));
@@ -1040,7 +1040,7 @@ impl App {
     ) -> Result<(), String> {
         let spec = convert_spec(target, bitrate_raw, out_dir.as_deref())?;
 
-        let status = format!("Converting {} track(s)…", ids.len());
+        let status = format!("Converting {}…", util::count(ids.len(), "track"));
         if !self.spawn_job(ctx, status, true, move |db, cancel, tx, ctx| {
             run_batch_convert(db, ids, spec, out_dir, in_place, cancel, tx, ctx)
         }) {
@@ -1165,7 +1165,7 @@ impl App {
     /// the Duplicates view stays interactive while it runs; `poll_worker` reloads
     /// (recomputing the groups) when it finishes.
     pub(crate) fn spawn_trash_marked(&mut self, ctx: egui::Context, batch: Vec<(Id, Id, PathBuf)>) {
-        let status = format!("Trashing {} duplicate(s)…", batch.len());
+        let status = format!("Trashing {}…", util::count(batch.len(), "duplicate"));
         self.spawn_job(ctx, status, true, move |db, cancel, tx, ctx| {
             run_trash_marked(db, batch, cancel, tx, ctx)
         });
@@ -1345,11 +1345,15 @@ fn run_usb_convert(
     }
     let msg = if cancel.load(Ordering::Relaxed) {
         format!(
-            "Conversion stopped: {converted} of {total} track(s) on {name} converted. \
-             Eject before unplugging."
+            "Conversion stopped: {converted} of {} on {name} converted. \
+             Eject before unplugging.",
+            util::count(total, "track")
         )
     } else {
-        format!("Converted {converted} track(s) on {name} for older players. Eject before unplugging.")
+        format!(
+            "Converted {} on {name} for older players. Eject before unplugging.",
+            util::count(converted, "track")
+        )
     };
     let _ = tx.send(JobMsg::Done(msg));
     ctx.request_repaint();
@@ -1631,10 +1635,10 @@ pub(crate) fn run_export(
             // export reports the stick it built.
             let msg = if track_ids.is_empty() {
                 format!(
-                    "Exported {} track(s), {} playlist node(s) to {name} ({:.1} MB copied).\
+                    "Exported {}, {} to {name} ({:.1} MB copied).\
 {converted} Eject before unplugging.",
-                    report.tracks_exported,
-                    report.playlists_exported,
+                    util::count(report.tracks_exported, "track"),
+                    util::count(report.playlists_exported, "playlist node"),
                     report.bytes_copied as f64 / 1_048_576.0,
                 )
             } else {
@@ -1788,7 +1792,8 @@ pub(crate) fn run_usb_transfer(
         return;
     }
     let _ = tx.send(JobMsg::Status(format!(
-        "Copied {copied} track(s){}; importing…",
+        "Copied {}{}; importing…",
+        util::count(copied, "track"),
         if already > 0 {
             format!(" ({already} already in the library folder)")
         } else {
@@ -1830,8 +1835,8 @@ pub(crate) fn run_usb_transfer(
                 {
                     Ok(_) => {
                         let _ = tx.send(JobMsg::Status(format!(
-                            "Created playlist \u{201C}{final_name}\u{201D} with {} track(s).",
-                            ids.len()
+                            "Created playlist \u{201C}{final_name}\u{201D} with {}.",
+                            util::count(ids.len(), "track")
                         )));
                     }
                     Err(e) => {
@@ -1901,7 +1906,8 @@ pub(crate) fn run_import(
                 match catalog.add_tracks(pid, &ids) {
                     Ok(n) => {
                         let _ = tx.send(JobMsg::Status(format!(
-                            "Added {n} track(s) to the playlist."
+                            "Added {} to the playlist.",
+                            util::count(n, "track")
                         )));
                     }
                     Err(e) => {
@@ -2043,7 +2049,10 @@ pub(crate) fn import_files(
         } else {
             String::new()
         };
-        format!("Scanned {total} file(s): {added} added{existing_note}, {failed} skipped.")
+        format!(
+            "Scanned {}: {added} added{existing_note}, {failed} skipped.",
+            util::count(total, "file")
+        )
     };
     ImportOutcome {
         touched,
@@ -2159,7 +2168,8 @@ fn auto_convert_tracks(
     let total = tracks.len();
     let target_label = format_label(auto.spec.target);
     let _ = tx.send(JobMsg::Status(format!(
-        "Converting {total} imported track(s) to {target_label}…"
+        "Converting {} to {target_label}…",
+        util::count(total, "imported track")
     )));
     let _ = tx.send(JobMsg::Progress { done: 0, total });
     ctx.request_repaint();
@@ -2202,7 +2212,7 @@ fn auto_convert_tracks(
     if failed > 0 {
         format!("Converted {ok}/{total} to {target_label} ({failed} failed).")
     } else {
-        format!("Converted {ok} track(s) to {target_label}.")
+        format!("Converted {} to {target_label}.", util::count(ok, "track"))
     }
 }
 
@@ -2619,8 +2629,9 @@ pub(crate) fn run_relocate(db: PathBuf, dir: PathBuf, tx: Sender<JobMsg>, ctx: e
     }
     let total = missing.len();
     let _ = tx.send(JobMsg::Status(format!(
-        "Searching {} for {total} missing file(s)…",
-        dir.display()
+        "Searching {} for {}…",
+        dir.display(),
+        util::count(total, "missing file")
     )));
     ctx.request_repaint();
 
@@ -2656,7 +2667,7 @@ pub(crate) fn run_relocate(db: PathBuf, dir: PathBuf, tx: Sender<JobMsg>, ctx: e
         }
     }
     let not_found = total as u64 - found.len() as u64;
-    let mut msg = format!("Relocated {relinked} of {total} missing file(s)");
+    let mut msg = format!("Relocated {relinked} of {}", util::count(total, "missing file"));
     if not_found > 0 {
         msg.push_str(&format!("; {not_found} not found under {}", dir.display()));
     }
@@ -2766,7 +2777,8 @@ pub(crate) fn run_write_edits(
         });
     }
     let _ = tx.send(JobMsg::Done(format!(
-        "Wrote {written} track(s) to their source files{}.",
+        "Wrote {} to their source files{}.",
+        util::count(written as usize, "track"),
         if failed > 0 {
             format!(", {failed} failed")
         } else {
@@ -2846,7 +2858,8 @@ pub(crate) fn run_trash_marked(
     }
     let failed = total - trashed;
     let _ = tx.send(JobMsg::Done(format!(
-        "Trashed {trashed} duplicate(s){}.",
+        "Trashed {}{}.",
+        util::count(trashed, "duplicate"),
         if failed > 0 {
             format!(", {failed} failed")
         } else {
@@ -3322,10 +3335,12 @@ pub(crate) fn run_refresh_vinyl(
         String::new()
     } else {
         format!(
-            "Vinyl synced: {} record(s), {} wantlisted{removed_note}, \
-             {fetched} new cover(s), {detailed} song list(s), {priced} price(s){stopped}.{}",
-            records.len(),
+            "Vinyl synced: {}, {} wantlisted{removed_note}, {}, {}, {}{stopped}.{}",
+            util::count(records.len(), "record"),
             wants.as_ref().map_or(0, Vec::len),
+            util::count(fetched, "new cover"),
+            util::count(detailed, "song list"),
+            util::count(priced, "price"),
             wants_failed.map(|e| format!(" {e}")).unwrap_or_default()
         )
     };
@@ -4161,7 +4176,8 @@ pub(crate) fn run_fetch_tracks(
         };
         format!(
             "Discogs fetch: {queued} ready to pick, {none} no match{hidden_note}, \
-             {skipped} skipped, {errored} error(s)."
+             {skipped} skipped, {}.",
+            util::count(errored as usize, "error")
         )
     };
     let _ = tx.send(JobMsg::Done(done));

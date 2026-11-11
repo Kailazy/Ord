@@ -88,8 +88,8 @@ impl App {
                         let n = d.siblings.iter().filter(|s| s.selected).count();
                         ui.label(
                             egui::RichText::new(format!(
-                                "{n} of {} album track(s) selected",
-                                d.siblings.len()
+                                "{n} of {} selected",
+                                util::count(d.siblings.len(), "album track")
                             ))
                             .small()
                             .weak(),
@@ -106,7 +106,7 @@ impl App {
                     ui.add_space(4.0);
                     let n = d.siblings.iter().filter(|s| s.selected).count();
                     let label = if n > 0 {
-                        format!("Set cover ({} track(s))", n + 1)
+                        format!("Set cover ({})", util::count(n + 1, "track"))
                     } else {
                         "Set cover".to_string()
                     };
@@ -139,7 +139,7 @@ impl App {
                 .show(ctx, |ui| {
                     ui.set_min_width(460.0);
                     ui.label(
-                        egui::RichText::new(format!("{} track(s) selected", m.ids.len())).strong(),
+                        egui::RichText::new(format!("{} selected", util::count(m.ids.len(), "track"))).strong(),
                     );
                     ui.label(
                         egui::RichText::new(
@@ -2070,7 +2070,7 @@ Everything already on it stays as it is."
         let screen = ctx.screen_rect().size();
         let win_w = (screen.x * 0.6).clamp(280.0, 560.0);
         let list_h = (screen.y * 0.5).clamp(120.0, 420.0);
-        crate::ui::window::Window::new(format!("{title}: {n} item(s) failed"))
+        crate::ui::window::Window::new(format!("{title}: {} failed", util::count(n, "item")))
             .open(&mut open)
             .resizable(true)
             .max_width(win_w)
@@ -2674,8 +2674,8 @@ Everything already on it stays as it is."
                     "Nothing found on Discogs. Paste a link to the right release".to_string()
                 } else {
                     format!(
-                        "{} release(s) on Discogs — pick the right one",
-                        choices.candidates.len()
+                        "{} on Discogs — pick the right one",
+                        util::count(choices.candidates.len(), "release")
                     )
                 };
                 ui.label(egui::RichText::new(found).small().weak());
@@ -2898,8 +2898,8 @@ Everything already on it stays as it is."
                     // knows what "apply to album" (and the overwrite toggle) touches.
                     if !album_mate_labels.is_empty() {
                         egui::CollapsingHeader::new(format!(
-                            "{} other track(s) on this album",
-                            album_mate_labels.len()
+                            "{} on this album",
+                            util::count(album_mate_labels.len(), "other track")
                         ))
                         .id_salt(("album-mate-list", choices.id))
                         .default_open(false)
@@ -2942,7 +2942,8 @@ Everything already on it stays as it is."
                             };
                             let detail = if album_overwrite {
                                 format!(
-                                    "Applies to all {album_total} other track(s) on this album."
+                                    "Applies to {} on this album.",
+                                    util::count(album_total, "other track")
                                 )
                             } else if album_missing == 0 {
                                 "No cover-less tracks on this album — enable replace to \
@@ -2950,7 +2951,8 @@ Everything already on it stays as it is."
                                     .to_string()
                             } else {
                                 format!(
-                                    "Applies to {n} cover-less track(s); {} already have art.",
+                                    "Applies to {}; {} with art untouched.",
+                                    util::count(n, "cover-less track"),
                                     album_total - album_missing
                                 )
                             };
@@ -3013,7 +3015,7 @@ Everything already on it stays as it is."
                     }
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         ui.label(
-                            egui::RichText::new(format!("{remaining} track(s) to review"))
+                            egui::RichText::new(format!("{} to review", util::count(remaining, "track")))
                                 .small()
                                 .weak(),
                         );

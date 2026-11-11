@@ -290,9 +290,9 @@ impl App {
             format!("Set cover for {}.", drop.track_label)
         } else {
             format!(
-                "Set cover for {} and {} other track(s) on the album.",
+                "Set cover for {} and {} on the album.",
                 drop.track_label,
-                mates.len()
+                util::count(mates.len(), "other track")
             )
         };
         self.reload();

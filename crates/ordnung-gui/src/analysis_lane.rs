@@ -261,10 +261,10 @@ fn run_lane(
                     let _ = tx.send(JobMsg::Done(if tracks.is_empty() {
                         "No matching tracks to analyze.".into()
                     } else {
-                        format!("All {} track(s) already analyzed.", tracks.len())
+                        format!("{} already analyzed.", crate::util::count(tracks.len(), "track"))
                     }));
                 } else if added > 0 {
-                    let _ = tx.send(JobMsg::Status(format!("Analyzing {total} track(s)…")));
+                    let _ = tx.send(JobMsg::Status(format!("Analyzing {}…", crate::util::count(total, "track"))));
                     let _ = tx.send(JobMsg::Progress { done: run.done, total });
                 }
                 ctx.request_repaint();
@@ -310,11 +310,12 @@ fn run_lane(
                     let (ok, failed, skipped) = (finished.ok, finished.failed, finished.skipped);
                     let _ = tx.send(JobMsg::Done(if skipped > 0 {
                         format!(
-                            "Analysis cancelled: {ok} of {total} track(s) analyzed, \
-                             {failed} failed, {skipped} skipped."
+                            "Analysis cancelled: {ok} of {} analyzed, \
+                             {failed} failed, {skipped} skipped.",
+                            crate::util::count(total, "track")
                         )
                     } else {
-                        format!("Analyzed {ok} track(s), {failed} failed.")
+                        format!("Analyzed {}, {failed} failed.", crate::util::count(ok, "track"))
                     }));
                     // Reopen per run: a catalog restore between runs moves
                     // the file this connection has open (see
@@ -410,7 +411,7 @@ mod tests {
             _ => None,
         });
         assert_eq!(failures, Some(3));
-        assert!(matches!(msgs.last(), Some(JobMsg::Done(s)) if s == "Analyzed 0 track(s), 3 failed."));
+        assert!(matches!(msgs.last(), Some(JobMsg::Done(s)) if s == "Analyzed 0 tracks, 3 failed."));
         let _ = std::fs::remove_dir_all(&dir);
     }
 
