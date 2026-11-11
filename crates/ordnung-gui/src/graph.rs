@@ -2432,8 +2432,8 @@ impl App {
                 }
             }
             let count = match g.arrange {
-                Arrange::Artists => format!("{artists} artists"),
-                Arrange::Genres => format!("{artists} styles"),
+                Arrange::Artists => crate::util::count(artists, "artist"),
+                Arrange::Genres => crate::util::count(artists, "style"),
             };
             painter.text(
                 egui::pos2(rect.right() - 14.0, y),
