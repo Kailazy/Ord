@@ -1952,8 +1952,11 @@ impl App {
                                             short(&r.title, "Untitled").to_string()
                                         };
                                         crate::ui::menu::text(ui, egui::RichText::new(title).strong());
+                                        if drag_ids.len() == 1 && !r.artist.is_empty() {
+                                            crate::ui::menu::text(ui, egui::RichText::new(&r.artist).weak());
+                                        }
                                         ui.separator();
-                                        if audio_enabled && ui.button(crate::ui::icon_label(icons::PLAY, "Preview")).clicked() {
+                                        if audio_enabled && ui.button("Preview").clicked() {
                                             menu_action = Some(TrackMenuAction::Preview(
                                                 r.id,
                                                 r.source_path.clone(),
@@ -2011,9 +2014,9 @@ impl App {
                                                 ui.close_menu();
                                             }
                                             let slsk_label = if drag_ids.len() > 1 {
-                                                format!("Copy ({})", drag_ids.len())
+                                                format!("Copy {} as text", drag_ids.len())
                                             } else {
-                                                "Copy".to_string()
+                                                "Copy as text".to_string()
                                             };
                                             if ui
                                                 .button(slsk_label)
@@ -2191,9 +2194,9 @@ impl App {
                                         // search box. Acts on the whole selection when
                                         // this row is part of it.
                                         let slsk_label = if drag_ids.len() > 1 {
-                                            format!("Copy ({})", drag_ids.len())
+                                            format!("Copy {} as text", drag_ids.len())
                                         } else {
-                                            "Copy".to_string()
+                                            "Copy as text".to_string()
                                         };
                                         if ui
                                             .button(slsk_label)
