@@ -63,16 +63,25 @@ pub fn icon_toggle(ui: &mut egui::Ui, glyph: &str, selected: bool) -> egui::Resp
 /// cover): white on the accent, so the row says which button is the
 /// answer. Goes on a [`super::choices`] row.
 pub fn primary(ui: &mut egui::Ui, label: impl Into<egui::WidgetText>) -> egui::Response {
-    ui.add(egui::Button::new(label.into().color(egui::Color32::WHITE)).fill(color::accent()))
+    filled(ui, label, color::accent())
 }
 
 /// A push button for an action that destroys something (clear, delete,
 /// remove): white on red, so it never reads as the safe default.
 pub fn danger(ui: &mut egui::Ui, label: impl Into<egui::WidgetText>) -> egui::Response {
-    ui.add(
-        egui::Button::new(label.into().color(egui::Color32::WHITE))
-            .fill(egui::Color32::from_rgb(150, 40, 40)),
-    )
+    filled(ui, label, egui::Color32::from_rgb(150, 40, 40))
+}
+
+/// White on `fill` while enabled. Disabled, the fill and ink a plain
+/// disabled button paints (egui styles a disabled button as `inactive`
+/// and fades it): a red or accent fill at half strength still read as live.
+fn filled(ui: &mut egui::Ui, label: impl Into<egui::WidgetText>, fill: egui::Color32) -> egui::Response {
+    let (fill, ink) = if ui.is_enabled() {
+        (fill, egui::Color32::WHITE)
+    } else {
+        (ui.visuals().widgets.inactive.weak_bg_fill, egui::Color32::PLACEHOLDER)
+    };
+    ui.add(egui::Button::new(label.into().color(ink)).fill(fill))
 }
 
 /// A push button that can be greyed out. Disabled, it still takes its space
