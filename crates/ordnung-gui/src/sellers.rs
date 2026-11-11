@@ -901,7 +901,7 @@ impl App {
             };
             let field = crate::ui::field::Field::singleline(&mut filter)
                 .hint("Filter shops")
-                .width(ui.available_width() - crate::ui::field::MARGIN.sum().x)
+                .width(ui.available_width() - crate::ui::field::margin().sum().x)
                 .show(ui);
             if fresh {
                 field.request_focus();

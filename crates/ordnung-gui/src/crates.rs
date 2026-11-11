@@ -163,7 +163,7 @@ pub(crate) fn tag_rows(
     let mut buf: String = ui.data(|d| d.get_temp(id)).unwrap_or_default();
     let field = crate::ui::field::Field::singleline(&mut buf)
         .hint("New tag")
-        .width(ui.available_width() - crate::ui::field::MARGIN.sum().x)
+        .width(ui.available_width() - crate::ui::field::margin().sum().x)
         .show(ui);
     if field.lost_focus() {
         let name = buf.trim().to_string();

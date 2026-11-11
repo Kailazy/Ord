@@ -356,3 +356,94 @@ pub mod font {
         FontId::monospace(11.0)
     }
 }
+
+/// How tight the chrome sits (Settings → Appearance → Density): the text
+/// fields' vertical inset, which is what sets the control height every row
+/// shares (`ui::control_h`), and the bars' padding, gap and type. Read
+/// through [`density::get`], never a const, so the whole app re-spaces at
+/// once.
+pub mod density {
+    use super::{font, space, FontId};
+    use serde::{Deserialize, Serialize};
+    use std::sync::atomic::{AtomicU8, Ordering};
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+    #[serde(rename_all = "lowercase")]
+    pub enum Density {
+        #[default]
+        Regular,
+        Compact,
+        Dense,
+    }
+
+    impl Density {
+        pub const ALL: [Self; 3] = [Self::Regular, Self::Compact, Self::Dense];
+
+        pub fn label(self) -> &'static str {
+            match self {
+                Self::Regular => "Regular",
+                Self::Compact => "Compact",
+                Self::Dense => "Dense",
+            }
+        }
+        /// Vertical inset of a text field's text: 8, 4 or 2, so the shared
+        /// control height comes out 33, 25 or 21 at the body size.
+        pub fn field_pad_y(self) -> f32 {
+            match self {
+                Self::Regular => space::S3,
+                Self::Compact => space::S2,
+                Self::Dense => space::S1,
+            }
+        }
+        /// Vertical inset of the toolbar above and below its row.
+        pub fn bar_pad(self) -> f32 {
+            match self {
+                Self::Regular => space::S3,
+                Self::Compact => space::S2 + space::S1,
+                Self::Dense => space::S2,
+            }
+        }
+        /// Gap between the toolbar's controls.
+        pub fn bar_gap(self) -> f32 {
+            match self {
+                Self::Regular => space::S4,
+                Self::Compact => space::S3 + space::S1,
+                Self::Dense => space::S3,
+            }
+        }
+        /// The height a row assumes before its controls size it (egui's
+        /// `interact_size.y`): the regular 24 stays until the control height
+        /// drops under it.
+        pub fn row_h(self) -> f32 {
+            match self {
+                Self::Dense => 20.0,
+                _ => 24.0,
+            }
+        }
+        /// Breathing room above and below the status bar's row.
+        pub fn status_pad(self) -> f32 {
+            match self {
+                Self::Regular => space::S1,
+                _ => 0.0,
+            }
+        }
+        /// The status bar's type, a step smaller per step tighter; `None`
+        /// keeps the body text.
+        pub fn status_font(self) -> Option<FontId> {
+            match self {
+                Self::Regular => None,
+                Self::Compact => Some(font::footnote()),
+                Self::Dense => Some(font::caption()),
+            }
+        }
+    }
+
+    static RT: AtomicU8 = AtomicU8::new(0);
+
+    pub fn set(d: Density) {
+        RT.store(d as u8, Ordering::Relaxed);
+    }
+    pub fn get() -> Density {
+        Density::ALL[RT.load(Ordering::Relaxed) as usize]
+    }
+}

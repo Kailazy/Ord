@@ -331,6 +331,8 @@ pub struct Config {
     /// The app background as `#rrggbb`; every surface is a fixed step from
     /// it (see `color::bg`). Empty, the default, is the stock graphite.
     pub background: String,
+    /// How tight the bars and controls sit (see `tokens::density`).
+    pub density: crate::ui::tokens::density::Density,
 }
 
 /// One saved snapshot of every tunable on the Waveform settings tab. Saving to
@@ -795,6 +797,7 @@ impl Default for Config {
             accent: String::new(),
             accent_presets: Vec::new(),
             background: String::new(),
+            density: Default::default(),
         }
     }
 }
@@ -814,6 +817,7 @@ impl Config {
     /// Push the appearance settings into the running style: at launch,
     /// and again whenever one of them changes.
     pub fn apply_appearance(&self, ctx: &eframe::egui::Context) {
+        crate::ui::tokens::density::set(self.density);
         crate::ui::tokens::color::set_background(crate::ui::tokens::color::from_hex(&self.background));
         crate::ui::tokens::color::set_accent(self.accent_color());
         crate::ui::theme::restyle(ctx, self.row_shade);
@@ -1300,6 +1304,7 @@ mod tests {
             accent: "#bf5af2".to_string(),
             accent_presets: vec!["#ff453a".to_string(), "#30d158".to_string()],
             background: "#10131f".to_string(),
+            density: crate::ui::tokens::density::Density::Dense,
         };
         let parsed: Config = toml::from_str(FULL).unwrap();
         // Every field, through Debug: exact for every type the config holds,

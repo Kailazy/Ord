@@ -3,6 +3,7 @@
 use super::*;
 use crate::ui::hover::HoverNoteExt;
 use crate::ui::swatch::{swatch, swatch_add};
+use crate::ui::tokens::density::Density;
 use crate::ui::tokens::{color, font, radius, space};
 
 impl App {
@@ -21,6 +22,19 @@ impl App {
                     dirty = true;
                 }
             }
+        });
+
+        divider(ui);
+        crate::modals::settings_heading(ui, "Density");
+        let segs = Density::ALL.map(|d| crate::ui::button::Segment { icon: "", label: d.label(), tip: "" });
+        let picked = Density::ALL.iter().position(|d| *d == self.config.density);
+        ui.horizontal(|ui| {
+            crate::ui::control_row(ui, |ui| {
+                if let Some(i) = crate::ui::button::segmented(ui, picked, &segs) {
+                    self.config.density = Density::ALL[i];
+                    dirty = true;
+                }
+            })
         });
 
         divider(ui);

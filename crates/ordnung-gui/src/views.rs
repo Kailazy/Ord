@@ -1606,7 +1606,7 @@ impl App {
                     }
                     let field = crate::ui::field::Field::singleline(&mut find)
                         .hint("Find a style or genre")
-                        .width(ui.available_width() - crate::ui::field::MARGIN.sum().x)
+                        .width(ui.available_width() - crate::ui::field::margin().sum().x)
                         .show(ui);
                     enter = field.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
                     if fresh || enter {

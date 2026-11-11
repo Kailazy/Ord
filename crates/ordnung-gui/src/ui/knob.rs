@@ -11,13 +11,14 @@
 use super::hover::HoverNoteExt;
 use super::tokens::color;
 
-/// Diameter of the knob's dial, and the size it allocates.
+/// Diameter of the knob's dial at its largest; on a shorter control row
+/// (a tighter density) it takes the row's height instead.
 const SIZE: f32 = 26.0;
 /// Where the sweep starts and ends, in radians clockwise from straight up.
 /// ±135° leaves a 90° dead zone centred on the bottom.
 const SWEEP: f32 = 2.356_194_5; // 135° in radians
-/// Radius of the arc drawn around the dial, and its thickness.
-const ARC_R: f32 = 11.0;
+/// Inset of the arc drawn around the dial from its edge, and the arc's thickness.
+const ARC_INSET: f32 = 2.0;
 const ARC_W: f32 = 2.5;
 /// Vertical drag distance, in points, that covers the full 0→1 range. Chosen so
 /// a comfortable ~100px gesture spans everything, with fine control inside it.
@@ -54,8 +55,10 @@ fn arc(p: &egui::Painter, c: egui::Pos2, r: f32, from: f32, to: f32, stroke: egu
 /// to return to unity. The percentage rides in the hover note rather than a
 /// permanent label, so the control keeps a fixed width in the toolbar.
 pub fn volume(ui: &mut egui::Ui, value: f32) -> Option<f32> {
+    let size = SIZE.min(ui.spacing().interact_size.y);
+    let arc_r = size / 2.0 - ARC_INSET;
     let (rect, resp) =
-        ui.allocate_exact_size(egui::vec2(SIZE, SIZE), egui::Sense::click_and_drag());
+        ui.allocate_exact_size(egui::vec2(size, size), egui::Sense::click_and_drag());
     let value = value.clamp(0.0, 1.0);
     let mut changed = None;
 
@@ -90,11 +93,11 @@ pub fn volume(ui: &mut egui::Ui, value: f32) -> Option<f32> {
 
     // Dial body, then the full sweep as an unfilled track, then the filled arc
     // up to the current value.
-    painter.circle_filled(c, SIZE / 2.0 - 3.0, color::surface_hi());
+    painter.circle_filled(c, size / 2.0 - 3.0, color::surface_hi());
     arc(
         painter,
         c,
-        ARC_R,
+        arc_r,
         -SWEEP,
         SWEEP,
         egui::Stroke::new(ARC_W, color::surface_active()),
@@ -112,7 +115,7 @@ pub fn volume(ui: &mut egui::Ui, value: f32) -> Option<f32> {
         arc(
             painter,
             c,
-            ARC_R,
+            arc_r,
             -SWEEP,
             angle_for(shown),
             egui::Stroke::new(ARC_W, fill),
@@ -121,7 +124,7 @@ pub fn volume(ui: &mut egui::Ui, value: f32) -> Option<f32> {
     // Pointer line from the dial's centre out to its edge.
     let a = angle_for(shown);
     painter.line_segment(
-        [on_circle(c, 2.5, a), on_circle(c, SIZE / 2.0 - 4.5, a)],
+        [on_circle(c, 2.5, a), on_circle(c, size / 2.0 - 4.5, a)],
         egui::Stroke::new(2.0, if active { color::LABEL } else { color::LABEL_2 }),
     );
 

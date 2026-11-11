@@ -9,7 +9,7 @@
 
 use eframe::egui::{self, FontData, FontDefinitions, FontFamily, Margin, Rounding, Stroke};
 
-use super::tokens::{color, font, radius, space};
+use super::tokens::{color, density, font, radius, space};
 
 /// Install fonts and the global style. Call once, before any frame is laid out.
 pub fn install(ctx: &egui::Context) {
@@ -311,7 +311,7 @@ fn apply_style(ctx: &egui::Context, row_shade: u8) {
     s.menu_margin = Margin::same(space::S3); // 8
     s.window_margin = Margin::same(space::S4 - 2.0); // 10
     s.indent = 18.0;
-    s.interact_size.y = 24.0;
+    s.interact_size.y = density::get().row_h();
     s.scroll.bar_width = 8.0;
     // Overlay scroll bars paint the handle in the label colour, which at egui's
     // 60 % rest opacity is a bright line down the table edge whenever the

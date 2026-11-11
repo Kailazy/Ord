@@ -2905,7 +2905,7 @@ impl App {
         egui::TopBottomPanel::top("toolbar")
             .frame(
                 egui::Frame::side_top_panel(&ctx.style())
-                    .inner_margin(egui::Margin::symmetric(space::S3, space::S3)),
+                    .inner_margin(egui::Margin::symmetric(space::S3, crate::ui::tokens::density::get().bar_pad())),
             )
             .show(ctx, |ui| {
                 // This row is the window's title bar (`main.rs` folds the
@@ -2957,7 +2957,7 @@ impl App {
                 // A row of controls around the search field: every button on
                 // it takes the field's height (see `ui::control_row`).
                 ui.horizontal(|ui| crate::ui::control_row(ui, |ui| {
-                    ui.spacing_mut().item_spacing.x = space::S4;
+                    ui.spacing_mut().item_spacing.x = crate::ui::tokens::density::get().bar_gap();
                     // The window's horizontal center, captured before any group
                     // lays out: the search field anchors to it further down, so
                     // it sits in the same spot whichever view is showing.
@@ -3338,7 +3338,7 @@ impl App {
                                 // truncates) instead of the field drawing over
                                 // it in a narrow window.
                                 let sep_w = 6.0 + gap;
-                                let field_frame = crate::ui::field::MARGIN.sum().x;
+                                let field_frame = crate::ui::field::margin().sum().x;
                                 let reserved = SEARCH_FIELD_MIN_W
                                     + field_frame
                                     + sep_w * 2.0
@@ -3441,7 +3441,7 @@ impl App {
                         ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
                             // The field's width is its text area: its frame
                             // adds the margin on either side (see
-                            // `ui::field::MARGIN`) and the arrows sit beside
+                            // `ui::field::margin()`) and the arrows sit beside
                             // it, and that is what the row has to find room
                             // for. Its floor is the counts slot's to honour
                             // (`SEARCH_FIELD_MIN_W` in that slot's reserve);
@@ -3450,7 +3450,7 @@ impl App {
                             // its neighbours. The arrows yield next, before
                             // the field drops under its floor: a row the UI
                             // zoom has squeezed keeps the field.
-                            let field_frame = crate::ui::field::MARGIN.sum().x;
+                            let field_frame = crate::ui::field::margin().sum().x;
                             let room = ui.available_width() - field_frame;
                             let arrows_w = if room - arrows_w >= SEARCH_FIELD_MIN_W { arrows_w } else { 0.0 };
                             let w = (room - arrows_w).clamp(0.0, 320.0);
@@ -3638,7 +3638,9 @@ impl App {
         }
 
         egui::TopBottomPanel::bottom("status").show(ctx, |ui| {
-            ui.add_space(2.0);
+            let density = crate::ui::tokens::density::get();
+            ui.style_mut().override_font_id = density.status_font();
+            ui.add_space(density.status_pad());
             let mut do_abort = false;
             let mut abort_analysis = false;
             // Bars and Cancel buttons share one height (see `ui::control_row`),
@@ -3704,7 +3706,7 @@ impl App {
             if abort_analysis {
                 self.cancel_analysis();
             }
-            ui.add_space(2.0);
+            ui.add_space(density.status_pad());
         });
 
         // Spotify-style now-playing bar: artwork, title/artist, play-pause and a

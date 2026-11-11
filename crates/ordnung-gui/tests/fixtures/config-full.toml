@@ -158,6 +158,7 @@ accent_presets = [
     "#30d158",
 ]
 background = "#10131f"
+density = "dense"
 
 [column_widths]
 artist = 180.5

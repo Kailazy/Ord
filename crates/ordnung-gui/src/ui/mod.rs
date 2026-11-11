@@ -36,13 +36,13 @@ pub mod window;
 use eframe::egui;
 
 /// The one height every control on a row shares: a single-line text field at
-/// the body size, [`field::MARGIN`] included, which is 32 pt. The field is
+/// the body size, [`field::margin()`] included, which is 32 pt. The field is
 /// the reference because it is the control whose height is least free to
 /// move (its text must not clip); the buttons and pickers beside it are
 /// brought to this through [`control_row`]. The text height is rounded the
 /// way egui rounds a laid-out line, so the number is a whole point.
 pub fn control_h(ui: &egui::Ui) -> f32 {
-    ui.text_style_height(&egui::TextStyle::Body).round() + field::MARGIN.sum().y
+    ui.text_style_height(&egui::TextStyle::Body).round() + field::margin().sum().y
 }
 
 /// A label that leads with an icon: the glyph from the app's icon face, a

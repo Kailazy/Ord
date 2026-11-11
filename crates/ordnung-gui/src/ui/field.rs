@@ -20,8 +20,12 @@
 use super::tokens::{font, radius, space};
 use eframe::egui::{self, Margin, Stroke, TextBuffer, Widget};
 
-/// The standard inset of the text from the frame: 12 × 8.
-pub const MARGIN: Margin = Margin::symmetric(space::S4, space::S3);
+/// The standard inset of the text from the frame: 12 across, and down
+/// what the density says (8 at regular), which is what sets the control
+/// height every row shares (`ui::control_h`).
+pub fn margin() -> Margin {
+    Margin::symmetric(space::S4, super::tokens::density::get().field_pad_y())
+}
 
 /// Inset of a trailing button from the field's frame, on every side.
 const TRAILING_INSET: f32 = space::S2;
@@ -54,11 +58,11 @@ impl<'t> Field<'t> {
     /// A one-line field.
     pub fn singleline(text: &'t mut dyn TextBuffer) -> Self {
         Self {
-            edit: egui::TextEdit::singleline(text).margin(MARGIN),
+            edit: egui::TextEdit::singleline(text).margin(margin()),
             outline: true,
             quiet: false,
             trailing: None,
-            margin: MARGIN,
+            margin: margin(),
             width: None,
         }
     }
@@ -66,11 +70,11 @@ impl<'t> Field<'t> {
     /// A wrapping, multi-line box.
     pub fn multiline(text: &'t mut dyn TextBuffer) -> Self {
         Self {
-            edit: egui::TextEdit::multiline(text).margin(MARGIN),
+            edit: egui::TextEdit::multiline(text).margin(margin()),
             outline: true,
             quiet: false,
             trailing: None,
-            margin: MARGIN,
+            margin: margin(),
             width: None,
         }
     }
@@ -111,7 +115,7 @@ impl<'t> Field<'t> {
         self
     }
 
-    /// A looser or tighter inset than [`MARGIN`].
+    /// A looser or tighter inset than [`margin`].
     pub fn margin(mut self, margin: impl Into<Margin>) -> Self {
         self.margin = margin.into();
         self.edit = self.edit.margin(self.margin);
@@ -312,7 +316,7 @@ mod tests {
         let mut button = 0.0;
         row_height(|ui| {
             super::super::control_row(ui, |ui| {
-                field = ui.add(Field::singleline(&mut text)).rect.height() + MARGIN.sum().y;
+                field = ui.add(Field::singleline(&mut text)).rect.height() + margin().sum().y;
                 button = super::super::button::button(ui, "Add").rect.height();
             });
         });
@@ -338,13 +342,13 @@ mod tests {
         let out = out.unwrap();
         let button = out.trailing.expect("a trailing button");
         let text_rect = out.field.rect;
-        let frame_right = text_rect.right() + MARGIN.right + TRAILING_GAP + button.rect.width() + TRAILING_INSET;
+        let frame_right = text_rect.right() + margin().right + TRAILING_GAP + button.rect.width() + TRAILING_INSET;
         assert_eq!(button.rect.right(), frame_right - TRAILING_INSET);
         assert_eq!(button.rect.height(), 32.0 - 2.0 * TRAILING_INSET);
         assert!(text_rect.right() + TRAILING_GAP <= button.rect.left());
         // The button came out of the text's width: the frame is as wide as
         // the same field without one.
-        assert_eq!(frame_right - text_rect.left() + MARGIN.left, 120.0 + MARGIN.sum().x);
+        assert_eq!(frame_right - text_rect.left() + margin().left, 120.0 + margin().sum().x);
     }
 
     /// The frame does not move with the button's label.

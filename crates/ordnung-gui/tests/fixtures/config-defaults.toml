@@ -109,6 +109,7 @@ row_shade = 40
 accent = ""
 accent_presets = []
 background = ""
+density = "regular"
 
 [column_widths]
 
