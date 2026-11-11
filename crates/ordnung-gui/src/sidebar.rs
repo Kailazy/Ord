@@ -790,7 +790,7 @@ pub(crate) fn playlist_row(
     // a playlist's chosen icon keeps its chosen hue whether or not the row
     // is selected.
     let resp = if density.icons_only() {
-        rail_tile_sized(ui, "", selected, RAIL_GLYPH).on_hover_note(name)
+        rail_tile_sized(ui, "", selected, RAIL_GLYPH).on_hover_note_beside(name)
     } else {
         // The track count is painted over the tile's right end, so the name is
         // truncated to leave that lane clear — otherwise a long name runs
@@ -1869,6 +1869,16 @@ pub(crate) fn nav_button_dense(
         // `ui::icon_text`), inset like every other tile's label.
         let w = ui.available_width();
         nav_button_text_sized(ui, crate::ui::icon_text(icon, label, font), selected, w, height)
+    }
+}
+
+/// A nav tile's note. egui hangs a note under its widget, which in the
+/// rail is the next tile, so the rail tier hangs it beside the tile.
+pub(crate) fn nav_note(resp: egui::Response, density: NavDensity, text: &str) -> egui::Response {
+    if density.icons_only() {
+        resp.on_hover_note_beside(text)
+    } else {
+        resp.on_hover_note(text)
     }
 }
 

@@ -3772,7 +3772,7 @@ impl App {
                                 tile_clicked = false;
                             }
                         } else {
-                            tile.on_hover_note("Every track in the catalog");
+                            crate::sidebar::nav_note(tile, density, "Every track in the catalog");
                         }
                         if tile_clicked {
                             *view = LibraryView::Library;
@@ -3790,7 +3790,7 @@ impl App {
                                 PLAYLIST_ROW_H,
                                 font::body(),
                             )
-                            .on_hover_note(RECENT_NOTE)
+                            .on_hover_note_beside(RECENT_NOTE)
                             .clicked()
                             {
                                 *view = LibraryView::RecentlyAdded;
@@ -3860,7 +3860,7 @@ impl App {
                             // (dashed, unfilled) so it reads as "add one" and
                             // not as another playlist in the stack.
                             if crate::sidebar::rail_add_tile(ui)
-                                .on_hover_note("New playlist")
+                                .on_hover_note_beside("New playlist")
                                 .clicked()
                             {
                                 *sidebar_action = Some(SidebarAction::NewPlaylist(None));
@@ -4015,8 +4015,8 @@ impl App {
                         SourceMark::Glyph(named(icons::VINYL)),
                         "Vinyl",
                         *view == LibraryView::Vinyl && !matches!(vinyl_tab, VinylTab::Shelf(_)),
-                    )
-                    .on_hover_note("Your Discogs vinyl collection");
+                    );
+                    let tile = crate::sidebar::nav_note(tile, density, "Your Discogs vinyl collection");
                     let mut tile_clicked = tile.clicked();
                     // The two shelves inside the tile, as the "New" pill sits
                     // inside "Library"; the rail has no room beside the glyph.
@@ -4041,7 +4041,7 @@ impl App {
                     if density.icons_only() {
                         ui.add_space(space::S3);
                         if crate::sidebar::rail_add_tile(ui)
-                            .on_hover_note("New crate")
+                            .on_hover_note_beside("New crate")
                             .clicked()
                         {
                             *sidebar_action = Some(SidebarAction::NewCrateSet(CrateKind::Crate));
@@ -4136,13 +4136,17 @@ impl App {
                                     active,
                                     PLAYLIST_ROW_H,
                                     font::body(),
-                                )
-                                .on_hover_note(if v.is_rekordbox_export {
-                                    "Removable volume set up for performance. \
-                                     Browse and edit its files directly."
-                                } else {
-                                    "Removable volume. Browse and edit its files directly."
-                                });
+                                );
+                                let resp = crate::sidebar::nav_note(
+                                    resp,
+                                    density,
+                                    if v.is_rekordbox_export {
+                                        "Removable volume set up for performance. \
+                                         Browse and edit its files directly."
+                                    } else {
+                                        "Removable volume. Browse and edit its files directly."
+                                    },
+                                );
                                 if resp.clicked() {
                                     self.view = LibraryView::Usb(v.path.clone(), None);
                                 }
@@ -4250,7 +4254,7 @@ impl App {
                                     if density.icons_only() {
                                         ui.add_space(space::S3);
                                         if crate::sidebar::rail_add_tile(ui)
-                                            .on_hover_note("New tag")
+                                            .on_hover_note_beside("New tag")
                                             .clicked()
                                         {
                                             sidebar_action = Some(SidebarAction::NewCrateSet(CrateKind::Tag));

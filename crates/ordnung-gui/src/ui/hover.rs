@@ -28,7 +28,7 @@
 //! out while it is taken, as a window does.
 
 use super::glass;
-use super::tokens::color;
+use super::tokens::{color, space};
 use eframe::egui::{self, Color32, RichText};
 
 /// Hover-text point size — matches the 13pt UI body.
@@ -60,6 +60,10 @@ pub trait HoverNoteExt {
     /// [`Self::on_hover_note`] with no delay: the note is up the moment the
     /// pointer arrives, for a mark whose whole job is to carry it.
     fn on_hover_note_now(self, text: impl Into<String>) -> Self;
+    /// [`Self::on_hover_note`] hung at the widget's right, its top level
+    /// with the widget's top: for a tile in a column, where a note under
+    /// it would cover the next tile.
+    fn on_hover_note_beside(self, text: impl Into<String>) -> Self;
 }
 
 impl HoverNoteExt for egui::Response {
@@ -114,6 +118,21 @@ impl HoverNoteExt for egui::Response {
         let resp = self.on_hover_note(text);
         ctx.set_style(saved);
         resp
+    }
+
+    fn on_hover_note_beside(self, text: impl Into<String>) -> Self {
+        // egui sets a note's left-top 4 pt under its widget's left-bottom
+        // (`find_tooltip_position`), so the note is attached to a copy of
+        // the response whose rect is the point that lands it beside the
+        // widget. The copy keeps the hover flags, so the delay, the
+        // still-pointer rule and the dismissal stay egui's.
+        let at = egui::pos2(self.rect.right() + space::S2, self.rect.top() - 4.0);
+        egui::Response {
+            rect: egui::Rect::from_min_size(at, egui::Vec2::ZERO),
+            ..self.clone()
+        }
+        .on_hover_note(text);
+        self
     }
 }
 
