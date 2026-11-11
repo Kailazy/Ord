@@ -538,7 +538,7 @@ impl App {
             let mut toggle_editing = false;
             crate::ui::sidebar::section_with_action(
                 ui,
-                "Tags",
+                "Info",
                 |ui| {
                     // Leaving edit mode with unsaved changes would silently drop
                     // them, so the toggle says so rather than looking like a
@@ -736,8 +736,8 @@ impl App {
             }
 
             // --- Dates & numbering ---------------------------------------
-            // Title/Artist/Album/Genre/Label/Year live in the editable "Edit
-            // tags" section above; the rest of the descriptive core stays here
+            // Title/Artist/Album/Genre/Label/Year live in the editable Info
+            // section above; the rest of the descriptive core stays here
             // read-only.
             let g = &t.tags;
             crate::ui::sidebar::section(ui, "Dates & numbering", |ui| {
@@ -861,7 +861,7 @@ impl App {
                     if let (Some(n), Some(t)) = (g.movement_number, g.movement_total) {
                         inspector_row(ui, "Movement #", &format!("{n} of {t}"));
                     }
-                    // Comment is shown/edited as "Notes" in the Edit tags section
+                    // Comment is shown/edited as "Notes" in the Info section
                     // above, so it's intentionally not repeated here.
                     if let Some(lyr) = &g.lyrics {
                         if !lyr.is_empty() {
