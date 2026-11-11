@@ -3573,10 +3573,18 @@ impl App {
                         .width(f32::INFINITY),
                 );
                 let needle = search.trim().to_ascii_lowercase();
-                let matches: Vec<(&str, &str)> = crate::ui::phosphor_icons::icons()
+                // With nothing typed the music icons lead, then the whole
+                // alphabet (so those show twice); a search shows its matches.
+                let lead: &[&str] = if needle.is_empty() { crate::ui::phosphor_icons::MUSIC } else { &[] };
+                let matches: Vec<(&str, &str)> = lead
                     .iter()
-                    .filter(|(n, _)| needle.is_empty() || n.contains(needle.as_str()))
-                    .map(|(n, g)| (n.as_str(), *g))
+                    .map(|n| (*n, crate::ui::phosphor_icons::named(n)))
+                    .chain(
+                        crate::ui::phosphor_icons::icons()
+                            .iter()
+                            .filter(|(n, _)| needle.is_empty() || n.contains(needle.as_str()))
+                            .map(|(n, g)| (n.as_str(), *g)),
+                    )
                     .collect();
                 ui.add_space(space::S2);
                 const CELL: f32 = 34.0;

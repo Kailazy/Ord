@@ -37,6 +37,14 @@ pub fn named(name: &str) -> &'static str {
     glyph(name).unwrap_or("\u{FFFD}")
 }
 
+/// The icons a playlist is most likely after: the picker opens on these,
+/// ahead of the full alphabet.
+pub const MUSIC: &[&str] = &[
+    "vinyl-record", "record", "music-note", "music-notes", "headphones", "speaker-high",
+    "playlist", "queue", "disc", "cassette-tape", "radio", "microphone", "waveform",
+    "equalizer", "metronome", "guitar", "piano-keys", "disco-ball",
+];
+
 /// Every icon name the app reaches for by itself, in one place so the test
 /// can check them and the next feature can see what is already in use.
 pub mod app {
@@ -93,7 +101,7 @@ mod tests {
 
     #[test]
     fn every_app_icon_is_in_the_table() {
-        for name in app::ALL {
+        for name in app::ALL.iter().chain(MUSIC) {
             assert!(glyph(name).is_some(), "{name} is not a Phosphor icon");
         }
     }
