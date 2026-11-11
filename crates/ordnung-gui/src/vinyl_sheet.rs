@@ -1943,9 +1943,9 @@ impl App {
                                     .collect::<std::collections::BTreeSet<_>>()
                                     .len();
                                 let label = if offer.is_some() {
-                                    format!("More from your sellers ({shops})")
+                                    format!("More from your shops ({shops})")
                                 } else {
-                                    format!("From your sellers ({shops})")
+                                    format!("From your shops ({shops})")
                                 };
                                 let btn = crate::ui::button::compact_menu(ui, &label)
                                     .on_hover_note(

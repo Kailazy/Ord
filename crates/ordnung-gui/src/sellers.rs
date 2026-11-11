@@ -394,8 +394,8 @@ impl App {
                 self.seller_find_hits.clear();
                 self.seller_find_for.clear();
                 let add_btn = ui
-                    .button("＋ Add seller")
-                    .on_hover_note("Save a Discogs seller to dig through, by username or shop URL");
+                    .button("＋ Add shop")
+                    .on_hover_note("Save a Discogs shop to dig through, by username or URL");
                 if add_btn.clicked() {
                     ui.memory_mut(|m| m.toggle_popup(popup_id));
                 }
@@ -430,7 +430,7 @@ impl App {
                         let edit = ui.add(
                             crate::ui::field::Field::singleline(&mut self.seller_add)
                                 .width(250.0)
-                                .hint("Seller username or URL"),
+                                .hint("Shop username or URL"),
                         );
                         if just_opened {
                             edit.request_focus();
@@ -514,11 +514,11 @@ impl App {
                             ctx.memory_mut(|m| m.close_popup());
                             self.ensure_seller_listings();
                         }
-                        Err(e) => self.status = format!("Couldn't save seller: {e}"),
+                        Err(e) => self.status = format!("Couldn't save shop: {e}"),
                     }
                 }
                 None => {
-                    self.status = "That doesn't look like a Discogs username or seller URL.".into();
+                    self.status = "That doesn't look like a Discogs username or shop URL.".into();
                 }
             }
         }
@@ -537,7 +537,7 @@ impl App {
                         self.ensure_seller_listings();
                     }
                 }
-                Err(e) => self.status = format!("Couldn't remove seller: {e}"),
+                Err(e) => self.status = format!("Couldn't remove shop: {e}"),
             }
         }
         if let Some(u) = sweep {
@@ -555,9 +555,9 @@ impl App {
         if self.sellers.is_empty() {
             ui.add_space(40.0);
             ui.vertical_centered(|ui| {
-                ui.heading("Dig through a seller's crates");
+                ui.heading("Dig through a shop's stock");
                 ui.add_space(6.0);
-                ui.label("Save a Discogs seller above, then update their inventory");
+                ui.label("Save a Discogs shop above, then update its stock");
                 ui.add_space(4.0);
                 ui.label(
                     egui::RichText::new(
@@ -631,7 +631,7 @@ impl App {
         ui.add_space(6.0);
         ui.horizontal(|ui| {
             let mut meta = match (unfiltered, shop.cached) {
-                (true, n) => format!("{n} records in the crates"),
+                (true, n) => format!("{n} records in stock"),
                 (false, _) => format!("{} of {} records match", filtered.len(), shop.cached),
             };
             // The freshness stamp says what the crates are a picture of. A
@@ -668,11 +668,11 @@ impl App {
             ui.vertical_centered(|ui| {
                 if shop.swept_at.is_none() {
                     ui.label(format!(
-                        "Nothing cached for {} yet — update to pull their crates.",
+                        "Nothing cached for {} yet. Update to pull its stock.",
                         shop.username
                     ));
                 } else {
-                    ui.label("No vinyl in this seller's inventory");
+                    ui.label("No vinyl in this shop's stock");
                 }
             });
             return;
@@ -696,10 +696,10 @@ impl App {
                                 }
                                 [] => unreachable!(),
                             };
-                            format!("Nothing in the crates is tagged {tags_named}.")
+                            format!("Nothing in stock is tagged {tags_named}.")
                         }
-                        (_, true, _) => "Nothing in the crates matches those filters.".to_string(),
-                        (_, false, _) => "Nothing in the crates matches that search.".to_string(),
+                        (_, true, _) => "Nothing in stock matches those filters.".to_string(),
+                        (_, false, _) => "Nothing in stock matches that search.".to_string(),
                     }
                 };
                 ui.label(egui::RichText::new(msg).weak());
@@ -886,7 +886,7 @@ impl App {
                 .then_with(|| a.username.to_lowercase().cmp(&b.username.to_lowercase()))
         });
         let current = self.seller_current.as_deref();
-        let btn = crate::ui::button::menu_button(ui, current.unwrap_or("Pick a seller"));
+        let btn = crate::ui::button::menu_button(ui, current.unwrap_or("Pick a shop"));
         crate::ui::menu::dropdown(&btn, 320.0, |m| {
             // The filter lives in egui's memory under the menu's id and
             // starts empty each visit; the field takes focus on the pass
@@ -981,7 +981,7 @@ impl App {
                     .unwrap_or_default();
                 let busy = self.is_busy();
                 let detail = if busy { "waiting for the current job".to_string() } else { size_note };
-                if m.item_detail("Update crates", detail) && !busy {
+                if m.item_detail("Update stock", detail) && !busy {
                     act.sweep = Some(cur.to_string());
                     m.close();
                 }
@@ -1011,7 +1011,7 @@ impl App {
                 }
             }
             m.separator();
-            if m.item("Add seller") {
+            if m.item("Add shop") {
                 act.add = true;
                 m.close();
             }
@@ -1040,10 +1040,10 @@ impl App {
         let edit = ui.add(
             crate::ui::field::Field::singleline(&mut self.seller_find)
                 .width(240.0)
-                .hint(format!("Find a record across {n_sellers} sellers")),
+                .hint(format!("Find a record across {n_sellers} shops")),
         );
         let edit = edit.on_hover_note(
-            "Search every saved seller's crates by artist, title or label; \
+            "Search every saved shop's stock by artist, title or label; \
              each hit names the shop",
         );
         let popup_id = ui.make_persistent_id("seller-find-popup");
@@ -1098,7 +1098,7 @@ impl App {
                 if hits.is_empty() {
                     ui.add_space(6.0);
                     ui.label(
-                        egui::RichText::new("No record in the crates matches that").weak(),
+                        egui::RichText::new("No record in stock matches that").weak(),
                     );
                     ui.add_space(6.0);
                     return;
@@ -1171,7 +1171,7 @@ impl App {
                         egui::Label::new(egui::RichText::new(line2).small().weak()).truncate(),
                     );
                     if resp
-                        .on_hover_note(format!("Show this record in {seller}'s crates"))
+                        .on_hover_note(format!("Show this record in {seller}'s stock"))
                         .clicked()
                     {
                         *pick = Some((seller.clone(), l.listing_id));

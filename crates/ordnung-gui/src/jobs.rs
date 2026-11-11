@@ -739,7 +739,7 @@ impl App {
             .find(|s| s.username == username)
             .map(|s| s.genres.clone())
             .unwrap_or_default();
-        let status = format!("Updating {username}'s crates…");
+        let status = format!("Updating {username}'s stock…");
         self.spawn_job(ctx, status, true, move |db, cancel, tx, ctx| {
             run_sweep_seller(db, token, username, genres, cancel, tx, ctx)
         });
@@ -2979,7 +2979,7 @@ pub(crate) fn run_sweep_seller(
             s => format!("about {} min left", (s as f64 / 60.0).ceil() as u64),
         };
         let _ = tx.send(JobMsg::Status(format!(
-            "Updating {username}'s crates… (page {page}/{total}, {kept} records, {left})"
+            "Updating {username}'s stock… (page {page}/{total}, {kept} records, {left})"
         )));
         let _ = tx.send(JobMsg::Progress {
             done: page as usize,
@@ -3010,7 +3010,7 @@ pub(crate) fn run_sweep_seller(
         note.push_str(" (no genre database yet, so every genre was kept)");
     }
     let _ = tx.send(JobMsg::Done(format!(
-        "{username}: {kept} records in the crates{note}"
+        "{username}: {kept} records in stock{note}"
     )));
     ctx.request_repaint();
 }

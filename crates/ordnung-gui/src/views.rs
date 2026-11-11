@@ -238,7 +238,7 @@ fn vinyl_tabs(
         "Market".to_string(),
         "Market".to_string(),
         current == VinylTab::Sellers,
-        "Dig through a Discogs seller's crates",
+        "Dig through a Discogs shop's stock",
         None,
     ) {
         clicked = Some(VinylTab::Sellers);
@@ -1754,7 +1754,7 @@ impl App {
         if genre_options.is_empty() {
             m.header("Genres and styles");
             m.note(if seller_mode {
-                "No genre tags known for these crates yet."
+                "No genre tags known for this stock yet."
             } else {
                 "No genre tags yet. Refresh to pull them from Discogs."
             });
@@ -1892,7 +1892,7 @@ impl App {
                             "Download every vinyl release's genre tags once \
                              (a few hundred MB, prebuilt monthly from the \
                              Discogs dump) so tags resolve locally and \
-                             instantly, for every seller",
+                             instantly, for every shop",
                         )
                         .clicked()
                 })
@@ -2051,7 +2051,7 @@ impl App {
             // buttons on the far right.
             ui.add_space(10.0);
             let hint = if seller_mode {
-                "Search the crates"
+                "Search this shop"
             } else if graph_mode {
                 "Find on the map"
             } else {
@@ -2341,7 +2341,7 @@ impl App {
                     if ui
                         .add_sized([stock_w, h], egui::SelectableLabel::new(self.show_watch, label))
                         .on_hover_note(
-                            "Wantlist records for sale at your saved sellers, \
+                            "Wantlist records for sale at your saved shops, \
                              grouped by shop so one order covers the most records \
                              (update a shop to refresh its stock)",
                         )
