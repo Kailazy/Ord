@@ -134,10 +134,6 @@ pub(crate) struct VinylSheet {
     /// Videos no track claimed, as indices into the detail's `videos`.
     pub extra_videos: Vec<usize>,
     pub loading: bool,
-    /// When the sheet was opened. The window is held back while the
-    /// tracklist loads so it opens at its full height instead of growing
-    /// a frame later; `SHEET_HOLD` caps the wait for a slow fetch.
-    pub opened: Instant,
     pub error: Option<String>,
     /// The video index currently loaded in the mini-player, for the row marker.
     pub playing_video: Option<usize>,
@@ -609,7 +605,6 @@ impl App {
             rows: Vec::new(),
             extra_videos: Vec::new(),
             loading: true,
-            opened: Instant::now(),
             error: None,
             playing_video: None,
             video_uri: None,
@@ -625,7 +620,15 @@ impl App {
             hidden: false,
             pane: SheetPane::Tracks,
         });
-        self.spawn_sheet_fetch(release_id, ctx.clone());
+        // A record opened before is one cache row: read it here and the sheet
+        // opens complete on the click frame. Only a miss goes off-thread.
+        let cached = Catalog::open(&self.db_path)
+            .ok()
+            .and_then(|c| c.cached_release(&release_id.to_string()).ok().flatten());
+        match cached {
+            Some(detail) => self.adopt_sheet_detail(release_id, Ok(detail)),
+            None => self.spawn_sheet_fetch(release_id, ctx.clone()),
+        }
         self.spawn_sheet_price(release_id, ctx.clone());
     }
 
@@ -791,7 +794,9 @@ impl App {
         }
         let db = self.db_path.clone();
         self.sheet_price_rx = Some(util::spawn_oneshot(&ctx, move || {
-            let client = discogs::Client::new(token);
+            // Background, so the tracklist request the user is waiting on
+            // takes the pace slot first and this follows it.
+            let client = discogs::Client::new(token).background();
             match client.marketplace_price(release_id) {
                 // Nothing for sale here. This is often a promo or a white label
                 // whose standard pressing is well stocked, so ask the master which
@@ -848,17 +853,23 @@ impl App {
         let Some(rx) = &self.sheet_rx else { return };
         let Ok(msg) = rx.try_recv() else { return };
         self.sheet_rx = None;
+        self.adopt_sheet_detail(msg.release_id, msg.result);
+    }
+
+    /// Build the open sheet's rows from `result`: the fetched detail, or the
+    /// cached one read on the click frame (see [`App::open_release_sheet`]).
+    fn adopt_sheet_detail(&mut self, release_id: u64, result: Result<discogs::ReleaseDetail, String>) {
         self.ensure_library_index();
         let mut bandcamp_ask = None;
         let Some(sheet) = self.vinyl_sheet.as_mut() else {
             return;
         };
         // The user may have moved on to another record while this was in flight.
-        if sheet.release_id != msg.release_id {
+        if sheet.release_id != release_id {
             return;
         }
         sheet.loading = false;
-        match msg.result {
+        match result {
             Ok(detail) => {
                 // The name in the sheet's header, to suppress per-track credits
                 // that only repeat it.
@@ -979,7 +990,7 @@ impl App {
             Err(e) => sheet.error = Some(e),
         }
         if let Some(ask) = bandcamp_ask {
-            self.spawn_sheet_bandcamp(msg.release_id, ask);
+            self.spawn_sheet_bandcamp(release_id, ask);
         }
     }
 
@@ -1288,19 +1299,6 @@ impl App {
         // A sheet is where videos get played from, so have the player built
         // before the first track is clicked.
         webview::prewarm();
-        // A cached record lands a frame or two after the open; drawing the
-        // window before then shows it short and then taller, the resize the
-        // user sees on every open. Hold it until the rows are in, up to
-        // `SHEET_HOLD`, so a slow fetch still gets the loading sheet. A
-        // record opened over an open sheet (from its run pane) is not held:
-        // the window stays, at its height, and the new rows fill it.
-        if let Some(s) = self.vinyl_sheet.as_ref() {
-            let waited = s.opened.elapsed();
-            if s.loading && waited < SHEET_HOLD && crate::ui::glass::opening(ctx, sheet_glass()) {
-                ctx.request_repaint_after(SHEET_HOLD - waited);
-                return;
-            }
-        }
         // The panel can be closed by its own title-bar button, which we only
         // find out about by asking.
         if let Some(sheet) = self.vinyl_sheet.as_mut() {
@@ -3072,8 +3070,6 @@ const SHEET_H: f32 = 700.0;
 /// The shortest the sheet can be dragged: the header, three tracks or two
 /// records of a run, and the footer.
 const SHEET_MIN_H: f32 = 500.0;
-/// How long a loading sheet is held off screen before it opens anyway.
-const SHEET_HOLD: Duration = Duration::from_millis(400);
 /// How long the row a play would start on must stand before its video is
 /// readied in the mini-player (see `App::preload_sheet_start`).
 const SHEET_PRELOAD_AFTER: Duration = Duration::from_millis(600);
