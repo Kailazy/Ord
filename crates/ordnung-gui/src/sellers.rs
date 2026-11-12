@@ -162,6 +162,25 @@ fn fmt_ago(unix: i64) -> String {
     }
 }
 
+/// The listing's "year · format · label catno" line, shared by the list
+/// row and the record sheet's subtitle.
+fn listing_sub(l: &SellerListing) -> String {
+    [
+        l.year.map(|y| y.to_string()),
+        l.format.clone(),
+        match (&l.label, &l.catalog_number) {
+            (Some(a), Some(c)) => Some(format!("{a} {c}")),
+            (Some(a), None) => Some(a.clone()),
+            (None, Some(c)) => Some(c.clone()),
+            (None, None) => None,
+        },
+    ]
+    .into_iter()
+    .flatten()
+    .collect::<Vec<_>>()
+    .join(" · ")
+}
+
 /// The short grade out of Discogs's long form: `Very Good Plus (VG+)` → `VG+`.
 /// Falls back to the full text when there are no parentheses (e.g. `Generic`).
 pub(crate) fn cond_short(s: &str) -> &str {
@@ -1489,12 +1508,7 @@ impl App {
         // (same dance as the card).
         let (listing_id, release_id, artist, title, sub, genres, price_line, thumb, owned, wanted, viewed) = {
             let l = self.seller_listings.get(idx)?;
-            let sub = match (l.year, l.format.as_deref()) {
-                (Some(y), Some(f)) => format!("{y} · {f}"),
-                (Some(y), None) => y.to_string(),
-                (None, Some(f)) => f.to_string(),
-                (None, None) => String::new(),
-            };
+            let sub = listing_sub(l);
             let mut price_line = crate::vinyl_sheet::fmt_market_price(&discogs::MarketPrice {
                 value: l.price,
                 currency: l.currency.clone(),
@@ -1732,20 +1746,7 @@ impl App {
         // Opening a record puts the keyboard ring on it, so the arrows walk on
         // from the record last clicked rather than from the find box pick.
         self.seller_highlight = Some(l.listing_id);
-        let sub = [
-            l.year.map(|y| y.to_string()),
-            l.format.clone(),
-            match (&l.label, &l.catalog_number) {
-                (Some(a), Some(c)) => Some(format!("{a} {c}")),
-                (Some(a), None) => Some(a.clone()),
-                (None, Some(c)) => Some(c.clone()),
-                (None, None) => None,
-            },
-        ]
-        .into_iter()
-        .flatten()
-        .collect::<Vec<_>>()
-        .join(" · ");
+        let sub = listing_sub(&l);
         self.open_release_sheet(
             l.release_id,
             l.artist.clone(),
