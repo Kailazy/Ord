@@ -1327,7 +1327,6 @@ impl App {
             error,
             playing_video,
             video_open,
-            can_play,
         ) = {
             let s = self.vinyl_sheet.as_ref().unwrap();
             // The mini-player is shared with the radio. It belongs to this
@@ -1365,13 +1364,6 @@ impl App {
                         .position(|v| v.youtube_id() == Some(song.youtube_id.as_str()))
                 }),
                 webview::is_open() && (s.playing_video.is_some() || radio_here),
-                // Can anything on this record play at all — a video through
-                // the mini-player, or a local file through the audio engine?
-                // Only then does the transport's slot need holding open.
-                s.rows
-                    .iter()
-                    .any(|r| !matches!(r.source, SheetSource::None) || r.also_video.is_some())
-                    || !s.extra_videos.is_empty(),
             )
         };
         // Every genre tag on the release: Discogs' coarse genres plus its finer
@@ -1385,7 +1377,7 @@ impl App {
             .filter(|l| !l.is_empty());
         let label_line = self.vinyl_sheet.as_ref().and_then(|s| s.label.clone());
         // 0/0 is a detail cached before the counts were kept, or a record
-        // nobody has logged: no bars either way.
+        // nobody has logged: empty bars either way.
         let have_want = self
             .vinyl_sheet
             .as_ref()
@@ -1576,6 +1568,9 @@ impl App {
             .as_ref()
             .and_then(|s| s.bandcamp.as_ref())
             .map(|a| (bandcamp_line(a), bandcamp_rows(a), a.url.clone()));
+        // The lookup starts once the detail lands, so it's still to come
+        // while the detail is, or while its own request is out.
+        let bandcamp_pending = loading || self.sheet_bandcamp_rx.is_some();
         let col_pending = self.vinyl_pending(VinylList::Collection, release_id);
         let want_pending = self.vinyl_pending(VinylList::Wantlist, release_id);
 
@@ -1785,12 +1780,20 @@ impl App {
                         let artist_font = crate::ui::tokens::font::strong(
                             crate::ui::tokens::font::headline().size,
                         );
-                        if artist_parts.iter().any(discogs::ArtistCredit::browsable) {
+                        // One row either way: a wrapped row is interact height,
+                        // a bare label is text height, and the names turning
+                        // into links when the detail lands would move the
+                        // column by the difference.
+                        ui.horizontal_wrapped(|ui| {
+                            ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
+                            if !artist_parts.iter().any(discogs::ArtistCredit::browsable) {
+                                ui.label(egui::RichText::new(&artist).font(artist_font.clone()));
+                                return;
+                            }
                             // Name by name, each a link to its artist page,
                             // with Discogs's own connectors between them so
                             // "A & B" still reads as one credit.
-                            ui.horizontal_wrapped(|ui| {
-                                ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
+                            {
                                 let ink = ui.visuals().text_color();
                                 let last = artist_parts.len() - 1;
                                 for (i, a) in artist_parts.iter().enumerate() {
@@ -1819,10 +1822,8 @@ impl App {
                                         );
                                     }
                                 }
-                            });
-                        } else {
-                            ui.label(egui::RichText::new(&artist).font(artist_font));
-                        }
+                            }
+                        });
                         ui.label(
                             egui::RichText::new(&title).font(crate::ui::tokens::font::headline()),
                         );
@@ -1864,6 +1865,8 @@ impl App {
                                     ui.label(galley);
                                 }
                             });
+                        } else if loading {
+                            crate::ui::ghost_line(ui, 120.0, egui::TextStyle::Body);
                         }
                         // Which version is on the sheet is a choice, not a
                         // fact: the one a dig landed on is whichever the page
@@ -1887,7 +1890,8 @@ impl App {
                                     .x
                                     + 12.0
                                     + ui.spacing().item_spacing.x
-                                    + if have_want.is_some() { HAVE_WANT_W + 8.0 } else { 0.0 };
+                                    + HAVE_WANT_W
+                                    + 8.0;
                                 let galley = crate::ui::text::truncated(
                                     ui,
                                     sub.clone(),
@@ -1904,12 +1908,12 @@ impl App {
                             {
                                 act = Some(Act::Pressings);
                             }
-                            if let Some((have, want)) = have_want {
-                                have_want_bars(ui, have, want);
-                            }
+                            have_want_bars(ui, have_want);
                         });
                         if let Some(line) = &genre_line {
                             ui.label(egui::RichText::new(line).small().weak());
+                        } else if loading {
+                            crate::ui::ghost_line(ui, 160.0, egui::TextStyle::Small);
                         }
                         // What it costs, right under what it is — the sheet is
                         // where the buy decision happens. One row, each
@@ -1929,18 +1933,30 @@ impl App {
                         ui.horizontal_wrapped(|ui| {
                             ui.spacing_mut().item_spacing.x = 6.0;
                             let price_ink = crate::ui::tokens::color::POSITIVE;
+                            let font = egui::TextStyle::Body.resolve(ui.style());
+                            let ctx = ui.ctx().clone();
+                            let text_w = move |s: &str| {
+                                ctx.fonts(|f| {
+                                    f.layout_no_wrap(s.to_owned(), font.clone(), price_ink)
+                                        .size()
+                                        .x
+                                })
+                            };
                             ui.label(egui::RichText::new("Discogs").weak());
-                            if crate::ui::button::name_link(
+                            // The price lands after the sheet opens. Its slot
+                            // is as wide as its longest reading, so the shops
+                            // and Bandcamp after it don't shift when it does.
+                            let price = crate::ui::button::name_link(
                                 ui,
                                 &price_line,
                                 crate::ui::tokens::font::body(),
                                 price_ink,
                             )
-                            .on_hover_note("Open on discogs.com")
-                            .clicked()
-                            {
+                            .on_hover_note("Open on discogs.com");
+                            if price.clicked() {
                                 open_url(&format!("https://www.discogs.com/release/{release_id}"));
                             }
+                            ui.add_space((text_w("No copies for sale") - price.rect.width()).max(0.0));
                             if !stocked.is_empty() {
                                 let shops = stocked
                                     .iter()
@@ -1970,21 +1986,21 @@ impl App {
                                     }
                                 });
                             }
-                            if let Some((line, rows, page)) = &bandcamp {
+                            // The Bandcamp slot is on the line from the start:
+                            // "Looking…" until the lookup answers, then the
+                            // price, or that there is none. A slot that
+                            // appeared with its answer moved the line.
+                            let bc_wait = if bandcamp_pending { "Looking…" } else { "Not on Bandcamp" };
+                            let (line, rows, page) = match &bandcamp {
+                                Some((line, rows, page)) => (line.as_str(), rows.as_slice(), Some(page.as_str())),
+                                None => (bc_wait, &[][..], None),
+                            };
+                            {
                                 // Lands after the record, so it keeps to the
                                 // room left on the line: the shop's name goes
                                 // first when tight, then the price is cut (the
                                 // dropdown has every format in full). A nested
                                 // row here once widened the sheet by 180 pt.
-                                let font = egui::TextStyle::Body.resolve(ui.style());
-                                let ctx = ui.ctx().clone();
-                                let text_w = move |s: &str| {
-                                    ctx.fonts(|f| {
-                                        f.layout_no_wrap(s.to_owned(), font.clone(), price_ink)
-                                            .size()
-                                            .x
-                                    })
-                                };
                                 let gap = ui.spacing().item_spacing.x;
                                 // The Formats chip after the price, when
                                 // there is one: its word, its padding, the
@@ -2021,7 +2037,7 @@ impl App {
                                 // when not even the first part fits.
                                 let fits = |s: &str| text_w(s) <= room;
                                 let shown = if fits(line) {
-                                    line.clone()
+                                    line.to_owned()
                                 } else {
                                     line.rmatch_indices(" · ")
                                         .map(|(i, _)| &line[..i])
@@ -2030,7 +2046,7 @@ impl App {
                                         .unwrap_or_else(|| {
                                             crate::ui::text::truncated(
                                                 ui,
-                                                line.clone(),
+                                                line,
                                                 egui::TextStyle::Body.resolve(ui.style()),
                                                 price_ink,
                                                 room,
@@ -2047,9 +2063,13 @@ impl App {
                                 // album when there are several, which a chip
                                 // after the price then lists. Source, price,
                                 // tool: the two money lines keep one shape.
-                                let url = match rows.as_slice() {
+                                let Some(page) = page else {
+                                    ui.label(egui::RichText::new(shown).weak());
+                                    return;
+                                };
+                                let url = match rows {
                                     [one] => one.2.as_str(),
-                                    _ => page.as_str(),
+                                    _ => page,
                                 };
                                 if crate::ui::button::name_link(
                                     ui,
@@ -2127,6 +2147,13 @@ impl App {
                                     act = Some(Act::OpenAlternative);
                                 }
                             });
+                        }
+                        // The line those two share is there whether or not
+                        // either has anything to say, so a pressing that
+                        // turns out dead once the price lands doesn't push
+                        // the buttons and the tracklist down.
+                        if offer.is_none() && alt.is_none() {
+                            ui.add_space(ui.spacing().interact_size.y);
                         }
                         ui.add_space(10.0);
                         ui.horizontal(|ui| {
@@ -2291,14 +2318,10 @@ impl App {
                 ui.separator();
 
                 // The transport. Sits above the tracklist so it's in reach of
-                // the rows that feed it, on every record that *can* play
-                // something — a video through the mini-player, or a local
-                // file through the audio engine: there from the start, at
-                // rest until something plays, so the tracklist never jumps
-                // by a bar's height at the moment the user starts something.
-                // A record with nothing to play has nothing for it to drive,
-                // and gets no bar.
-                if can_play {
+                // the rows that feed it: there from the first frame, at rest
+                // until something plays, so the tracklist never jumps by a
+                // bar's height when the rows land or the user starts one.
+                {
                     ui.add_space(8.0);
                     let mut scrub = self.vinyl_sheet.as_ref().and_then(|s| s.video_scrub);
                     let (live, transport) = if video_open {
@@ -2348,7 +2371,9 @@ impl App {
                     Some((ri, rl)) => seg_labels.iter().position(|(i, l, _)| i == ri && l == rl),
                     None => Some(0),
                 };
-                if seg_labels.len() > 1 {
+                // The row is there while the names that fill it are still
+                // loading, so the tracklist doesn't drop a row when they land.
+                if seg_labels.len() > 1 || loading {
                     ui.add_space(crate::ui::tokens::space::S3);
                     let segments: Vec<crate::ui::button::Segment> = seg_labels
                         .iter()
@@ -2371,19 +2396,16 @@ impl App {
                     crate::App::browse_rows_ui(ui, snap, &mut run_out, true);
                 } else {
                     if loading {
-                        // In the middle of the body the rows will fill, not
-                        // its top-left corner.
-                        let body = ui.available_rect_before_wrap();
-                        ui.allocate_rect(body, egui::Sense::hover());
-                        let c = body.center();
-                        ui.put(
-                            egui::Rect::from_center_size(c - egui::vec2(0.0, 12.0), egui::vec2(20.0, 20.0)),
-                            egui::Spinner::new(),
-                        );
-                        ui.put(
-                            egui::Rect::from_center_size(c + egui::vec2(0.0, 14.0), egui::vec2(body.width(), 18.0)),
-                            egui::Label::new(egui::RichText::new("Loading tracklist…").weak()),
-                        );
+                        // Rows at the tracklist's own height and columns,
+                        // so the ones that land replace them in place.
+                        ui.add_space(4.0);
+                        for i in 0..10 {
+                            ui.horizontal(|ui| {
+                                ui.set_min_height(24.0);
+                                ui.add_space(MARKER_W + POS_W);
+                                crate::ui::ghost_line(ui, 110.0 + (i * 37 % 90) as f32, egui::TextStyle::Body);
+                            });
+                        }
                         return;
                     }
                     if let Some(e) = &error {
@@ -3328,7 +3350,9 @@ enum RowHit {
 /// the fill in collection green and wantlist amber, on a log scale that
 /// fills at 10,000 so a rare record and a classic read apart. Rides at the
 /// end of the Versions line; the hover note gives the counts.
-fn have_want_bars(ui: &mut egui::Ui, have: u32, want: u32) {
+/// The have/want bars, or their empty tracks while the detail that fills
+/// them is still on its way: the slot is there from the first frame.
+fn have_want_bars(ui: &mut egui::Ui, counts: Option<(u32, u32)>) {
     use crate::ui::icon::{shelf, SHELF_R};
     use crate::ui::tokens::{color, space, stroke};
     // Painted, not laid out: a nested horizontal row is interact_size tall
@@ -3338,6 +3362,7 @@ fn have_want_bars(ui: &mut egui::Ui, have: u32, want: u32) {
     let p = ui.painter();
     let t = stroke::GAUGE - 1.0;
     let mut x = rect.left();
+    let (have, want) = counts.unwrap_or_default();
     for (list, n, ink) in [
         (VinylList::Collection, have, color::POSITIVE),
         (VinylList::Wantlist, want, color::CAUTION),
@@ -3351,11 +3376,13 @@ fn have_want_bars(ui: &mut egui::Ui, have: u32, want: u32) {
         crate::ui::gauge(p, line, (n as f32 + 1.0).log10() / 4.0, ink.gamma_multiply(0.7));
         x += HAVE_WANT_BAR + space::S3;
     }
-    resp.on_hover_note(format!(
-        "{} have · {} want",
-        crate::records::thousands(have),
-        crate::records::thousands(want)
-    ));
+    if counts.is_some() {
+        resp.on_hover_note(format!(
+            "{} have · {} want",
+            crate::records::thousands(have),
+            crate::records::thousands(want)
+        ));
+    }
 }
 
 const HAVE_WANT_BAR: f32 = 24.0;

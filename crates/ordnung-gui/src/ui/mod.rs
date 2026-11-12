@@ -113,6 +113,17 @@ pub fn gauge(p: &egui::Painter, line: egui::Rect, frac: f32, ink: egui::Color32)
     p.rect_filled(fill, tokens::radius::XS, ink);
 }
 
+/// A line of text that hasn't arrived: a quiet bar `w` wide at the height a
+/// line of `style` takes, where the words will land. The zone keeps its
+/// place while the data loads and the text replaces the bar without moving
+/// anything around it.
+pub fn ghost_line(ui: &mut egui::Ui, w: f32, style: egui::TextStyle) {
+    let h = ui.text_style_height(&style);
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(w, h), egui::Sense::hover());
+    let bar = egui::Rect::from_center_size(rect.center(), egui::vec2(w, 2.0 * tokens::radius::XS));
+    ui.painter().rect_filled(bar, tokens::radius::XS, tokens::color::separator_opaque());
+}
+
 /// The chip that floats at the pointer while something is dragged inside
 /// the app ("3 tracks", "1 song"), so it's clear something is being
 /// carried toward a drop target. Painted in the tooltip layer, above all.
