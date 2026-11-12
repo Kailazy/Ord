@@ -761,14 +761,17 @@ impl App {
             }
         }
 
+        // `show_rows` pitches rows at `row_h` plus the outer item spacing;
+        // every scroll target has to use that pitch or it drifts a few
+        // pixels per row and lands short of its row deep in a long list.
+        let row_h_sp = row_h + ui.spacing().item_spacing.y;
         let mut area = egui::ScrollArea::vertical().auto_shrink([false, false]);
         if let Some(p) = highlight_pos.filter(|_| self.seller_scroll_to) {
             // One row of context above the ringed one, so it doesn't sit
             // flush against the top edge.
-            area = area.vertical_scroll_offset(((p / cols) as f32 - 1.0).max(0.0) * row_h);
+            area = area.vertical_scroll_offset(((p / cols) as f32 - 1.0).max(0.0) * row_h_sp);
             self.seller_scroll_to = false;
         }
-        let row_h_sp = row_h + ui.spacing().item_spacing.y;
         // The records on screen get their tracklists cached once the scroll
         // rests, so the one clicked next opens without a request. Not while
         // scrolling: rows flying past would queue a request each.
