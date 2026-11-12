@@ -967,7 +967,11 @@ impl App {
                             None => ("never updated".to_string(), color::CAUTION),
                         };
                         let active = current == Some(shop.username.as_str());
-                        if m.selectable_detail_in(active, &shop.username, detail, ink) {
+                        let name = match &shop.ships_from {
+                            Some(c) => format!("{} · {c}", shop.username),
+                            None => shop.username.clone(),
+                        };
+                        if m.selectable_detail_in(active, name, detail, ink) {
                             act.switch_to = Some(shop.username.clone());
                             m.close();
                         }

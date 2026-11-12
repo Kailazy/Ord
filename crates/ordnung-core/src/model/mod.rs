@@ -468,6 +468,9 @@ pub struct SellerShop {
     /// Discogs genres the sweep keeps; empty means every genre. Chosen when
     /// the seller is added, so a shop only costs the crates you'd dig.
     pub genres: Vec<String>,
+    /// Where the shop ships from, as its cached listings say (the most common
+    /// origin across them). `None` before the first sweep.
+    pub ships_from: Option<String>,
 }
 
 /// One for-sale listing from a seller's Discogs inventory, cached locally so

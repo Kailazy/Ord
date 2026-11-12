@@ -3727,7 +3727,10 @@ impl Catalog {
         let mut stmt = self.conn.prepare(
             "SELECT s.username, s.reported_items, s.swept_at,
                     (SELECT COUNT(*) FROM seller_listings l WHERE l.seller = s.username),
-                    s.genres
+                    s.genres,
+                    (SELECT ships_from FROM seller_listings l
+                     WHERE l.seller = s.username AND ships_from IS NOT NULL
+                     GROUP BY ships_from ORDER BY COUNT(*) DESC LIMIT 1)
              FROM sellers s
              ORDER BY s.added_at, s.username",
         )?;
@@ -3739,6 +3742,7 @@ impl Catalog {
                     swept_at: r.get(2)?,
                     cached: r.get::<_, i64>(3)? as u64,
                     genres: split_genres(r.get(4)?),
+                    ships_from: r.get(5)?,
                 })
             })?
             .collect::<rusqlite::Result<Vec<_>>>()?;
@@ -6790,6 +6794,7 @@ mod tests {
         cat.add_seller("hardwax").unwrap();
         assert_eq!(cat.list_sellers().unwrap().len(), 1);
         assert!(cat.list_sellers().unwrap()[0].swept_at.is_none());
+        assert!(cat.list_sellers().unwrap()[0].ships_from.is_none());
         // Genre choice: empty keeps everything, a list rides the row.
         assert!(cat.list_sellers().unwrap()[0].genres.is_empty());
         cat.set_seller_genres("hardwax", &["Electronic".to_string(), "Jazz".to_string()])
@@ -6842,6 +6847,8 @@ mod tests {
         assert_eq!(shop.cached, 2);
         assert_eq!(shop.reported, Some(250));
         assert!(shop.swept_at.is_some());
+        // The shop's origin comes from its listings.
+        assert_eq!(shop.ships_from.as_deref(), Some("Germany"));
 
         // The cross-shop find: a second seller stocking the same record shows
         // up next to the first, every term must match, and the label counts.
