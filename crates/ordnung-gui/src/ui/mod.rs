@@ -42,7 +42,14 @@ use eframe::egui;
 /// brought to this through [`control_row`]. The text height is rounded the
 /// way egui rounds a laid-out line, so the number is a whole point.
 pub fn control_h(ui: &egui::Ui) -> f32 {
-    ui.text_style_height(&egui::TextStyle::Body).round() + field::margin().sum().y
+    control_h_in(ui.ctx())
+}
+
+/// [`control_h`] from the context alone, for layout that sizes a panel
+/// before it has a `Ui` (the player reserves the cue bar's height first).
+pub fn control_h_in(ctx: &egui::Context) -> f32 {
+    let body = egui::TextStyle::Body.resolve(&ctx.style());
+    ctx.fonts(|f| f.row_height(&body)).round() + field::margin().sum().y
 }
 
 /// A label that leads with an icon: the glyph from the app's icon face, a

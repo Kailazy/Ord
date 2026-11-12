@@ -341,8 +341,10 @@ impl App {
         // gap after it, exactly, so the lane and the controls under it stay
         // where they were: the bar only adds height above them.
         let cue_open = !waveform.is_empty() && self.config.cue_bar_open;
+        let cue_bar_h = crate::cues::cue_bar_h(ctx);
+        let cue_gap = crate::ui::tokens::density::get().bar_pad();
         let cue_strip_h = if cue_open {
-            crate::cues::CUE_BAR_H + 8.0 + ctx.style().spacing.item_spacing.y
+            cue_bar_h + cue_gap + ctx.style().spacing.item_spacing.y
         } else {
             0.0
         };
@@ -380,7 +382,7 @@ impl App {
                 // grab and drag to scrub. Skipped for unanalyzed tracks (no waveform).
                 if !waveform.is_empty() {
                     if cue_open {
-                        // The strip is the bar and the 8 pt under it; the bar
+                        // The strip is the bar and the density gap under it; the bar
                         // draws in a child, which leaves the layout to the
                         // strip (a child allocated in the parent pulled the
                         // cursor back up by that gap, lifting everything
@@ -388,13 +390,13 @@ impl App {
                         let (strip, _) = ui.allocate_exact_size(
                             egui::vec2(
                                 ui.available_width(),
-                                crate::cues::CUE_BAR_H + 8.0,
+                                cue_bar_h + cue_gap,
                             ),
                             egui::Sense::hover(),
                         );
                         let bar = egui::Rect::from_min_size(
                             strip.min,
-                            egui::vec2(strip.width(), crate::cues::CUE_BAR_H),
+                            egui::vec2(strip.width(), cue_bar_h),
                         );
                         let mut child = ui.new_child(egui::UiBuilder::new().max_rect(bar));
                         self.draw_cue_bar(&mut child);

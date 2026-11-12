@@ -76,8 +76,17 @@ pub(crate) const DEFAULT_LOOP_BEATS: usize = 2;
 /// Length of one beat when the track has no beatgrid to count on.
 const FALLBACK_BEAT_MS: f64 = 500.0;
 
-/// Height of the cue bar, headers included.
-pub(crate) const CUE_BAR_H: f32 = 58.0;
+/// Height of the section headers over the pads.
+const HEADER_H: f32 = 14.0;
+
+/// Height of the cue bar, headers included: the pads at the shared control
+/// height with a little room around them at Regular and none at Compact
+/// and Dense, so the bar tightens with the density setting.
+pub(crate) fn cue_bar_h(ctx: &egui::Context) -> f32 {
+    use crate::ui::tokens::{density, space};
+    let inset = if density::get() == density::Density::Regular { space::S2 } else { 0.0 };
+    HEADER_H + crate::ui::control_h_in(ctx) + 2.0 * inset
+}
 
 /// Paint cue markers over a waveform lane. `window` is the visible span in
 /// track fractions (the zoom lane scrolls; the overview strip is `(0, 1)`).
@@ -548,13 +557,11 @@ impl App {
         const MARGIN: f32 = 10.0;
         const GAP: f32 = space::S2;
         const SECT_GAP: f32 = space::S5;
-        const HEADER_H: f32 = 14.0;
         const LOOP_W: f32 = 206.0;
         const MEM_MIN_W: f32 = 170.0;
         const ADD_W: f32 = 124.0;
         /// The add buttons as bare glyphs, for a bar too narrow for words.
         const ADD_W_COMPACT: f32 = 72.0;
-        const CHIP_H: f32 = 28.0;
 
         let playhead = self.playhead_ms();
         let active = self.active_loop_ms();
@@ -582,7 +589,7 @@ impl App {
         let width = (ui.available_width() - 2.0 * MARGIN).max(300.0);
         ui.horizontal(|ui| {
             ui.add_space(MARGIN);
-            let (bar, _) = ui.allocate_exact_size(egui::vec2(width, CUE_BAR_H), egui::Sense::hover());
+            let (bar, _) = ui.allocate_exact_size(egui::vec2(width, cue_bar_h(ui.ctx())), egui::Sense::hover());
             let painter = ui.painter().clone();
 
             let pad_w = ((bar.width() - LOOP_W - MEM_MIN_W - 2.0 * SECT_GAP - 7.0 * GAP) / 8.0)
@@ -1015,7 +1022,7 @@ impl App {
                                     + x_w
                                     + pad_x;
                                 let (rect, resp) = ui.allocate_exact_size(
-                                    egui::vec2(w, CHIP_H),
+                                    egui::vec2(w, pad_h),
                                     egui::Sense::click(),
                                 );
                                 let x_rect = egui::Rect::from_center_size(
