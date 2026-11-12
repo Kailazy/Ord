@@ -1968,10 +1968,13 @@ struct App {
     dig_ids_rx: Receiver<dig::DigResolved>,
     /// Receives the finished Discogs browse for the step being dug.
     dig_rx: Option<Receiver<dig::DigFetched>>,
-    /// Releases whose detail a hover has already asked to warm this session,
-    /// so lingering on a cover starts one fetch, not one per frame. See
-    /// [`App::warm_release_detail`].
+    /// Releases already queued to warm this session, so a row on screen
+    /// queues one fetch, not one per frame. See [`App::warm_release_detail`].
     detail_warmed: HashSet<u64>,
+    /// `(token, release id)` to the one warming worker: a screen of records
+    /// is a screen of paced requests, and one thread walking a queue keeps
+    /// them in order instead of a thread each sleeping on the pace.
+    detail_warm_tx: Sender<(String, u64)>,
     /// Receives speculative browses for the two threads out of the record on
     /// screen, fetched ahead of the click that takes one. A persistent channel
     /// rather than a one-shot `Option<Receiver>`: one prefetch worker delivers

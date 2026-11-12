@@ -2442,13 +2442,14 @@ impl App {
         true
     }
 
-    /// Warm a release's detail into the cache because the pointer is resting
-    /// on it: the sheet's tracklist, the dig's ids and the label page's id all
-    /// come from that one row, so a hover that lands before the click makes
-    /// each of them open without a request. Cache-first and paced as
-    /// background, so it costs nothing when the row is already there and
-    /// never delays anything the user actually clicked. Once per release per
-    /// session; a fetch that fails is simply not retried by hovering.
+    /// Warm a release's detail into the cache because it is on screen or
+    /// under the pointer: the sheet's tracklist, the dig's ids and the label
+    /// page's id all come from that one row, so a record warmed before the
+    /// click opens without a request. Queued to one worker (see
+    /// `detail_warm_tx`), cache-first and paced as background, so it costs
+    /// nothing when the row is already there and never delays anything the
+    /// user actually clicked. Once per release per session; a fetch that
+    /// fails is simply not retried.
     pub(crate) fn warm_release_detail(&mut self, release_id: u64) {
         if release_id == 0 || !self.detail_warmed.insert(release_id) {
             return;
@@ -2457,10 +2458,7 @@ impl App {
         if token.trim().is_empty() {
             return;
         }
-        let db = self.db_path.clone();
-        thread::spawn(move || {
-            let _ = util::release_detail(&db, &token, release_id, true);
-        });
+        let _ = self.detail_warm_tx.send((token, release_id));
     }
 
     /// Fetch the artist and label ids for a release the dig just landed on, so

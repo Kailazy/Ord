@@ -1769,16 +1769,30 @@ impl Catalog {
         &self,
         release_id: &str,
     ) -> Result<Option<crate::discogs::ReleaseDetail>> {
-        let json: Option<String> = self
+        Ok(self
+            .cached_release_any(release_id)?
+            .filter(|(_, version)| *version >= DETAIL_SCHEMA_VERSION)
+            .map(|(detail, _)| detail))
+    }
+
+    /// The cached detail for `release_id` whatever shape it was stored under,
+    /// with that [`DETAIL_SCHEMA_VERSION`]. A row below the current version
+    /// still parses (new fields default), so the record sheet shows it at
+    /// once while the fresh one is fetched, instead of a loading sheet for
+    /// every record after an update that bumped the version.
+    pub fn cached_release_any(
+        &self,
+        release_id: &str,
+    ) -> Result<Option<(crate::discogs::ReleaseDetail, i64)>> {
+        let row: Option<(String, i64)> = self
             .conn
             .query_row(
-                "SELECT detail_json FROM release_cache
-                 WHERE release_id=?1 AND detail_version >= ?2",
-                params![release_id, DETAIL_SCHEMA_VERSION],
-                |r| r.get(0),
+                "SELECT detail_json, detail_version FROM release_cache WHERE release_id=?1",
+                params![release_id],
+                |r| Ok((r.get(0)?, r.get(1)?)),
             )
             .optional()?;
-        Ok(json.and_then(|j| serde_json::from_str(&j).ok()))
+        Ok(row.and_then(|(j, v)| serde_json::from_str(&j).ok().map(|d| (d, v))))
     }
 
     /// Genre + style tags for `release_ids`, mined from the cached release
@@ -3499,6 +3513,27 @@ impl Catalog {
             .query_map(params![DETAIL_SCHEMA_VERSION], |r| r.get::<_, i64>(0))?
             .collect::<rusqlite::Result<Vec<_>>>()?;
         Ok(rows.into_iter().map(|id| id as u64).collect())
+    }
+
+    /// Up to `limit` release ids at the head of `seller`'s crates (the order
+    /// the Sellers tab shows them) with no usable `release_cache` row: the
+    /// records a sweep warms so the top of the shop opens without a request.
+    pub fn seller_releases_missing_detail(&self, seller: &str, limit: usize) -> Result<Vec<u64>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT release_id FROM seller_listings
+             WHERE seller=?1 AND release_id NOT IN (
+                 SELECT CAST(release_id AS INTEGER) FROM release_cache
+                 WHERE detail_version >= ?2
+             )
+             ORDER BY posted IS NULL, posted DESC, listing_id DESC
+             LIMIT ?3",
+        )?;
+        let rows = stmt
+            .query_map(params![seller, DETAIL_SCHEMA_VERSION, limit as i64], |r| r.get::<_, i64>(0))?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        // A shop listing two copies of one record names it twice.
+        let mut seen = std::collections::HashSet::new();
+        Ok(rows.into_iter().map(|id| id as u64).filter(|id| seen.insert(*id)).collect())
     }
 
     /// `(instance_id, cover_url)` for every record in `list` that has a cover URL
@@ -6779,6 +6814,12 @@ mod tests {
         );
         assert_eq!(rows[0].artist, "Porter Ricks");
         assert_eq!(rows[1].price, 14.0);
+
+        // A sweep's warming list: newest first, capped, a cached record dropped.
+        assert_eq!(cat.seller_releases_missing_detail("hardwax", 10).unwrap(), vec![9002, 9001]);
+        assert_eq!(cat.seller_releases_missing_detail("hardwax", 1).unwrap(), vec![9002]);
+        cat.cache_release(&release_detail("9002", "Port Gentil")).unwrap();
+        assert_eq!(cat.seller_releases_missing_detail("hardwax", 10).unwrap(), vec![9001]);
 
         // A re-sweep refreshes a row in place (price drop) without duplicating.
         let mut cheaper = listing(1, "Monolake", "Cyan", "2024-01-02");

@@ -58,6 +58,15 @@ impl App {
         let (dig_cover_tx, dig_cover_rx) = mpsc::channel();
         let (dig_prime_tx, dig_prime_rx) = mpsc::channel();
         let (dig_ids_tx, dig_ids_rx) = mpsc::channel();
+        let (detail_warm_tx, detail_warm_rx) = mpsc::channel::<(String, u64)>();
+        {
+            let db = db_path.clone();
+            thread::spawn(move || {
+                for (token, release_id) in detail_warm_rx {
+                    let _ = util::release_detail(&db, &token, release_id, true);
+                }
+            });
+        }
         let (browse_tx, browse_rx) = mpsc::channel();
         // Clone the context before it's moved into the audio engine below, so we
         // can hand it to the startup background refresh once the app is built.
@@ -259,6 +268,7 @@ impl App {
             dig_seed: 0x853C_49E6_748F_EA9B,
             dig_rx: None,
             detail_warmed: HashSet::new(),
+            detail_warm_tx,
             dig_prime_tx,
             dig_prime_rx,
             dig_ids_tx,

@@ -621,12 +621,19 @@ impl App {
             pane: SheetPane::Tracks,
         });
         // A record opened before is one cache row: read it here and the sheet
-        // opens complete on the click frame. Only a miss goes off-thread.
+        // opens complete on the click frame. A row stored under an older
+        // detail shape still opens the sheet, and the fresh one is fetched
+        // behind it; only a miss shows the loading sheet.
         let cached = Catalog::open(&self.db_path)
             .ok()
-            .and_then(|c| c.cached_release(&release_id.to_string()).ok().flatten());
+            .and_then(|c| c.cached_release_any(&release_id.to_string()).ok().flatten());
         match cached {
-            Some(detail) => self.adopt_sheet_detail(release_id, Ok(detail)),
+            Some((detail, version)) => {
+                self.adopt_sheet_detail(release_id, Ok(detail));
+                if version < ordnung_core::catalog::DETAIL_SCHEMA_VERSION {
+                    self.spawn_sheet_fetch(release_id, ctx.clone());
+                }
+            }
             None => self.spawn_sheet_fetch(release_id, ctx.clone()),
         }
         self.spawn_sheet_price(release_id, ctx.clone());

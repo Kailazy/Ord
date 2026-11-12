@@ -2885,6 +2885,9 @@ const VINYL_PRICE_MAX_AGE_SECS: i64 = 30 * 24 * 60 * 60;
 // ponytail: two directions of `sort=listed`; other sort keys (price, artist)
 // could add slices if a >20,000-listing shop matters.
 const SELLER_SWEEP_MAX_PAGES: u32 = 2 * discogs::INVENTORY_PAGE_CAP;
+/// How many records from the top of a swept shop get their tracklist cached
+/// before the sweep reports done: a few minutes of background requests.
+const SELLER_WARM_HEAD: usize = 200;
 
 /// Seconds one inventory page costs at the background pace (the client's
 /// minimum request interval), for the sweep's time-left estimate and the
@@ -3010,6 +3013,14 @@ pub(crate) fn run_sweep_seller(
         // lingering under fresh ones would misprice the crates.
         let _ = catalog.prune_seller_listings_not_in(&username, &keep);
         let _ = catalog.set_seller_swept(&username, reported as u64);
+        // Then the tracklists at the top of the crates, so the records the
+        // user sees first open without a request. A whole shop would be
+        // hours of paced requests; the crates warm the rest as they scroll
+        // (see `App::warm_release_detail`).
+        let head = catalog
+            .seller_releases_missing_detail(&username, SELLER_WARM_HEAD)
+            .unwrap_or_default();
+        cache_release_details(&catalog, &client, &head, &cancel, &tx, &ctx, false);
     }
     let mut note = match (stopped, capped) {
         (true, _) => " (stopped early — fetched so far kept, nothing pruned)",
@@ -3229,41 +3240,7 @@ pub(crate) fn run_refresh_vinyl(
     // never opened. One rate-limited request each, but release metadata doesn't
     // change, so the cost is paid once per record and never again.
     let uncached = catalog.vinyl_releases_missing_detail().unwrap_or_default();
-    let detail_total = uncached.len();
-    let mut detailed = 0usize;
-    for (i, release_id) in uncached.iter().enumerate() {
-        if cancel.load(Ordering::Relaxed) {
-            break;
-        }
-        if !quiet {
-            let _ = tx.send(JobMsg::Status(format!(
-                "Caching song lists… ({}/{detail_total})",
-                i + 1
-            )));
-            let _ = tx.send(JobMsg::Progress {
-                done: i,
-                total: detail_total,
-            });
-            ctx.request_repaint();
-        }
-        // Best-effort: a release that won't fetch (deleted, private, a transient
-        // network error) is left uncached and retried on the next sync. Through
-        // the cache so a sheet or dig fetching the same release meanwhile
-        // shares the one request.
-        let id = release_id.to_string();
-        if catalog
-            .release_cached_or(&id, || client.fetch_release(&id))
-            .is_ok()
-        {
-            detailed += 1;
-        }
-    }
-    if detail_total > 0 && !quiet {
-        let _ = tx.send(JobMsg::Progress {
-            done: detail_total,
-            total: detail_total,
-        });
-    }
+    let detailed = cache_release_details(&catalog, &client, &uncached, &cancel, &tx, &ctx, quiet);
 
     // Prices last: one rate-limited request each, and everything above is
     // already usable without them.
@@ -3912,6 +3889,43 @@ fn resync_vinyl_list(
 fn cache_release_detail(catalog: &Catalog, client: &discogs::Client, release_id: u64) {
     let id = release_id.to_string();
     let _ = catalog.release_cached_or(&id, || client.fetch_release(&id));
+}
+
+/// Cache the detail of every release in `ids`, one paced request each, with
+/// progress on the job bar unless `quiet`; returns how many landed. The
+/// vinyl sync's and the seller sweep's warming pass. Best-effort: a release
+/// that won't fetch (deleted, private, a transient network error) is left
+/// uncached and retried next time. Through the cache so a sheet or dig
+/// fetching the same release meanwhile shares the one request.
+fn cache_release_details(
+    catalog: &Catalog,
+    client: &discogs::Client,
+    ids: &[u64],
+    cancel: &AtomicBool,
+    tx: &Sender<JobMsg>,
+    ctx: &egui::Context,
+    quiet: bool,
+) -> usize {
+    let total = ids.len();
+    let mut done = 0usize;
+    for (i, release_id) in ids.iter().enumerate() {
+        if cancel.load(Ordering::Relaxed) {
+            break;
+        }
+        if !quiet {
+            let _ = tx.send(JobMsg::Status(format!("Caching song lists… ({}/{total})", i + 1)));
+            let _ = tx.send(JobMsg::Progress { done: i, total });
+            ctx.request_repaint();
+        }
+        let id = release_id.to_string();
+        if catalog.release_cached_or(&id, || client.fetch_release(&id)).is_ok() {
+            done += 1;
+        }
+    }
+    if total > 0 && !quiet {
+        let _ = tx.send(JobMsg::Progress { done: total, total });
+    }
+    done
 }
 
 /// Price a newly-added record so it lands complete rather than showing a blank
