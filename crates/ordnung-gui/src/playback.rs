@@ -181,16 +181,21 @@ impl VideoMidStart {
                 let target = v.target;
                 (v, MidStep::Seek(target))
             }
-            _ => (
-                VideoMidStart {
-                    id: id.to_string(),
-                    target,
-                    seeked_at: now,
-                    tries: 1,
-                    settled: false,
-                },
-                MidStep::Seek(target),
-            ),
+            _ => {
+                // A video readied behind the last one was held at the target
+                // already (see `webview::set_start`): nothing to seek.
+                let there = position >= target - MID_START_ARRIVED_WITHIN;
+                (
+                    VideoMidStart {
+                        id: id.to_string(),
+                        target,
+                        seeked_at: now,
+                        tries: u8::from(!there),
+                        settled: there,
+                    },
+                    if there { MidStep::Hold } else { MidStep::Seek(target) },
+                )
+            }
         }
     }
 }
@@ -314,6 +319,13 @@ mod mid_start_tests {
     }
 
     const TARGET: f32 = DUR * MID_START_FRACTION;
+
+    #[test]
+    fn a_new_video_already_at_the_fraction_is_left_alone() {
+        let (v, step) = VideoMidStart::step(None, "a", TARGET - 1.0, DUR, false, at(0.0));
+        assert_eq!(step, MidStep::Hold);
+        assert!(v.settled);
+    }
 
     #[test]
     fn a_new_video_is_seeked_to_the_fraction_once() {

@@ -1151,6 +1151,11 @@ impl App {
     /// brings us back — otherwise an idle app leaves the queue un-advanced and
     /// the styling un-refreshed until some unrelated event happens to tick.
     pub(crate) fn drive_video_player(&mut self, ctx: &egui::Context) {
+        webview::set_start(if self.config.mid_start_videos {
+            crate::playback::MID_START_FRACTION
+        } else {
+            0.0
+        });
         webview::poll();
         self.mid_start_video();
         if let Some(next) = webview::next_poll_in() {

@@ -31,8 +31,8 @@
 
 #[cfg(target_os = "macos")]
 pub use imp::{
-    close, ended, is_open, next_poll_in, on_air, play, poll, preload, prewarm, seek, set_volume,
-    status, toggle_pause, transport,
+    close, ended, is_open, next_poll_in, on_air, play, poll, preload, prewarm, seek, set_start,
+    set_volume, status, toggle_pause, transport,
 };
 
 #[cfg(not(target_os = "macos"))]
@@ -107,6 +107,9 @@ pub fn seek(_secs: f32) {}
 
 #[cfg(not(target_os = "macos"))]
 pub fn set_volume(_volume: f32) {}
+
+#[cfg(not(target_os = "macos"))]
+pub fn set_start(_fraction: f32) {}
 
 /// What the mini-player is doing, as of the last [`poll`].
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -202,6 +205,10 @@ mod imp {
         /// panel is built lazily on the first `play`, and reads this to start
         /// at the right level instead of at the element's full-volume default.
         static VOLUME: Cell<f32> = const { Cell::new(1.0) };
+        /// Where a readied video is held, as a fraction of its length: the
+        /// mid-song start when that setting is on, else the top. See
+        /// [`set_start`].
+        static START: Cell<f32> = const { Cell::new(0.0) };
         /// Hands out [`Page::serial`]s.
         static SERIAL: Cell<u64> = const { Cell::new(0) };
     }
@@ -666,6 +673,15 @@ mod imp {
         });
     }
 
+    /// Where the next video is to start, `0.0`–`1.0` of its length. A page
+    /// readied behind the one on air is held here (see [`ask_state`]), so
+    /// the swap that brings it on plays from a point already buffered rather
+    /// than from the top and then seeking. Read on every poll, so flipping
+    /// the setting takes effect on the page being readied now.
+    pub fn set_start(fraction: f32) {
+        START.with(|s| s.set(fraction.clamp(0.0, 1.0)));
+    }
+
     /// Run `body` against the on-air page's `<video>` (bound as `v`), and
     /// apply `optimistic` to the local state so the UI reflects the command
     /// now.
@@ -706,13 +722,14 @@ mod imp {
                 return (None, None);
             };
             let volume = mini.volume;
+            let start = START.with(|s| s.get());
             // The readied page is asked whether or not anything is on air:
             // asking is what holds it at its start, and a record sheet
             // readies its first song before anything plays.
             if let Some(next) = mini.next.as_mut() {
                 if next.polled_at.elapsed() >= next.poll_interval() {
                     next.polled_at = Instant::now();
-                    ask_state(&next.web, next.serial, volume, true);
+                    ask_state(&next.web, next.serial, volume, Some(start));
                 }
             }
             if !mini.live {
@@ -720,7 +737,7 @@ mod imp {
             }
             if mini.page.polled_at.elapsed() >= mini.page.poll_interval() {
                 mini.page.polled_at = Instant::now();
-                ask_state(&mini.page.web, mini.page.serial, volume, false);
+                ask_state(&mini.page.web, mini.page.serial, volume, None);
             }
             // Take the next video the moment the current one reports it's done.
             let advance =
@@ -908,16 +925,15 @@ mod imp {
 
     /// Bring the readied page on air in place of the one there. The old page
     /// leaves the window first, so the new one is the picture the moment the
-    /// old one goes rather than after a re-add; then it's unmuted, wound to
-    /// its start (it may have rolled for a frame before it was caught and
-    /// held) and set going.
+    /// old one goes rather than after a re-add; then it's unmuted and set
+    /// going from where the hold left it (see [`ask_state`]), already
+    /// buffered there.
     fn swap(mini: &mut Mini, next: Page) {
         let old = std::mem::replace(&mut mini.page, next);
         retire(mini, old);
         let page = &mut mini.page;
         set_page_muted(&page.web, mini.volume <= 0.0);
-        let js = "(function(){var v=document.querySelector('video');\
-                  if(v){v.currentTime=0;v.play();}})()";
+        let js = "(function(){var v=document.querySelector('video');if(v)v.play();})()";
         unsafe {
             page.web
                 .evaluateJavaScript_completionHandler(&NSString::from_str(js), None);
@@ -927,7 +943,8 @@ mod imp {
         if !page.state.is_empty() && page.state != "novideo" {
             page.state = "playing".into();
         }
-        page.position = 0.0;
+        // `position` stays what the held page last reported: that is where
+        // it plays from, and what tells the mid-song jump it is already there.
         page.rolling = false;
         page.reported_at = Instant::now();
         page.local_at = page.reported_at;
@@ -1025,8 +1042,16 @@ mod imp {
     /// asynchronously in the page with `serial`; nothing waits on it.
     ///
     /// `hold` is for the page being readied under the one on air: its video
-    /// is paused the moment it exists and kept paused, so the page loads and
-    /// buffers but never runs ahead of the swap that brings it on.
+    /// is paused the moment it exists and kept paused, and once it has a
+    /// length it is put at that fraction of it, so the page loads and
+    /// buffers at the point it will play from but never runs ahead of the
+    /// swap that brings it on. Re-applied every poll, since YouTube can
+    /// rewind a player it is still bringing up (see `VideoMidStart`).
+    ///
+    /// The player is also pinned to its lowest quality, once per player. The
+    /// panel is parked off screen, so the picture is never seen and the
+    /// video stream only costs bandwidth and buffering time; the audio stream
+    /// is separate and unaffected.
     ///
     /// Volume rides along here rather than being set once at load because each
     /// queued video is a fresh page that starts at the element default, and
@@ -1048,10 +1073,10 @@ mod imp {
     /// that lands before the switch is wired does nothing, so it repeats, two
     /// seconds apart, until the key says off. The switch's `aria-checked` was
     /// seen to stay `true` after an effective click, so it is not trusted.
-    fn ask_state(web: &WKWebView, serial: u64, volume: f32, hold: bool) {
+    fn ask_state(web: &WKWebView, serial: u64, volume: f32, hold: Option<f32>) {
         let muted = volume <= 0.0;
         // The readied page stays client-muted throughout; the swap unmutes it.
-        if !hold {
+        if hold.is_none() {
             set_page_muted(web, muted);
         }
         // While muted, the element is left completely alone: the client mute
@@ -1062,12 +1087,17 @@ mod imp {
         } else {
             format!("if(v.volume!={volume})v.volume={volume};")
         };
-        let hold_js = if hold { "if(!v.paused)v.pause();" } else { "" };
+        let hold_js = hold.map_or(String::new(), |f| {
+            format!("if(!v.paused)v.pause();var tg=d*{f};if(d>0&&Math.abs(v.currentTime-tg)>2)v.currentTime=tg;")
+        });
         let js = format!(
             "(function(){{\
                {inject};\
                var v=document.querySelector('video');\
                if(!v)return 'novideo';\
+               var p=document.getElementById('movie_player');\
+               if(p&&!p.ordQ&&p.setPlaybackQualityRange){{p.ordQ=1;p.setPlaybackQualityRange('tiny','tiny');}}\
+               var d=isFinite(v.duration)?v.duration:0;\
                var a=null;try{{a=JSON.parse(sessionStorage.getItem('yt-player-autonavstate'));}}catch(e){{}}\
                if(!(a&&a.data=='1')){{\
                  var t=document.querySelector('.ytp-autonav-toggle-button');var n=Date.now();\
@@ -1076,7 +1106,6 @@ mod imp {
                {set_vol}\
                {hold_js}\
                var s=v.ended?'ended':(v.paused?'paused':'playing');\
-               var d=isFinite(v.duration)?v.duration:0;\
                var id=new URLSearchParams(location.search).get('v')||'';\
                var m=(v.readyState>=3&&!v.seeking)?1:0;\
                return s+'|'+v.currentTime+'|'+d+'|'+id+'|'+m;\
