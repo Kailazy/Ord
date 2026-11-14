@@ -2546,8 +2546,10 @@ impl App {
                                         continue;
                                     };
                                     let playing = playing_video == Some(*v);
-                                    if extra_video_ui(ui, video, n, playing, video_running) {
-                                        act = Some(Act::PlayExtra(*v));
+                                    match extra_video_ui(ui, video, n, playing, video_running) {
+                                        Some(RowHit::Play) => act = Some(Act::PlayExtra(*v)),
+                                        Some(RowHit::CopyLink(url)) => act = Some(Act::CopyLink(url)),
+                                        _ => {}
                                     }
                                 }
                             }
@@ -3804,7 +3806,7 @@ fn extra_video_ui(
     index: usize,
     playing: bool,
     running: bool,
-) -> bool {
+) -> Option<RowHit> {
     const ACCENT: egui::Color32 = crate::ui::tokens::color::PLAY;
     let bg = ui.painter().add(egui::Shape::Noop);
     let resp = ui
@@ -3861,7 +3863,14 @@ fn extra_video_ui(
         );
         ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
     }
-    hit.clicked()
+    let mut hit_what = hit.clicked().then_some(RowHit::Play);
+    crate::ui::menu::context(&hit, |ui| {
+        if ui.button("Copy link").clicked() {
+            hit_what = Some(RowHit::CopyLink(video.uri.clone()));
+            ui.close_menu();
+        }
+    });
+    hit_what
 }
 
 #[cfg(test)]
