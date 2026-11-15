@@ -1672,6 +1672,8 @@ struct App {
     library_index_rx: Option<Receiver<LibraryIndex>>,
     /// The Liked view's switch: show only the songs no file is yet.
     liked_to_get_only: bool,
+    /// The Tracklists window's switch: show only the lines still to settle.
+    tracklist_unsettled_only: bool,
     /// The crates (see `crates`), from the `crates` table; reloaded with
     /// the catalog.
     crate_sets: Vec<CrateSet>,

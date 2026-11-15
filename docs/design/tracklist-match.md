@@ -60,10 +60,11 @@ review surface instead of a silent commit.
    line, else "Pasted 17 Sep 2026". Press **Match**.
 3. The list appears at once with every line in pasted order. A background
    job resolves lines top to bottom; each row fills in as its answer lands
-   (cover thumb, record title, year, label + catno, format, confidence pip).
+   (cover thumb, record title, year, label + catno, format, and a word when the
+   match still wants a look: Likely, Unsure, Not found).
    Status bar: *"Matching 9 of 24…"* with Abort.
-4. Each row is badged **OWNED** / **WANT** (shelf membership) and
-   **IN LIBRARY** (a local file matches), so what's left to buy is obvious.
+4. Each row carries the shelf mark on its cover (owned or wanted) and
+   **File** (a local file matches), so what's left to buy is obvious.
    Price shows live from the marketplace stats, never cached.
 5. Row actions: **♥ Want**, open the record sheet (row click), **◈ Dig** from
    it, **Pick another…** (reopens the candidate picker with the other hits, or

@@ -12,10 +12,12 @@
 //! Save writes it back through `Catalog::update_tracklist`, which keeps
 //! the matches of lines that didn't change, and only the new lines get
 //! looked up. Each row shows the song as pasted, the record it
-//! matched (cover, title, year, label and catalog number, format), a
-//! confidence pip and OWNED / WANT / IN LIBRARY badges; a click opens the
-//! ordinary record sheet, the + at the row's edge likes the song (see
-//! `liked`), the ↻ beside it looks that one line up
+//! matched (cover, title, year, label and catalog number, format), the
+//! shelf mark on the cover when the record is owned or wanted, and a word
+//! only when the line still wants a look (Likely, Unsure, Not found); a
+//! click opens the ordinary record sheet, and the row under the pointer
+//! shows its marks: the + likes the song (see `liked`), the ↻ beside it
+//! looks that one line up
 //! again (a line Discogs rate-limited, say), and the context menu wants,
 //! digs, re-picks or rejects. Matched records join the record map. Parsing and scoring live
 //! in `ordnung_core::tracklist`; see `docs/design/tracklist-match.md`.
@@ -23,8 +25,7 @@
 use crate::ui::phosphor_icons::app as icons;
 use super::*;
 use crate::jobs::MatchScope;
-use crate::song_rows::{badge, center_two, two_line};
-use crate::ui::text::truncated;
+use crate::song_rows::{badge, two_line};
 use crate::ui::tokens::{color, font, space};
 use egui_extras::{Column, TableBuilder};
 use ordnung_core::model::{ChosenBy, DugRelease};
@@ -127,9 +128,9 @@ fn fmt_clock(secs: u32) -> String {
 }
 
 /// The row table's columns: #, cover, the two text columns at their
-/// narrowest, and the badge column (pip, OWNED, FILE, ▶, +, ↻). The badge
+/// narrowest, and the badge column (the word, FILE, ▶, ↻, +). The badge
 /// column is the window's outer bound: the window never shrinks, and the
-/// side panel never widens, past where it would push the ↻ out of view.
+/// side panel never widens, past where it would push the + out of view.
 const COL_INDEX: f32 = 30.0;
 const THUMB: f32 = 36.0;
 const COL_COVER: f32 = THUMB + 6.0;
@@ -175,20 +176,26 @@ fn record_sub(e: &TracklistEntry) -> String {
     ])
 }
 
-/// Colour and words for a line's confidence pip.
-fn confidence_look(e: &TracklistEntry) -> (egui::Color32, &'static str) {
+/// Ink, word and note for a line's standing. A settled line (sure, chosen
+/// by you, an ID) carries no word: only a line that wants a look says so.
+fn confidence_look(e: &TracklistEntry) -> Option<(egui::Color32, &'static str, &'static str)> {
     if e.kind == LineKind::Id {
-        return (color::LABEL_4, "An ID: the mix's author couldn't name it");
+        return None;
     }
     match (e.release_id.is_some(), e.confidence, e.chosen_by) {
-        (true, _, ChosenBy::User) => (color::GREEN, "Chosen by you"),
-        (true, Confidence::Sure, _) => (color::GREEN, "Sure: the record's tracklist carries this song"),
-        (true, Confidence::Likely, _) => (color::TEAL, "Likely: artist and title agree"),
-        (true, _, _) => (color::ORANGE, "Unsure: the best guess, unconfirmed"),
-        (false, _, ChosenBy::User) => (color::LABEL_4, "Rejected by you"),
-        (false, _, ChosenBy::Auto) => (color::RED, "Not found on Discogs"),
-        (false, _, ChosenBy::Nobody) => (color::LABEL_4, "Not matched yet"),
+        (true, _, ChosenBy::User) | (true, Confidence::Sure, _) => None,
+        (true, Confidence::Likely, _) => Some((color::LABEL_2, "Likely", "Artist and title agree")),
+        (true, _, _) => Some((color::CAUTION, "Unsure", "The best guess, unconfirmed")),
+        (false, _, ChosenBy::User) => Some((color::LABEL_3, "Rejected", "Rejected by you")),
+        (false, _, ChosenBy::Auto) => Some((color::NEGATIVE, "Not found", "Not found on Discogs")),
+        (false, _, ChosenBy::Nobody) => Some((color::LABEL_3, "Not matched", "Not looked up yet")),
     }
+}
+
+/// Is this a line Match would still look up: a track you haven't chosen for
+/// that has no record, or only an unsure one?
+fn unsettled(e: &TracklistEntry) -> bool {
+    e.kind == LineKind::Track && e.chosen_by != ChosenBy::User && (e.release_id.is_none() || e.confidence < Confidence::Likely)
 }
 
 /// Does a line match the tab's search? Every term must appear in the song,
@@ -508,31 +515,21 @@ impl App {
             .show(ui, |ui| {
                 for t in &lists {
                     let active = self.tracklist_current == Some(t.id);
-                    let w = ui.available_width();
-                    let (rect, resp) = ui.allocate_exact_size(egui::vec2(w, 40.0), egui::Sense::click());
-                    if active {
-                        ui.painter().rect_filled(rect, egui::Rounding::same(6.0), color::surface_hi());
-                    } else if resp.hovered() {
-                        ui.painter().rect_filled(rect, egui::Rounding::same(6.0), color::surface());
-                    }
-                    let ink = if active || resp.hovered() { color::LABEL } else { color::LABEL_2 };
-                    // Cut to the bar, not spilling past it.
-                    let inner_w = w - 2.0 * space::S3;
-                    let name = truncated(ui, &t.name, font::strong(font::body().size), ink, inner_w, true);
-                    ui.painter().galley(egui::pos2(rect.left() + space::S3, rect.top() + 6.0), name, ink);
-                    let sub = truncated(
-                        ui,
-                        &format!("{} of {} matched · {}", t.matched, t.lines, fmt_day(t.created_at)),
-                        font::caption(),
-                        color::LABEL_3,
-                        inner_w,
-                        true,
+                    // The main sidebar's flat row: the name, and the line
+                    // count in its right-hand lane, as `18 of 22` while
+                    // lines are still without a record.
+                    let count = if t.matched < t.lines { format!("{} of {}", t.matched, t.lines) } else { t.lines.to_string() };
+                    let count_ink = if active { color::LABEL_2 } else { color::LABEL_3 };
+                    let count_w = ui.fonts(|f| f.layout_no_wrap(count.clone(), font::callout(), count_ink).size().x);
+                    let resp = nav_button_truncated(ui, "", &t.name, active, PLAYLIST_ROW_H, font::body(), count_w + space::S4 + space::S3);
+                    ui.painter().text(
+                        egui::pos2(resp.rect.right() - space::S4, resp.rect.center().y),
+                        egui::Align2::RIGHT_CENTER,
+                        count,
+                        font::callout(),
+                        count_ink,
                     );
-                    let sub_h = sub.size().y;
-                    ui.painter().galley(egui::pos2(rect.left() + space::S3, rect.bottom() - 6.0 - sub_h), sub, color::LABEL_3);
-                    if resp.hovered() {
-                        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
-                    }
+                    playlist_row_gap(ui);
                     if resp.clicked() {
                         pick = Some(t.id);
                     }
@@ -625,16 +622,28 @@ impl App {
                     crate::ui::menu::menu_button(ui, "⋯", |ui| {
                         act = list_menu(ui, busy, false);
                     });
-                    let unsettled = self
-                        .tracklist_entries
-                        .iter()
-                        .filter(|e| e.kind == LineKind::Track && e.chosen_by != ChosenBy::User && (e.release_id.is_none() || e.confidence < Confidence::Likely))
-                        .count();
-                    if crate::ui::button::button_enabled(ui, unsettled > 0 && !busy, "Match")
+                    let open = self.tracklist_entries.iter().any(unsettled);
+                    if crate::ui::button::button_enabled(ui, open && !busy, "Match")
                         .on_hover_note("Look up the lines that aren't settled yet")
                         .clicked()
                     {
                         act = Some(ListAct::Match);
+                    }
+                    // The Liked view's switch, here between every line and
+                    // the ones still to settle.
+                    if open || self.tracklist_unsettled_only {
+                        use crate::ui::button::{segmented, Segment};
+                        let picked = segmented(
+                            ui,
+                            Some(usize::from(self.tracklist_unsettled_only)),
+                            &[
+                                Segment { icon: "", label: "All", tip: "Every line" },
+                                Segment { icon: "", label: "To settle", tip: "Only the lines without a sure record" },
+                            ],
+                        );
+                        if let Some(p) = picked {
+                            self.tracklist_unsettled_only = p == 1;
+                        }
                     }
                 });
             }
@@ -644,7 +653,8 @@ impl App {
                         .truncate(),
                 );
                 let when = match t.matched_at {
-                    Some(m) => format!("{} of {} matched · matched {}", t.matched, t.lines, fmt_day(m)),
+                    Some(m) if t.matched < t.lines => format!("{} of {} matched · {}", t.matched, t.lines, fmt_day(m)),
+                    Some(m) => format!("{} lines · matched {}", t.lines, fmt_day(m)),
                     None => format!("{} lines · not matched yet", t.lines),
                 };
                 ui.add(egui::Label::new(egui::RichText::new(when).weak()).truncate());
@@ -657,9 +667,13 @@ impl App {
             .tracklist_entries
             .iter()
             .enumerate()
-            .filter(|(_, e)| entry_matches(e, query))
+            .filter(|(_, e)| entry_matches(e, query) && (!self.tracklist_unsettled_only || unsettled(e)))
             .map(|(i, _)| i)
             .collect();
+        // The row under the pointer last frame: its ▶ and ↻ show, the other
+        // rows keep only a heart that is already on.
+        let hot_key = egui::Id::new("tracklist_hot_row");
+        let hot: Option<usize> = ui.data_mut(|d| d.remove_temp(hot_key));
         // Kick off cover decodes for what's on screen (deduplicated).
         for &i in &shown {
             if let Some(u) = self.tracklist_entries[i].rel_thumb.clone() {
@@ -714,14 +728,28 @@ impl App {
                     });
                     // cover
                     row.col(|ui| {
-                        let (rect, _) = ui.allocate_exact_size(egui::vec2(THUMB, THUMB), egui::Sense::hover());
+                        let (rect, resp) = ui.allocate_exact_size(egui::vec2(THUMB, THUMB), egui::Sense::hover());
                         if tex.is_some() || e.release_id.is_some() {
                             crate::ui::cover::paint_at(ui, rect, tex.as_ref(), 4.0, Some(16.0));
                         }
+                        // The shelf mark on the cover's corner, as on a
+                        // seller's card: yours already, or on the wantlist.
+                        let shelf = e.release_id.and_then(|r| {
+                            if self.vinyl_owned.contains(&r) {
+                                Some((VinylList::Collection, "In your collection"))
+                            } else if self.vinyl_wanted.contains(&r) {
+                                Some((VinylList::Wantlist, "On your wantlist"))
+                            } else {
+                                None
+                            }
+                        });
+                        if let Some((list, note)) = shelf {
+                            crate::ui::icon::shelf_chip(ui.painter(), rect.left_top() + egui::vec2(2.0, 2.0), list);
+                            resp.on_hover_note(note);
+                        }
                     });
-                    // the song as pasted: its name, with the clock and any
-                    // hints under it; the artist is what the record column
-                    // names
+                    // the song as pasted: its name, with the artist, the
+                    // clock and any hints under it
                     row.col(|ui| {
                         // The record's spelling wins over the paste's
                         // once the record's tracklist settled the line.
@@ -731,10 +759,14 @@ impl App {
                             _ => e.song_label(),
                         };
                         let clock = e.timestamp_s.map(fmt_clock);
-                        let parts = [clock.as_deref(), e.label_hint.as_deref(), e.catno_hint.as_deref()];
+                        let artist = e.artist.as_deref().filter(|a| !a.is_empty() && e.kind != LineKind::Id);
+                        let parts = [artist, clock.as_deref(), e.label_hint.as_deref(), e.catno_hint.as_deref()];
                         let sub = parts.iter().any(Option::is_some).then(|| dots(&parts));
-                        let (name, _) = two_line(ui, egui::RichText::new(label).color(color::LABEL), sub);
-                        if let (Some(_), Some(pasted)) = (e.rel_track.as_deref(), e.title.as_deref()) {
+                        let ink = if e.kind == LineKind::Id { color::LABEL_3 } else { color::LABEL };
+                        let (name, _) = two_line(ui, egui::RichText::new(label).color(ink), sub);
+                        if e.kind == LineKind::Id {
+                            name.on_hover_note("The mix's author couldn't name it");
+                        } else if let (Some(_), Some(pasted)) = (e.rel_track.as_deref(), e.title.as_deref()) {
                             name.on_hover_note(format!("Pasted as {pasted}"));
                         }
                     });
@@ -749,77 +781,51 @@ impl App {
                                 };
                                 two_line(ui, egui::RichText::new(name).color(color::LABEL), Some(record_sub(&e)));
                             }
-                            None => {
-                                // No record: the pasted artist keeps its
-                                // place here, the status under it.
-                                let (_, words) = confidence_look(&e);
-                                let text = match (e.kind, e.chosen_by) {
-                                    (LineKind::Id, _) => "",
-                                    (_, ChosenBy::Nobody) => "Not matched yet",
-                                    (_, ChosenBy::User) => "Rejected",
-                                    (_, ChosenBy::Auto) => "Not found on Discogs",
-                                };
-                                match e.artist.as_deref().filter(|a| !a.is_empty() && e.kind != LineKind::Id) {
-                                    Some(a) => {
-                                        let (_, sub) = two_line(ui, egui::RichText::new(a).color(color::LABEL_2), Some(text.to_string()));
-                                        if let Some(sub) = sub {
-                                            sub.on_hover_note(words);
-                                        }
-                                    }
-                                    None => {
-                                        ui.vertical(|ui| {
-                                            ui.spacing_mut().item_spacing.y = 1.0;
-                                            center_two(ui, false);
-                                            ui.label(egui::RichText::new(text).color(color::LABEL_3)).on_hover_note(words);
-                                        });
-                                    }
-                                }
-                            }
+                            // No record: the word at the row's edge says why.
+                            None => {}
                         }
                     });
-                    // pip + badges, and the ↻ at the row's edge
+                    // the standing in words, and the marks at the row's edge
                     row.col(|ui| {
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                             if e.kind == LineKind::Track {
-                                let note = match (busy, e.release_id) {
-                                    (true, _) => "Wait for the current job to finish",
-                                    (false, Some(_)) => "Look this line up on Discogs again",
-                                    (false, None) => "Look this line up on Discogs again. Use it once Discogs has stopped asking us to slow down",
-                                };
-                                if crate::ui::button::glyph(ui, "↻", !busy).on_hover_note(note).clicked() {
-                                    line_act = Some(LineAct::Retry(i));
-                                }
-                                // The like mark, beside the ↻ and the same
-                                // square: the song goes in the crate of
-                                // liked songs whether or not it matched.
+                                let on_row = hot == Some(i);
+                                // The like mark at the edge, where a heart
+                                // that is on stays in one column down the
+                                // list: the song goes in the crate of liked
+                                // songs whether or not it matched.
                                 if let Some((artist, title)) = line_song(&e) {
+                                    let liked = self.is_liked(&artist, &title, e.release_id, None);
                                     let side = ui.spacing().interact_size.y;
-                                    if crate::ui::button::like_mark(ui, self.is_liked(&artist, &title, e.release_id, None), side).clicked() {
+                                    if (liked || on_row) && crate::ui::button::like_mark(ui, liked, side).clicked() {
                                         line_act = Some(LineAct::Like(i));
                                     }
                                 }
-                                // ▶ plays the song off its record, so hearing
-                                // a mix's songs is one click a line, not a
-                                // sheet to open and a row to find.
-                                if e.release_id.is_some()
-                                    && crate::ui::button::icon(ui, crate::ui::phosphor_icons::named(icons::PLAY), true)
-                                        .on_hover_note("Play this song from the record")
-                                        .clicked()
-                                {
-                                    line_act = Some(LineAct::Play(i));
+                                if on_row {
+                                    let note = match (busy, e.release_id) {
+                                        (true, _) => "Wait for the current job to finish",
+                                        (false, Some(_)) => "Look this line up on Discogs again",
+                                        (false, None) => "Look this line up on Discogs again. Use it once Discogs has stopped asking us to slow down",
+                                    };
+                                    if crate::ui::button::glyph(ui, "↻", !busy).on_hover_note(note).clicked() {
+                                        line_act = Some(LineAct::Retry(i));
+                                    }
+                                    // ▶ plays the song off its record, so
+                                    // hearing a mix's songs is one click a
+                                    // line, not a sheet to open and a row
+                                    // to find.
+                                    if e.release_id.is_some()
+                                        && crate::ui::button::icon(ui, crate::ui::phosphor_icons::named(icons::PLAY), true)
+                                            .on_hover_note("Play this song from the record")
+                                            .clicked()
+                                    {
+                                        line_act = Some(LineAct::Play(i));
+                                    }
                                 }
                             }
                             ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
-                                let (c, words) = confidence_look(&e);
-                                let (pr, presp) = ui.allocate_exact_size(egui::vec2(14.0, 14.0), egui::Sense::hover());
-                                ui.painter().circle_filled(pr.center(), 4.0, c);
-                                presp.on_hover_note(words);
-                                if let Some(r) = e.release_id {
-                                    if self.vinyl_owned.contains(&r) {
-                                        badge(ui, "Owned", color::GREEN, "In your collection");
-                                    } else if self.vinyl_wanted.contains(&r) {
-                                        badge(ui, "Want", color::accent_hover(), "On your wantlist");
-                                    }
+                                if let Some((ink, word, note)) = confidence_look(&e) {
+                                    badge(ui, word, ink, note);
                                 }
                                 if self.local_track(&e.song(), e.local_track_id).is_some() {
                                     badge(ui, "File", color::LABEL_2, "A track in your library is this song");
@@ -828,6 +834,9 @@ impl App {
                         });
                     });
                     let resp = row.response();
+                    if resp.contains_pointer() {
+                        ctx.data_mut(|d| d.insert_temp(hot_key, i));
+                    }
                     if resp.hovered() && e.release_id.is_some() {
                         ctx.set_cursor_icon(egui::CursorIcon::PointingHand);
                     }

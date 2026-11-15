@@ -184,6 +184,7 @@ impl App {
             library_index_dirty: true,
             library_index_rx: None,
             liked_to_get_only: false,
+            tracklist_unsettled_only: false,
             crate_sets: Vec::new(),
             song_tags: HashMap::new(),
             crate_songs: Vec::new(),
