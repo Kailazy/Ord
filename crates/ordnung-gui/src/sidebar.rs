@@ -354,13 +354,30 @@ pub(crate) fn draw_playlist_nodes(
             continue;
         }
         if p.is_folder {
-            if renaming_this {
-                // The editor stands in for the header; the children stay
-                // listed under it. (The rail never draws this tree: see
-                // `rail_playlist_group`.)
-                ui.indent(("pl-folder", p.id), |ui| {
-                    draw_playlist_nodes(ui, density, all, Some(p.id), volumes, view, renaming, action, drop_rects, sel)
-                });
+            if density.icons_only() || renaming_this {
+                // A collapsing header is a disclosure triangle plus a name, and
+                // the rail has room for neither. Folders flatten to their
+                // playlists here: the rail lists the things you actually
+                // navigate to, and the hierarchy comes back at the wider tiers.
+                let mut children = |ui: &mut egui::Ui| {
+                    draw_playlist_nodes(
+                        ui,
+                        density,
+                        all,
+                        Some(p.id),
+                        volumes,
+                        view,
+                        renaming,
+                        action,
+                        drop_rects,
+                        sel,
+                    )
+                };
+                if renaming_this {
+                    ui.indent(("pl-folder", p.id), children);
+                } else {
+                    children(ui);
+                }
                 continue;
             }
             // A folder the user gave an icon or a colour leads with that mark
@@ -2000,166 +2017,11 @@ pub(crate) fn nav_button_painted(
 /// Glyph point size for an ordinary rail tile (a playlist, a USB volume).
 pub(crate) const RAIL_GLYPH: f32 = 16.0;
 
-/// What a rail group's menu reported this frame.
-#[derive(Default)]
-struct RailGroup {
-    /// The row clicked.
-    pick: Option<Id>,
-    /// The "+" was clicked.
-    add: bool,
-}
-
-/// Rows a rail group's menu shows before it scrolls; a longer list also
-/// gets a find field.
-const RAIL_GROUP_ROWS: usize = 12;
-/// Width of a rail group's menu. Fixed, so it holds still while the find
-/// field narrows the rows.
-const RAIL_GROUP_W: f32 = 240.0;
-
-/// A whole list (the playlists, the tags, the crates) as one rail tile:
-/// the list hangs beside the tile on hover, as the places under Vinyl do,
-/// under a caption that carries the list's "+".
-fn rail_group(
-    ui: &mut egui::Ui,
-    glyph: &str,
-    title: &str,
-    add_tip: &str,
-    items: &[(Id, &str, RowMark)],
-    current: Option<Id>,
-) -> RailGroup {
-    let mut out = RailGroup::default();
-    let tile = rail_tile_sized(ui, named(glyph), false, true, RAIL_GLYPH);
-    let find_id = tile.id.with("find");
-    let mut shown = false;
-    let tile = tile.on_hover_note_ui_beside(|ui| {
-        shown = true;
-        ui.set_width(RAIL_GROUP_W);
-        crate::ui::menu::embedded(ui, |m| {
-            // Inset to the rows' text, as a menu header is.
-            egui::Frame::none()
-                .inner_margin(egui::Margin::symmetric(space::S3, 0.0))
-                .show(m.ui(), |ui| out.add = list_header(ui, title, add_tip));
-            let mut find: String = m.ui().data(|d| d.get_temp(find_id)).unwrap_or_default();
-            if items.len() > RAIL_GROUP_ROWS {
-                let ui = m.ui();
-                crate::ui::field::Field::singleline(&mut find)
-                    .hint("Find")
-                    .width(ui.available_width() - crate::ui::field::margin().sum().x)
-                    .show(ui);
-                ui.add_space(space::S2);
-                ui.data_mut(|d| d.insert_temp(find_id, find.clone()));
-            }
-            let needle = find.to_lowercase();
-            let hits: Vec<_> = items
-                .iter()
-                .filter(|(_, name, _)| name.to_lowercase().contains(&needle))
-                .collect();
-            if hits.is_empty() {
-                m.note(if items.is_empty() {
-                    format!("No {}", title.to_lowercase())
-                } else {
-                    "No match".to_owned()
-                });
-            }
-            let mut rows = |m: &mut crate::ui::menu::MenuUi| {
-                for (id, name, mark) in &hits {
-                    let paint = |p: &egui::Painter, c: egui::Pos2, ink: egui::Color32| {
-                        p.text(
-                            c,
-                            egui::Align2::CENTER_CENTER,
-                            mark.glyph,
-                            font::icon(font::body().size + 2.0),
-                            mark.tint.unwrap_or(ink),
-                        );
-                    };
-                    if m.place(current == Some(*id), *name, paint) {
-                        out.pick = Some(*id);
-                    }
-                }
-            };
-            if hits.len() > RAIL_GROUP_ROWS {
-                m.scroll(RAIL_GROUP_ROWS as f32 * crate::ui::menu::ROW_PITCH, rows);
-            } else {
-                rows(m);
-            }
-        });
-    });
-    if !shown {
-        // The next hover starts from the whole list.
-        tile.ctx.data_mut(|d| d.remove::<String>(find_id));
-    }
-    playlist_row_gap(ui);
-    out
-}
-
-/// The playlists in the rail: one group tile (see [`rail_group`]) and,
-/// under it, the open playlist's own tile, so the rail still says where
-/// you are and that playlist keeps its menu and its drop target.
-#[allow(clippy::too_many_arguments)]
-pub(crate) fn rail_playlist_group(
-    ui: &mut egui::Ui,
-    density: NavDensity,
-    all: &[Playlist],
-    volumes: &[ordnung_core::usb::UsbVolume],
-    view: &mut LibraryView,
-    renaming: &mut Option<Renaming>,
-    action: &mut Option<SidebarAction>,
-    drop_rects: &mut Vec<(Id, egui::Rect)>,
-    sel: &mut NavSelection,
-) {
-    let leaves: Vec<&Playlist> = leaf_order(all, None)
-        .into_iter()
-        .filter_map(|id| all.iter().find(|p| p.id == id))
-        .collect();
-    let items: Vec<_> = leaves.iter().map(|p| (p.id, p.name.as_str(), RowMark::of(p))).collect();
-    let current = match *view {
-        LibraryView::Playlist(id) => Some(id),
-        _ => None,
-    };
-    let group = rail_group(ui, icons::PLAYLIST, "Playlists", "New playlist", &items, current);
-    if group.add {
-        *action = Some(SidebarAction::NewPlaylist(None));
-    }
-    if let Some(id) = group.pick {
-        sel.set(id);
-        *view = LibraryView::Playlist(id);
-    }
-    if let Some(p) = leaves.iter().find(|p| *view == LibraryView::Playlist(p.id)) {
-        draw_playlist_leaf(ui, density, p, all, volumes, view, renaming, action, drop_rects, sel);
-    }
-}
-
-/// The crates or the tags in the rail, as [`rail_playlist_group`] does the
-/// playlists.
-pub(crate) fn rail_crate_group(
-    ui: &mut egui::Ui,
-    density: NavDensity,
-    crates: &[CrateSet],
-    kind: CrateKind,
-    view: &mut LibraryView,
-    renaming: &mut Option<Renaming>,
-    action: &mut Option<SidebarAction>,
-) {
-    let (glyph, title, add_tip) = match kind {
-        CrateKind::Crate => (icons::PACKAGE, "Crates", "New crate"),
-        CrateKind::Tag => (icons::TAG, "Tags", "New tag"),
-    };
-    let of_kind = || crates.iter().filter(|c| c.kind == kind);
-    let items: Vec<_> = of_kind().map(|c| (c.id, c.name.as_str(), RowMark::plain(glyph))).collect();
-    let current = match *view {
-        LibraryView::CrateSet(id) => Some(id),
-        _ => None,
-    };
-    let group = rail_group(ui, glyph, title, add_tip, &items, current);
-    if group.add {
-        *action = Some(SidebarAction::NewCrateSet(kind));
-    }
-    if let Some(id) = group.pick {
-        *view = LibraryView::CrateSet(id);
-    }
-    if let Some(c) = of_kind().find(|c| *view == LibraryView::CrateSet(c.id)) {
-        draw_crate_rows(ui, density, std::slice::from_ref(c), kind, view, renaming, action);
-    }
+/// The rail's "new playlist" (crate, tag) target: a flat row with a "+",
+/// in the rail's column like the rows it adds to. It has no fill at rest
+/// and no initials, so it does not read as one more place to open.
+pub(crate) fn rail_add_tile(ui: &mut egui::Ui) -> egui::Response {
+    rail_tile_sized(ui, named(icons::PLUS), false, true, RAIL_GLYPH)
 }
 
 /// One target in the rail tier: a glyph centred in a box
