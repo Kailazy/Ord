@@ -3837,10 +3837,11 @@ impl App {
                     scroll.bar_inner_margin = 2.0;
                     scroll.bar_outer_margin = 0.0;
                 }
-                // Which lists are folded shut (see `Config::nav_collapsed`);
-                // the rail has no captions to fold, so it shows every list.
+                // Which lists are folded shut (see `Config::nav_collapsed`).
+                // The rail has no captions to fold: each list is one tile
+                // there (see `sidebar::rail_playlist_group`).
                 let collapsed = self.config.nav_collapsed.clone();
-                let open = move |key: &str| density.icons_only() || !collapsed.iter().any(|c| c == key);
+                let open = move |key: &str| !collapsed.iter().any(|c| c == key);
                 // Header for a section: the small-caps caption every panel in
                 // the app uses (see `sidebar::section_caption`).
                 let section_caption = |ui: &mut egui::Ui, text: &str| {
@@ -3878,7 +3879,7 @@ impl App {
 
                 // The digital-library group: the "Library" / "New" tile pair
                 // (the PLAYLISTS caption and the tree itself scroll in the
-                // middle panel below; the rail's "+" tile stays here). Drawn
+                // middle panel below). Drawn
                 // wherever `nav_primary` puts it, so the same code serves both
                 // the top slot and the vinyl-first layout.
                 let draw_digital_group =
@@ -3981,27 +3982,12 @@ impl App {
                                 *view = LibraryView::Liked;
                             }
                         }
-                        if density.icons_only() {
-                            // The rail's "+" tile needs the air; a caption
-                            // row carries its own.
-                            ui.add_space(space::S3);
-                            // In the rail the caption is gone, so the "+"
-                            // takes the rail's column, as a flat row.
-                            if crate::sidebar::rail_add_tile(ui)
-                                .on_hover_note_beside("New playlist")
-                                .clicked()
-                            {
-                                *sidebar_action = Some(SidebarAction::NewPlaylist(None));
-                            }
-                            ui.add_space(6.0);
-                        } else {
-                            // A panel drops its trailing spacing: a zero-height
-                            // allocation keeps the gap under the row, so the
-                            // PLAYLISTS caption pinned at this edge in the panel
-                            // below keeps its air and the caption it pushes out
-                            // never slides under "Liked".
-                            ui.allocate_space(egui::Vec2::ZERO);
-                        }
+                        // A panel drops its trailing spacing: a zero-height
+                        // allocation keeps the gap under the row, so the
+                        // PLAYLISTS caption pinned at this edge in the panel
+                        // below keeps its air and the caption it pushes out
+                        // never slides under "Liked".
+                        ui.allocate_space(egui::Vec2::ZERO);
                     };
 
                 // The library group as the sidebar actually shows it. With a
@@ -4209,28 +4195,31 @@ impl App {
                     // under the library: a caption with its +, then a row per
                     // crate. Capped in height so a long list of crates
                     // never squeezes the playlist tree out.
-                    if density.icons_only() {
-                        ui.add_space(space::S3);
-                        if crate::sidebar::rail_add_tile(ui)
-                            .on_hover_note_beside("New crate")
-                            .clicked()
-                        {
-                            *sidebar_action = Some(SidebarAction::NewCrateSet(CrateKind::Crate));
-                        }
-                        ui.add_space(6.0);
-                    } else {
-                        let h = crate::sidebar::list_header_folding(
+                    if rail {
+                        // The rail folds the crates into one tile.
+                        ui.add_space(space::S2);
+                        crate::sidebar::rail_crate_group(
                             ui,
-                            "Crates",
-                            "New crate: a set of songs on records to bring to a gig",
-                            open("crates"),
+                            density,
+                            &crate_sets,
+                            CrateKind::Crate,
+                            view,
+                            renaming,
+                            sidebar_action,
                         );
-                        if h.add {
-                            *sidebar_action = Some(SidebarAction::NewCrateSet(CrateKind::Crate));
-                        }
-                        if h.toggle {
-                            *sidebar_action = Some(SidebarAction::ToggleSection("crates"));
-                        }
+                        return;
+                    }
+                    let h = crate::sidebar::list_header_folding(
+                        ui,
+                        "Crates",
+                        "New crate: a set of songs on records to bring to a gig",
+                        open("crates"),
+                    );
+                    if h.add {
+                        *sidebar_action = Some(SidebarAction::NewCrateSet(CrateKind::Crate));
+                    }
+                    if h.toggle {
+                        *sidebar_action = Some(SidebarAction::ToggleSection("crates"));
                     }
                     if open("crates") && crate_sets.iter().any(|c| c.kind == CrateKind::Crate) {
                         let out = egui::ScrollArea::vertical()
@@ -4382,7 +4371,7 @@ impl App {
                                     // `sidebar::pin_header`). One closure
                                     // draws both, so a pinned "+" does what
                                     // the one in place does. The rail has no
-                                    // captions: its "+" tiles stay put.
+                                    // captions: each list is one tile.
                                     let head = |ui: &mut egui::Ui, i: usize, action: &mut Option<SidebarAction>| {
                                         let (caption, tip, key) = match i {
                                             0 => ("Playlists", "New playlist", "playlists"),
@@ -4408,15 +4397,11 @@ impl App {
                                         heads.push(ui.scope(|ui| head(ui, i, action)).response.rect);
                                         ui.add_space(-ui.spacing().item_spacing.y);
                                     };
-                                    if !density.icons_only() {
-                                        place(ui, 0, &mut sidebar_action);
-                                    }
-                                    if open("playlists") {
-                                        draw_playlist_nodes(
+                                    if density.icons_only() {
+                                        crate::sidebar::rail_playlist_group(
                                             ui,
                                             density,
                                             &all,
-                                            None,
                                             &volumes,
                                             &mut self.view,
                                             &mut self.renaming,
@@ -4424,37 +4409,51 @@ impl App {
                                             &mut drop_rects,
                                             &mut self.playlist_selection,
                                         );
-                                    }
-                                    // The tags, under the playlists: the
-                                    // words the user marks songs with, one
-                                    // row each in the playlist row's shape.
-                                    // A tag is a set of songs like a crate
-                                    // (see `crates`), so the rows, the
-                                    // rename and the drop target are the
-                                    // crate's.
-                                    if density.icons_only() {
-                                        ui.add_space(space::S3);
-                                        if crate::sidebar::rail_add_tile(ui)
-                                            .on_hover_note_beside("New tag")
-                                            .clicked()
-                                        {
-                                            sidebar_action = Some(SidebarAction::NewCrateSet(CrateKind::Tag));
-                                        }
-                                        ui.add_space(6.0);
-                                    } else {
-                                        place(ui, 1, &mut sidebar_action);
-                                    }
-                                    if open("tags") {
-                                        let crate_sets = self.crate_sets.clone();
-                                        crate::sidebar::draw_crate_rows(
+                                        crate::sidebar::rail_crate_group(
                                             ui,
                                             density,
-                                            &crate_sets,
+                                            &self.crate_sets.clone(),
                                             CrateKind::Tag,
                                             &mut self.view,
                                             &mut self.renaming,
                                             &mut sidebar_action,
                                         );
+                                    } else {
+                                        place(ui, 0, &mut sidebar_action);
+                                        if open("playlists") {
+                                            draw_playlist_nodes(
+                                                ui,
+                                                density,
+                                                &all,
+                                                None,
+                                                &volumes,
+                                                &mut self.view,
+                                                &mut self.renaming,
+                                                &mut sidebar_action,
+                                                &mut drop_rects,
+                                                &mut self.playlist_selection,
+                                            );
+                                        }
+                                        // The tags, under the playlists: the
+                                        // words the user marks songs with, one
+                                        // row each in the playlist row's shape.
+                                        // A tag is a set of songs like a crate
+                                        // (see `crates`), so the rows, the
+                                        // rename and the drop target are the
+                                        // crate's.
+                                        place(ui, 1, &mut sidebar_action);
+                                        if open("tags") {
+                                            let crate_sets = self.crate_sets.clone();
+                                            crate::sidebar::draw_crate_rows(
+                                                ui,
+                                                density,
+                                                &crate_sets,
+                                                CrateKind::Tag,
+                                                &mut self.view,
+                                                &mut self.renaming,
+                                                &mut sidebar_action,
+                                            );
+                                        }
                                     }
                                     let pinned = crate::sidebar::pin_header(ui, top, &heads, |ui, i| {
                                         head(ui, i, &mut sidebar_action)

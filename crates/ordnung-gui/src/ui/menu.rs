@@ -48,6 +48,9 @@ const STAGGER_ROWS: usize = 6;
 const HOVER_ANIM: f32 = 0.11;
 /// Height of one menu row.
 const ROW_H: f32 = 26.0;
+/// One row and the gap under it (see [`rows`]): what sizes a
+/// [`MenuUi::scroll`] run to a whole number of rows.
+pub const ROW_PITCH: f32 = ROW_H + 2.0;
 /// Width reserved for the ✓ column in selectable rows, so labels align whether
 /// checked or not (the Apple menu convention).
 const CHECK_W: f32 = 18.0;
