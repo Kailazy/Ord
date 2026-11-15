@@ -59,13 +59,6 @@ impl App {
                                     s.selected = false;
                                 }
                             }
-                            ui.label(
-                                egui::RichText::new(
-                                    "Tracks that already have a cover start unchecked.",
-                                )
-                                .small()
-                                .weak(),
-                            );
                         });
                         ui.add_space(2.0);
                         // Cap the list height so a big album can't push the buttons
@@ -98,11 +91,6 @@ impl App {
 
                     ui.add_space(8.0);
                     ui.separator();
-                    ui.label(
-                        egui::RichText::new("Catalog only — your files aren't touched.")
-                            .small()
-                            .weak(),
-                    );
                     ui.add_space(4.0);
                     let n = d.siblings.iter().filter(|s| s.selected).count();
                     let label = if n > 0 {
@@ -140,12 +128,6 @@ impl App {
                     ui.set_min_width(460.0);
                     ui.label(
                         egui::RichText::new(format!("{} selected", util::count(m.ids.len(), "track"))).strong(),
-                    );
-                    ui.label(
-                        egui::RichText::new(
-                            "New files keep the full catalog metadata + cover art.",
-                        )
-                        .weak(),
                     );
                     ui.separator();
                     egui::Grid::new("batch_convert_grid")
@@ -461,15 +443,6 @@ impl App {
         // carriers the user actually collects. A records-only digger stops
         // scrolling past CD and digital pressings they'd never wantlist.
         ui.label(egui::RichText::new("Release formats").strong());
-        ui.label(
-            egui::RichText::new(
-                "Which formats to show when finding a Discogs release and on an \
-                 artist's or label's page. Turn off the ones you don't collect \
-                 and they stop appearing in either.",
-            )
-            .small()
-            .weak(),
-        );
         ui.add_space(6.0);
         let mut mediums_dirty = false;
         for medium in config::ReleaseMedium::ALL {
@@ -516,16 +489,6 @@ impl App {
         // the rule below decides which candidate wins. The right-click menu's
         // "Find Discogs release" stays the manual override and re-pick.
         ui.label(egui::RichText::new("Automatic matching").strong());
-        ui.label(
-            egui::RichText::new(
-                "Match each new import to a Discogs release as it's added, with \
-                 no picker: the winning release links the track and fills its \
-                 cover art and empty tag fields. Right-click a track and choose \
-                 \"Find Discogs release\" to re-pick by hand.",
-            )
-            .small()
-            .weak(),
-        );
         ui.add_space(6.0);
         let mut auto_dirty = false;
         if ui
@@ -979,7 +942,7 @@ impl App {
 
                                         ui.add_space(12.0);
                                         let mut wave_dirty = false;
-                                        if subsection_header(ui, "Height & gain") {
+                                        if subsection_header(ui, "Height & gain", "") {
                                             self.config.waveform_height_exp =
                                                 config::default_waveform_height_exp();
                                             self.config.waveform_energy_gain =
@@ -988,15 +951,6 @@ impl App {
                                                 config::default_waveform_band_gain();
                                             wave_dirty = true;
                                         }
-                                        ui.label(
-                    egui::RichText::new(
-                        "How tall the waveform draws — the overall height curve, plus \
-                         the height of each frequency band. Changes apply live to the \
-                         player and the table waveforms — no re-analysis needed.",
-                    )
-                    .small()
-                    .weak(),
-                );
                                         ui.add_space(4.0);
                                         egui::Grid::new("settings_waveform_render_grid")
                                             .num_columns(2)
@@ -1073,7 +1027,7 @@ impl App {
                                             });
 
                                         ui.add_space(12.0);
-                                        if subsection_header(ui, "Smoothing") {
+                                        if subsection_header(ui, "Smoothing", "Joins small peaks into one outline, as players draw it") {
                                             self.config.waveform_smoothing =
                                                 config::default_waveform_smoothing();
                                             self.config.waveform_smooth_attack_ms =
@@ -1082,16 +1036,6 @@ impl App {
                                                 config::default_waveform_smooth_release_ms();
                                             wave_dirty = true;
                                         }
-                                        ui.label(
-                                    egui::RichText::new(
-                                        "Irons the envelope's small jaggies into a connected \
-                                         silhouette, as players draw it. Strength scales the attack \
-                                         (rising edges) and release (tails) together, and the \
-                                         result is identical at every zoom level.",
-                                    )
-                                    .small()
-                                    .weak(),
-                                );
                                         ui.add_space(4.0);
                                         egui::Grid::new("settings_waveform_smooth_grid")
                                             .num_columns(2)
@@ -1159,22 +1103,13 @@ impl App {
                                             });
 
                                         ui.add_space(12.0);
-                                        if subsection_header(ui, "Bass floor") {
+                                        if subsection_header(ui, "Bass floor", "Dims sustained sub in Spectrum mode so only kicks read as bass") {
                                             self.config.waveform_bass_floor_threshold =
                                                 config::default_waveform_bass_floor_threshold();
                                             self.config.waveform_bass_floor_amount =
                                                 config::default_waveform_bass_floor_amount();
                                             wave_dirty = true;
                                         }
-                                        ui.label(
-                                    egui::RichText::new(
-                                        "Declutters the low band in Spectrum mode: sustained sub \
-                                         (the quiet rumble lingering under a kick) is dimmed so \
-                                         only the kick transients read as bass.",
-                                    )
-                                    .small()
-                                    .weak(),
-                                );
                                         ui.add_space(4.0);
                                         egui::Grid::new("settings_waveform_bass_floor_grid")
                                             .num_columns(2)
@@ -1222,18 +1157,11 @@ impl App {
                                             });
 
                                         ui.add_space(12.0);
-                                        if subsection_header(ui, "Band colors") {
+                                        if subsection_header(ui, "Band colors", "") {
                                             self.config.waveform_band_colors =
                                                 config::default_waveform_band_colors();
                                             wave_dirty = true;
                                         }
-                                        ui.label(
-                                    egui::RichText::new(
-                                        "Colors of the three frequency bands in Spectrum mode.",
-                                    )
-                                    .small()
-                                    .weak(),
-                                );
                                         ui.add_space(4.0);
                                         egui::Grid::new("settings_waveform_band_color_grid")
                                             .num_columns(2)
@@ -1259,19 +1187,11 @@ impl App {
                                             });
 
                                         ui.add_space(12.0);
-                                        if subsection_header(ui, "Energy gradient") {
+                                        if subsection_header(ui, "Energy gradient", "") {
                                             self.config.waveform_energy_colors =
                                                 config::default_waveform_energy_colors();
                                             wave_dirty = true;
                                         }
-                                        ui.label(
-                                    egui::RichText::new(
-                                        "Cool → hot gradient used in Energy mode, quiet (left) to \
-                         loudest (right).",
-                                    )
-                                    .small()
-                                    .weak(),
-                                );
                                         ui.add_space(4.0);
                                         ui.horizontal(|ui| {
                                             for i in 0..self.config.waveform_energy_colors.len() {
@@ -1288,15 +1208,6 @@ impl App {
 
                                         ui.add_space(12.0);
                                         ui.label(egui::RichText::new("Presets").strong());
-                                        ui.label(
-                                    egui::RichText::new(
-                                        "Five slots that snapshot every waveform setting above, \
-                                         so a look you like isn't lost while experimenting. \
-                                         Saving overwrites the slot; loading applies it.",
-                                    )
-                                    .small()
-                                    .weak(),
-                                );
                                         ui.add_space(4.0);
                                         let mut load_slot: Option<u8> = None;
                                         let mut save_slot: Option<u8> = None;
@@ -2670,7 +2581,7 @@ Everything already on it stays as it is."
                     "Nothing found on Discogs. Paste a link to the right release".to_string()
                 } else {
                     format!(
-                        "{} on Discogs — pick the right one",
+                        "{} on Discogs",
                         util::count(choices.candidates.len(), "release")
                     )
                 };
@@ -2702,14 +2613,6 @@ Everything already on it stays as it is."
                     });
                 });
                 if enrich {
-                    ui.label(
-                        egui::RichText::new(
-                            "Pick the release whose details to add — only this track's \
-                             empty fields get filled (catalog only, never your file).",
-                        )
-                        .small()
-                        .weak(),
-                    );
                 }
                 ui.separator();
 
@@ -2800,14 +2703,6 @@ Everything already on it stays as it is."
                             "On: replace existing values too. Off: fill only empty \
                              fields. Catalog only; files are never touched.",
                         );
-                    ui.label(
-                        egui::RichText::new(if overwrite {
-                            "Will write to this track (replacing existing values)"
-                        } else {
-                            "Will add to this track (empty fields only)"
-                        })
-                        .strong(),
-                    );
                     egui::Frame::none()
                         .fill(egui::Color32::from_gray(28))
                         .inner_margin(egui::Margin::same(8.0))
@@ -2840,8 +2735,7 @@ Everything already on it stays as it is."
                             (Some(_), _) => {
                                 ui.label(
                                     egui::RichText::new(
-                                        "No new fields — this release adds nothing the \
-                                         track is missing.",
+                                        "No new fields",
                                     )
                                     .small()
                                     .weak(),
@@ -2942,8 +2836,7 @@ Everything already on it stays as it is."
                                     util::count(album_total, "other track")
                                 )
                             } else if album_missing == 0 {
-                                "No cover-less tracks on this album — enable replace to \
-                                 cover them all."
+                                "Every track on this album has a cover"
                                     .to_string()
                             } else {
                                 format!(
@@ -3468,10 +3361,13 @@ Everything already on it stays as it is."
 /// A waveform-settings subsection header: a bold title with a small right-aligned
 /// "Reset" button that restores just that subsection's defaults. Returns `true`
 /// the frame the button is clicked.
-fn subsection_header(ui: &mut egui::Ui, title: &str) -> bool {
+fn subsection_header(ui: &mut egui::Ui, title: &str, note: &str) -> bool {
     let mut reset = false;
     ui.horizontal(|ui| {
         ui.label(egui::RichText::new(title).strong());
+        if !note.is_empty() {
+            crate::ui::info_note(ui, note);
+        }
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             reset = ui
                 .small_button("Reset")

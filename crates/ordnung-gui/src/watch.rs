@@ -272,18 +272,6 @@ impl App {
                     });
                 }));
                 ui.add_space(4.0);
-                ui.label(
-                    egui::RichText::new(if by_seller {
-                        "Records from your wantlist for sale at your saved sellers, grouped \
-                         by shop. Per-record cost assumes the whole basket ships as one order. \
-                         Update a shop to refresh its stock."
-                    } else {
-                        "Records from your wantlist for sale at your saved sellers, \
-                         cheapest first. Update a shop to refresh its stock."
-                    })
-                    .weak()
-                    .small(),
-                );
                 if !unfinished.is_empty() {
                     const NAMED: usize = 5;
                     let mut names = unfinished

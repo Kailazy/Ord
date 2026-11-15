@@ -578,14 +578,6 @@ impl App {
                 ui.add_space(6.0);
                 ui.label("Save a Discogs shop above, then update its stock");
                 ui.add_space(4.0);
-                ui.label(
-                    egui::RichText::new(
-                        "Every for-sale record lands here with price and condition, \
-                         cross-referenced against your collection and wantlist — \
-                         so you can flip through the bins without the browser.",
-                    )
-                    .weak(),
-                );
             });
             return;
         }

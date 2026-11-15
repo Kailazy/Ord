@@ -4743,13 +4743,6 @@ impl App {
                                     "New imports show here until they're analyzed and \
                                  song-data fetched.",
                                 );
-                                ui.label(
-                                    egui::RichText::new(
-                                        "Add some songs, then analyze and fetch their data — \
-                                     they'll appear here and clear themselves as you go.",
-                                    )
-                                    .weak(),
-                                );
                             } else if in_playlist {
                                 ui.heading("Empty playlist");
                                 ui.add_space(6.0);

@@ -1316,10 +1316,6 @@ impl App {
                 if identical_n > 0 {
                     ui.add_space(4.0);
                     ui.heading("Identical audio");
-                    ui.label(
-                        egui::RichText::new("The same recording imported more than once — safe to keep one.")
-                            .weak(),
-                    );
                     for g in groups.iter().filter(|g| g.kind == DuplicateKind::Identical) {
                         render_group(ui, g, &mut acts);
                     }
@@ -1327,12 +1323,6 @@ impl App {
                 if variant_n > 0 {
                     ui.add_space(10.0);
                     ui.heading("Same track, different files");
-                    ui.label(
-                        egui::RichText::new(
-                            "Same artist + title, different files — likely re-encodes or formats. Review by hand.",
-                        )
-                        .weak(),
-                    );
                     for g in groups.iter().filter(|g| g.kind == DuplicateKind::SameTrack) {
                         render_group(ui, g, &mut acts);
                     }
@@ -1340,13 +1330,6 @@ impl App {
                 if acoustic_n > 0 {
                     ui.add_space(10.0);
                     ui.heading("Sounds identical");
-                    ui.label(
-                        egui::RichText::new(
-                            "Matched by audio fingerprint despite differing files and tags — \
-                             the duplicates you'd only catch on playback. Review by hand.",
-                        )
-                        .weak(),
-                    );
                     for g in groups.iter().filter(|g| g.kind == DuplicateKind::Acoustic) {
                         render_group(ui, g, &mut acts);
                     }
