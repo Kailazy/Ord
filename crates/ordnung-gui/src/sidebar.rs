@@ -795,9 +795,9 @@ pub(crate) fn playlist_row(
         // The track count is painted over the tile's right end, so the name is
         // truncated to leave that lane clear — otherwise a long name runs
         // straight under the number. `nav_button` reserves the space; the
-        // ellipsis tells the user the name is longer than shown, and the
-        // tooltip carries it in full. The blank "icon" indents the name past
-        // the painted mark.
+        // ellipsis tells the user the name is longer than shown, and only
+        // then does a tooltip carry it in full. The blank "icon" indents the
+        // name past the painted mark.
         nav_button_truncated(
             ui,
             "     ",
@@ -807,7 +807,6 @@ pub(crate) fn playlist_row(
             font::body(),
             COUNT_LANE,
         )
-        .on_hover_note(name)
     };
     let (mark_pos, mark_font) = if density.icons_only() {
         (resp.rect.center(), font::icon(RAIL_GLYPH))
@@ -1967,7 +1966,8 @@ pub(crate) const COUNT_LANE: f32 = 44.0;
 /// A nav tile whose label is truncated with an ellipsis to fit the tile width
 /// minus `reserve` — the lane kept clear for something painted over the tile's
 /// right end (a track count). Without this the label is laid out at its natural
-/// width and simply collides with whatever is painted there.
+/// width and simply collides with whatever is painted there. A label that was
+/// cut gets a note with the full text; one that fits needs none.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn nav_button_truncated(
     ui: &mut egui::Ui,
@@ -1993,14 +1993,19 @@ pub(crate) fn nav_button_truncated(
         }
         format!("{}…", cut.trim_end())
     };
-    nav_button_sized(
+    let resp = nav_button_sized(
         ui,
         &format!("{icon}  {shown}"),
         selected,
         w,
         height,
         font,
-    )
+    );
+    if shown == label {
+        resp
+    } else {
+        resp.on_hover_note(label)
+    }
 }
 
 /// A nav tile whose leading mark is *painted* rather than set as a font glyph
