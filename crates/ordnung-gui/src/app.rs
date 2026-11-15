@@ -3884,21 +3884,15 @@ impl App {
                     |ui: &mut egui::Ui,
                      view: &mut LibraryView,
                      sidebar_action: &mut Option<SidebarAction>| {
-                        // "Library" is the home base — the big tile — and
-                        // fresh imports live *inside* it: a small "New" pill on
-                        // the tile's right edge, present only while something
-                        // was added within the last day. They are a subset of
-                        // the catalog rather than a sibling library, so an
-                        // empty view leaves no tile behind and the sidebar's
-                        // top row stays a single clear target.
+                        // "Library" is the home base, the filled tile. Fresh
+                        // imports are a row under it, present only while
+                        // something was added within the last day: a subset
+                        // of the catalog, so an empty view leaves no row.
                         const RECENT_NOTE: &str =
                             "Tracks added in the last day. They drop off after that.";
-                        // Icon tier has no room for a pill beside the glyph, so
-                        // the inbox keeps its own stacked tile there.
-                        let inline_badge = recent_count > 0 && density != NavDensity::Icon;
-                        // The New view has no permanent tile any more, so an
-                        // empty one must not leave the user parked on a view
-                        // they can't navigate back to. Only a view that is
+                        // The view has no permanent row, so an empty one
+                        // must not leave the user parked on a view they
+                        // can't navigate back to. Only a view that is
                         // empty *on screen* ejects, so a row never vanishes
                         // from under the cursor before the next reload.
                         if recent_count == 0 && *view == LibraryView::RecentlyAdded && rows_empty {
@@ -3911,43 +3905,28 @@ impl App {
                             "Library",
                             *view == LibraryView::Library,
                         );
-                        let mut tile_clicked = tile.clicked();
-                        if inline_badge {
-                            let badge = crate::sidebar::nav_tile_badge(
-                                ui,
-                                tile.rect,
-                                &recent_count.to_string(),
-                                *view == LibraryView::RecentlyAdded,
-                            )
-                            .on_hover_note(RECENT_NOTE);
-                            if badge.clicked() {
-                                *view = LibraryView::RecentlyAdded;
-                                // The tile underneath reports the same click, so
-                                // swallow it or the catalog would win the race.
-                                tile_clicked = false;
-                            }
-                        } else {
-                            crate::sidebar::nav_note(tile, density, "Every track in the catalog");
-                        }
-                        if tile_clicked {
+                        if crate::sidebar::nav_note(tile, density, "Every track in the catalog").clicked() {
                             *view = LibraryView::Library;
                         }
-                        // At the icon tier the pill has nowhere to go, so the
-                        // inbox falls back to its own glyph tile below.
-                        if recent_count > 0 && density == NavDensity::Icon {
-                            ui.add_space(space::S2);
-                            if nav_button_dense(
+                        // The rows under the tile are playlist rows: the same
+                        // shape, mark and count lane as the tree below, so the
+                        // group reads as one list. The rail's note already
+                        // names a row; a sentence rides only where the row
+                        // shows its name.
+                        if recent_count > 0 {
+                            crate::sidebar::playlist_row_gap(ui);
+                            let mut recent = playlist_row(
                                 ui,
                                 density,
-                                named(icons::SPARKLE),
-                                &format!("New  {recent_count}"),
+                                "Recently added",
+                                RowMark::plain(icons::SPARKLE),
                                 *view == LibraryView::RecentlyAdded,
-                                PLAYLIST_ROW_H,
-                                font::body(),
-                            )
-                            .on_hover_note_beside(RECENT_NOTE)
-                            .clicked()
-                            {
+                                recent_count as usize,
+                            );
+                            if !density.icons_only() {
+                                recent = recent.on_hover_note(RECENT_NOTE);
+                            }
+                            if recent.clicked() {
                                 *view = LibraryView::RecentlyAdded;
                             }
                         }
@@ -3956,11 +3935,8 @@ impl App {
                         // points at that are no longer on disk. Clicking it opens
                         // the Library Health window (Duplicates / Missing tabs).
                         // A clean catalog gets no row at all.
-                        // The rows under the tile are playlist rows: the same
-                        // shape, mark and count lane as the tree below, so the
-                        // group reads as one list.
                         if missing_count > 0 {
-                            ui.add_space(space::S2);
+                            crate::sidebar::playlist_row_gap(ui);
                             let mut health = playlist_row(
                                 ui,
                                 density,
@@ -3972,8 +3948,6 @@ impl App {
                                 *view == LibraryView::Duplicates || *view == LibraryView::Missing,
                                 missing_count as usize,
                             );
-                            // The rail's note already names the tile; the
-                            // sentence rides only where the row shows the name.
                             if !density.icons_only() {
                                 health = health.on_hover_note("Library health: missing files and duplicate copies");
                             }
@@ -3990,9 +3964,7 @@ impl App {
                             *view = LibraryView::Library;
                         }
                         if liked_count > 0 {
-                            if missing_count == 0 {
-                                ui.add_space(space::S2);
-                            }
+                            crate::sidebar::playlist_row_gap(ui);
                             let mut liked = playlist_row(
                                 ui,
                                 density,
@@ -4012,12 +3984,8 @@ impl App {
                             // The rail's "+" tile needs the air; a caption
                             // row carries its own.
                             ui.add_space(space::S3);
-                            // In the rail the caption is gone, so right-aligning
-                            // the "+" left it floating in an empty row with
-                            // nothing to align against. It takes the rail's
-                            // square and column instead, drawn as a ghost
-                            // (dashed, unfilled) so it reads as "add one" and
-                            // not as another playlist in the stack.
+                            // In the rail the caption is gone, so the "+"
+                            // takes the rail's column, as a flat row.
                             if crate::sidebar::rail_add_tile(ui)
                                 .on_hover_note_beside("New playlist")
                                 .clicked()
@@ -4168,30 +4136,53 @@ impl App {
                     // in either slot. Just "Vinyl", at every tier and with no
                     // count: the shelf is a place you go, not a number you
                     // track.
+                    let rail = density.icons_only();
+                    let on_vinyl = *view == LibraryView::Vinyl;
                     let tile = source_tile(
                         ui,
                         density,
                         SourceMark::Glyph(named(icons::VINYL)),
                         "Vinyl",
-                        *view == LibraryView::Vinyl && !matches!(vinyl_tab, VinylTab::Shelf(_)),
+                        // Lit for the vinyl view; at the captioned tier a
+                        // shelf lights its own pill in the tile instead.
+                        on_vinyl && (rail || !matches!(vinyl_tab, VinylTab::Shelf(_))),
                     );
-                    let tile = crate::sidebar::nav_note(tile, density, "Your Discogs vinyl collection");
-                    let mut tile_clicked = tile.clicked();
-                    // The two shelves inside the tile, as the "New" pill sits
-                    // inside "Library"; the rail has no room beside the glyph.
-                    if !density.icons_only() {
-                        let current = match (*view == LibraryView::Vinyl, vinyl_tab) {
+                    let tile_clicked = tile.clicked();
+                    if rail {
+                        // The rail has no room for the shelves beside the
+                        // glyph: a click goes to the collection, and the
+                        // places under Vinyl hang beside the tile on hover.
+                        let mut pick = tile_clicked.then_some(VinylTab::Shelf(VinylList::Collection));
+                        tile.on_hover_note_ui_beside(|ui| {
+                            ui.set_max_width(150.0);
+                            crate::ui::menu::embedded(ui, |m| {
+                                for (tab, label) in [
+                                    (VinylTab::Shelf(VinylList::Collection), "Collection"),
+                                    (VinylTab::Shelf(VinylList::Wantlist), "Wantlist"),
+                                    (VinylTab::Sellers, "Market"),
+                                ] {
+                                    if m.selectable(on_vinyl && vinyl_tab == tab, label) {
+                                        pick = Some(tab);
+                                    }
+                                }
+                            });
+                        });
+                        if let Some(tab) = pick {
+                            *sidebar_action = Some(SidebarAction::OpenVinylTab(tab));
+                        }
+                    } else {
+                        let tile = tile.on_hover_note("Your Discogs vinyl collection");
+                        // The two shelves inside the tile.
+                        let current = match (on_vinyl, vinyl_tab) {
                             (true, VinylTab::Shelf(list)) => Some(list),
                             _ => None,
                         };
                         if let Some(list) = crate::sidebar::nav_tile_shelves(ui, tile.rect, current) {
-                            *sidebar_action = Some(SidebarAction::OpenShelf(list));
                             // The tile underneath reports the same click.
-                            tile_clicked = false;
+                            *sidebar_action = Some(SidebarAction::OpenVinylTab(VinylTab::Shelf(list)));
+                        } else if tile_clicked {
+                            *view = LibraryView::Vinyl;
                         }
-                    }
-                    if tile_clicked {
-                        *view = LibraryView::Vinyl;
                     }
                     // The crates, under the shelf the way the playlists sit
                     // under the library: a caption with its +, then a row per
@@ -4256,9 +4247,11 @@ impl App {
                             }
                             NavPrimary::Vinyl => {
                                 draw_vinyl_tile(ui, &mut self.view, true, &mut sidebar_action, &mut self.renaming);
-                                // Groups are parted by space alone, never by
-                                // a rule: one policy for the whole panel.
-                                ui.add_space(space::S4);
+                                // One hairline parts the two libraries;
+                                // within a library, space alone parts lists.
+                                ui.add_space(space::S2);
+                                crate::ui::sidebar::rule(ui);
+                                ui.add_space(space::S2);
                                 draw_library_group(ui, &mut self.view, &mut sidebar_action);
                             }
                         }
@@ -4288,14 +4281,12 @@ impl App {
                             for v in self.usb_volumes.clone() {
                                 let active =
                                     matches!(&self.view, LibraryView::Usb(p, _) if *p == v.path);
-                                let resp = nav_button_dense(
+                                let resp = crate::sidebar::rail_tile_sized(
                                     ui,
-                                    density,
                                     named(icons::EJECT),
-                                    &v.name,
                                     active,
-                                    PLAYLIST_ROW_H,
-                                    font::body(),
+                                    true,
+                                    crate::sidebar::RAIL_GLYPH,
                                 );
                                 let resp = crate::sidebar::nav_note(
                                     resp,
@@ -4387,9 +4378,17 @@ impl App {
                                             *action = Some(SidebarAction::ToggleSection(key));
                                         }
                                     };
+                                    // A caption allocates its own gap, so the
+                                    // item spacing after its scope is taken
+                                    // back: the rows start as close under
+                                    // "Playlists" as they do under "Crates".
                                     let mut heads = Vec::new();
+                                    let mut place = |ui: &mut egui::Ui, i: usize, action: &mut Option<SidebarAction>| {
+                                        heads.push(ui.scope(|ui| head(ui, i, action)).response.rect);
+                                        ui.add_space(-ui.spacing().item_spacing.y);
+                                    };
                                     if !density.icons_only() {
-                                        heads.push(ui.scope(|ui| head(ui, 0, &mut sidebar_action)).response.rect);
+                                        place(ui, 0, &mut sidebar_action);
                                     }
                                     if open("playlists") {
                                         draw_playlist_nodes(
@@ -4422,7 +4421,7 @@ impl App {
                                         }
                                         ui.add_space(6.0);
                                     } else {
-                                        heads.push(ui.scope(|ui| head(ui, 1, &mut sidebar_action)).response.rect);
+                                        place(ui, 1, &mut sidebar_action);
                                     }
                                     if open("tags") {
                                         let crate_sets = self.crate_sets.clone();
@@ -4609,9 +4608,9 @@ impl App {
                     self.reload_after_playlist_edit();
                 }
             }
-            Some(SidebarAction::OpenShelf(list)) => {
+            Some(SidebarAction::OpenVinylTab(tab)) => {
                 self.view = LibraryView::Vinyl;
-                self.vinyl_tab = VinylTab::Shelf(list);
+                self.vinyl_tab = tab;
             }
             Some(SidebarAction::NewCrateSet(kind)) => {
                 self.nav_unfold(match kind {

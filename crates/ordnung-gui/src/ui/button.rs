@@ -101,9 +101,8 @@ pub fn button_enabled(
 /// size, so a row of them and the buttons beside them come out one family. Without the explicit square a one-character label lands in the
 /// theme's 10 × 6 padding and reads as a stretched pill.
 ///
-/// Fill only, no outline, like the sidebar tiles it sits above: it ends a
-/// caption row flush with the panel's clip edge, where an outline (drawn
-/// half outside the rect) was cut off down its right side.
+/// Fill only, no outline: at a panel's clip edge an outline (drawn half
+/// outside the rect) is cut off down its side.
 pub fn square(ui: &mut egui::Ui, glyph: &str) -> egui::Response {
     let side = ui.spacing().interact_size.y;
     let prev = ui.spacing().button_padding;

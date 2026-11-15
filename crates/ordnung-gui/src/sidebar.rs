@@ -130,12 +130,16 @@ pub(crate) fn source_font() -> egui::FontId {
 
 /// A rectangular navigation button for the sidebar. `width` and `height`
 /// size the tile and `font` its label; `selected` paints the muted accent
-/// fill. The `Response` is returned so callers can wire clicks, drag-and-drop
-/// drop targets and context menus on top of it.
+/// fill. A `flat` one (every row under the two source tiles) has no fill at
+/// rest, so only the hovered and the selected row are filled and the source
+/// tiles are the one thing in the panel that reads as a button. The
+/// `Response` is returned so callers can wire clicks, drag-and-drop drop
+/// targets and context menus on top of it.
 pub(crate) fn nav_button_sized(
     ui: &mut egui::Ui,
     label: &str,
     selected: bool,
+    flat: bool,
     width: f32,
     height: f32,
     font: egui::FontId,
@@ -144,19 +148,6 @@ pub(crate) fn nav_button_sized(
     if selected {
         text = text.color(color::LABEL);
     }
-    nav_button_text_sized(ui, text.into(), selected, width, height)
-}
-
-/// The tile under every nav button: `text` already set (a plain label, or
-/// an icon-and-label from `ui::icon_text`), the muted accent fill when
-/// selected, the hover fill otherwise.
-pub(crate) fn nav_button_text_sized(
-    ui: &mut egui::Ui,
-    text: egui::WidgetText,
-    selected: bool,
-    width: f32,
-    height: f32,
-) -> egui::Response {
     let w = width;
     let mut btn = egui::Button::new(text)
         .min_size(egui::vec2(w, height))
@@ -170,8 +161,9 @@ pub(crate) fn nav_button_text_sized(
     let prev_padding = ui.spacing().button_padding;
     // A narrow icon-tier tile has no room for a left gutter — the glyph would
     // sit off-centre or clip — so pad it symmetrically instead and let egui
-    // centre the single character.
-    ui.spacing_mut().button_padding.x = if w < 90.0 { 4.0 } else { 12.0 };
+    // centre the single character. The vertical padding is cut so `height`
+    // sets the row, not the label's line plus the theme's padding.
+    ui.spacing_mut().button_padding = egui::vec2(if w < 90.0 { 4.0 } else { 12.0 }, 2.0);
 
     // The tile fills the sidebar's full width, so its left/right edges sit on the
     // panel clip boundary. egui's default hover/active state draws a 1px outline
@@ -186,6 +178,10 @@ pub(crate) fn nav_button_text_sized(
         w.hovered.weak_bg_fill = color::surface_hover();
         w.active.bg_stroke = egui::Stroke::NONE;
         w.active.weak_bg_fill = color::surface_active();
+        if flat {
+            w.inactive.weak_bg_fill = egui::Color32::TRANSPARENT;
+            w.hovered.weak_bg_fill = color::surface_hi();
+        }
     }
     let resp = ui.add(btn);
     ui.visuals_mut().widgets = prev_widgets;
@@ -193,39 +189,11 @@ pub(crate) fn nav_button_text_sized(
     resp
 }
 
-/// A count badge tucked inside the right edge of a nav tile, drawn as its own
-/// clickable button on top of the tile that `host` describes. Used for the
-/// "New" pill inside "Library": fresh imports are a subset of the catalog,
-/// not a sibling of it, so the affordance lives *in* the tile rather than
-/// stealing a second one. Returns the badge's own `Response` — hit-tested
-/// before the tile underneath, so a click on the pill selects the recent view
-/// and never falls through to the whole catalog.
-pub(crate) fn nav_tile_badge(
-    ui: &mut egui::Ui,
-    host: egui::Rect,
-    count: &str,
-    selected: bool,
-) -> egui::Response {
-    // The sparkle and the count, the sparkle in the icon face.
-    let galley = crate::ui::icon_text(named(icons::SPARKLE), count, font::callout()).into_galley(
-        ui,
-        Some(egui::TextWrapMode::Extend),
-        f32::INFINITY,
-        egui::TextStyle::Small,
-    );
-    let width = galley.size().x + 16.0;
-    nav_tile_pill(ui, host, host.right() - NAV_PILL_GUTTER, width, "nav-tile-badge", selected, |p, rect| {
-        p.galley(rect.center() - galley.size() / 2.0, galley, color::LABEL);
-    })
-}
-
 /// The Discogs shelves inside the "Vinyl" tile: a square pill per shelf at
-/// the tile's right end, each carrying its shelf mark, the way the "New"
-/// pill sits inside "Library". The collection and the wantlist are two views
+/// the tile's right end, each carrying its shelf mark. The collection and the wantlist are two views
 /// of the one vinyl library, so they live in its tile rather than as rows of
 /// their own. `current` is the shelf on screen, lit; returns the one clicked.
-/// The pills are coloured like the "New" pill: the shelf on screen lit, and
-/// the tile itself unlit then, the way "Library" is while "New" is open.
+/// The tile itself is unlit while a shelf is.
 pub(crate) fn nav_tile_shelves(
     ui: &mut egui::Ui,
     host: egui::Rect,
@@ -268,8 +236,7 @@ fn nav_pill_height(host: egui::Rect) -> f32 {
 /// centred on the tile, claimed with `Sense::click` at that exact rect so it
 /// sits above the tile in the interaction stack (the tile was added first,
 /// so the pill wins). A muted chip that lifts on hover, the muted accent
-/// while `selected`; the "New" pill and the shelves share this one
-/// colouring. `paint` draws what it carries into its rect.
+/// while `selected`. `paint` draws what it carries into its rect.
 fn nav_tile_pill(
     ui: &mut egui::Ui,
     host: egui::Rect,
@@ -464,7 +431,7 @@ pub(crate) fn draw_playlist_nodes(
             })
             .header_response;
             crate::ui::menu::context(&header, |ui| folder_context_menu(ui, p, volumes, renaming, action));
-            playlist_row_gap(ui, density);
+            playlist_row_gap(ui);
         } else {
             draw_playlist_leaf(ui, density, p, all, volumes, view, renaming, action, drop_rects, sel);
         }
@@ -661,7 +628,7 @@ fn inline_rename_editor(
             )
         })
         .inner;
-    ui.add_space(PLAYLIST_ROW_GAP);
+    playlist_row_gap(ui);
     // Grab focus only on the first frame the box appears. Re-requesting it every
     // frame would pin focus to the box and make clicking away impossible. The
     // box is also scrolled into view then, focus ring and all: a row made at
@@ -751,7 +718,7 @@ impl RowMark {
 // pattern rather than two sidebars that happen to share a panel.
 
 /// Tile height of a playlist row at the captioned tier.
-pub(crate) const PLAYLIST_ROW_H: f32 = 30.0;
+pub(crate) const PLAYLIST_ROW_H: f32 = 28.0;
 /// The face of a playlist row's mark: one step up the ramp from the body
 /// label beside it, since an icon at the text's own size reads a touch small.
 pub(crate) fn row_mark_font() -> egui::FontId {
@@ -759,10 +726,8 @@ pub(crate) fn row_mark_font() -> egui::FontId {
 }
 /// Inset of the track count from the tile's right edge.
 const PLAYLIST_COUNT_INSET: f32 = 12.0;
-/// Gap under a playlist row. The rail's square targets need slightly more
-/// separation to read as distinct than full-width bars do.
+/// Gap under a playlist row, at both tiers.
 const PLAYLIST_ROW_GAP: f32 = 2.0;
-const PLAYLIST_ROW_GAP_RAIL: f32 = 4.0;
 
 /// One playlist row, shared by both trees: a marked tile with the name truncated
 /// clear of the count lane and the track count painted inside the right end.
@@ -786,11 +751,9 @@ pub(crate) fn playlist_row(
     // "which one of these did I have open", the wider tiers are for reading.
     //
     // The leading mark is painted over the tile rather than set in its label,
-    // the way `nav_button_painted` does it, so it can carry its own colour:
-    // a playlist's chosen icon keeps its chosen hue whether or not the row
-    // is selected.
+    // the way `nav_button_painted` does it, so it can carry its own colour.
     let resp = if density.icons_only() {
-        rail_tile_sized(ui, "", selected, RAIL_GLYPH).on_hover_note_beside(name)
+        rail_tile_sized(ui, "", selected, true, RAIL_GLYPH).on_hover_note_beside(name)
     } else {
         // The track count is painted over the tile's right end, so the name is
         // truncated to leave that lane clear — otherwise a long name runs
@@ -816,16 +779,33 @@ pub(crate) fn playlist_row(
             row_mark_font(),
         )
     };
-    let ink = mark
-        .tint
-        .unwrap_or(if selected { color::LABEL } else { color::LABEL_2 });
-    ui.painter().text(
-        mark_pos,
-        egui::Align2::CENTER_CENTER,
-        mark.glyph,
-        mark_font,
-        ink,
-    );
+    // On the selected fill the mark is in the label ink: a yellow or
+    // orange icon would sink into the amber.
+    let ink = if selected {
+        color::LABEL
+    } else {
+        mark.tint.unwrap_or(color::LABEL_2)
+    };
+    // In the rail a row with the stock mark of its kind (the note, the
+    // crate, the tag) shows its name's initials: a column of one glyph
+    // repeated says nothing about which row is which. Two letters cannot
+    // wrap, which is what ruled names out of this tier.
+    let stock = mark.tint.is_none()
+        && [icons::MUSIC_NOTE, icons::PACKAGE, icons::TAG]
+            .iter()
+            .any(|n| named(n) == mark.glyph);
+    if density.icons_only() && stock {
+        ui.painter().text(
+            mark_pos,
+            egui::Align2::CENTER_CENTER,
+            initials(name),
+            font::strong(font::callout().size),
+            ink,
+        );
+    } else {
+        ui.painter()
+            .text(mark_pos, egui::Align2::CENTER_CENTER, mark.glyph, mark_font, ink);
+    }
     if !density.icons_only() {
         // Small right-aligned track count inside the tile. Muted so the name
         // stays the focus; brighter on the accent fill so it's still readable
@@ -845,13 +825,23 @@ pub(crate) fn playlist_row(
     resp
 }
 
-/// Trailing gap under a playlist row or folder header, tier-appropriate.
-fn playlist_row_gap(ui: &mut egui::Ui, density: NavDensity) {
-    ui.add_space(if density.icons_only() {
-        PLAYLIST_ROW_GAP_RAIL
-    } else {
-        PLAYLIST_ROW_GAP
-    });
+/// The gap between two nav rows, called between them: [`PLAYLIST_ROW_GAP`]
+/// in place of the theme's item spacing, so the flat rows sit as one list.
+pub(crate) fn playlist_row_gap(ui: &mut egui::Ui) {
+    ui.add_space(PLAYLIST_ROW_GAP - ui.spacing().item_spacing.y);
+}
+
+/// Two letters that stand for `name` in the rail: the first letters of its
+/// first two words ("Hypnotic Techno" is HT), or the first two letters of a
+/// single word ("idk" is Id).
+fn initials(name: &str) -> String {
+    let mut words = name.split_whitespace();
+    let mut first = words.next().unwrap_or_default().chars();
+    let lead: String = first.next().into_iter().flat_map(char::to_uppercase).collect();
+    match words.next().and_then(|w| w.chars().next()) {
+        Some(b) => lead + &b.to_uppercase().to_string(),
+        None => lead + &first.next().map(|c| c.to_lowercase().to_string()).unwrap_or_default(),
+    }
 }
 
 /// One playlist row: inline-rename when active, otherwise a selectable label
@@ -945,7 +935,7 @@ pub(crate) fn draw_playlist_leaf(
             ui.close_menu();
         }
     });
-    playlist_row_gap(ui, density);
+    playlist_row_gap(ui);
 }
 
 /// Render one level of a USB device's rekordbox playlist tree in the sidebar,
@@ -1043,7 +1033,7 @@ pub(crate) fn draw_usb_playlist_nodes(
                     ui.close_menu();
                 }
             });
-            playlist_row_gap(ui, density);
+            playlist_row_gap(ui);
         } else {
             let selected = *view == LibraryView::Usb(vol.to_path_buf(), Some(p.id));
             let resp = playlist_row(
@@ -1116,7 +1106,7 @@ pub(crate) fn draw_usb_playlist_nodes(
                     ui.close_menu();
                 }
             });
-            playlist_row_gap(ui, density);
+            playlist_row_gap(ui);
         }
     }
 }
@@ -1126,7 +1116,7 @@ pub(crate) fn draw_usb_playlist_nodes(
 pub(crate) struct ListHeader {
     /// The "+" was clicked.
     pub add: bool,
-    /// The chevron was clicked: fold the list, or open it again.
+    /// The caption was clicked: fold the list, or open it again.
     pub toggle: bool,
 }
 
@@ -1134,15 +1124,16 @@ pub(crate) struct ListHeader {
 /// end, shared by the catalog group, the device group, the crates and the
 /// tags so every list carries the same affordance. The row is the inspector
 /// drawer's caption row (see `ui::sidebar::caption_row`), so both edges of
-/// the app set a heading the same way; the "+" is the square glyph button.
+/// the app set a heading the same way; the "+" is an unfilled glyph that
+/// fills on hover, quieter than the caption it sits beside.
 /// Returns `true` when "+" was clicked; `tip` is its hover note.
 pub(crate) fn list_header(ui: &mut egui::Ui, caption: &str, tip: &str) -> bool {
     list_header_at(ui, caption, tip, None).add
 }
 
-/// [`list_header`] for a list that folds: a chevron beside the "+" points
-/// up while the list is `open` and down while it is shut, and the space
-/// under the caption is only laid down while there is a list beneath it.
+/// [`list_header`] for a list that folds: the caption is the fold target,
+/// with a caret right after its text, pointing down while the list is
+/// `open` (shown on hover) and right while it is shut (always shown).
 pub(crate) fn list_header_folding(
     ui: &mut egui::Ui,
     caption: &str,
@@ -1154,29 +1145,35 @@ pub(crate) fn list_header_folding(
 
 fn list_header_at(ui: &mut egui::Ui, caption: &str, tip: &str, open: Option<bool>) -> ListHeader {
     let mut out = ListHeader::default();
-    tight_caption(ui, caption, |ui| {
-        // Laid out right to left: the "+" takes the end of the row, the
-        // chevron sits inside it.
-        if crate::ui::button::square(ui, named(icons::PLUS))
+    let text = tight_caption(ui, caption, |ui| {
+        if crate::ui::button::icon(ui, named(icons::PLUS), true)
             .on_hover_note(tip)
             .clicked()
         {
             out.add = true;
         }
-        if let Some(open) = open {
-            let (glyph, note) = if open {
-                (icons::CARET_UP, "Hide this list")
-            } else {
-                (icons::CARET_DOWN, "Show this list")
-            };
-            if crate::ui::button::icon(ui, named(glyph), true)
-                .on_hover_note(note)
-                .clicked()
-            {
-                out.toggle = true;
-            }
-        }
     });
+    if let Some(open) = open {
+        let caret = font::icon(font::footnote().size);
+        let target = text
+            .expand2(egui::vec2(0.0, space::S2))
+            .with_max_x(text.right() + space::S2 + caret.size + space::S2);
+        let resp = ui.interact(target, ui.id().with(("fold", caption)), egui::Sense::click());
+        if resp.hovered() {
+            ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+        }
+        if !open || resp.hovered() {
+            let glyph = if open { icons::CARET_DOWN } else { icons::CARET_RIGHT };
+            ui.painter().text(
+                egui::pos2(text.right() + space::S2, text.center().y),
+                egui::Align2::LEFT_CENTER,
+                named(glyph),
+                caret,
+                color::LABEL_3,
+            );
+        }
+        out.toggle = resp.clicked();
+    }
     out
 }
 
@@ -1223,7 +1220,7 @@ pub(crate) fn capacity_line(ui: &mut egui::Ui, used: u64, total: u64) {
 /// A caption on its own, for a list that has no "+" (a plain volume's
 /// playlists).
 pub(crate) fn section_caption(ui: &mut egui::Ui, caption: &str) {
-    tight_caption(ui, caption, |_| {});
+    let _ = tight_caption(ui, caption, |_| {});
 }
 
 /// The caption row with the S3 gap under it allocated as real space rather
@@ -1234,15 +1231,16 @@ pub(crate) fn section_caption(ui: &mut egui::Ui, caption: &str) {
 /// flush on the first row (or on the next folded caption's "+"). Allocating
 /// the gap keeps it on both sides of a panel boundary; S3 matches the gap
 /// between the rows the caption heads.
-fn tight_caption(ui: &mut egui::Ui, caption: &str, action: impl FnOnce(&mut egui::Ui)) {
+fn tight_caption(ui: &mut egui::Ui, caption: &str, action: impl FnOnce(&mut egui::Ui)) -> egui::Rect {
     let gap = ui.spacing().item_spacing.y;
     ui.spacing_mut().item_spacing.y = 0.0;
-    crate::ui::sidebar::caption_row(ui, caption, action);
+    let text = crate::ui::sidebar::caption_row(ui, caption, action);
     ui.allocate_exact_size(
         egui::vec2(ui.available_width(), space::S3),
         egui::Sense::hover(),
     );
     ui.spacing_mut().item_spacing.y = gap;
+    text
 }
 
 /// The caption of the list scrolled under the top edge, pinned there: a
@@ -1772,7 +1770,7 @@ pub(crate) fn draw_crate_rows(
                 ui.close_menu();
             }
         });
-        playlist_row_gap(ui, density);
+        playlist_row_gap(ui);
     }
 }
 
@@ -1822,19 +1820,19 @@ pub(crate) fn folder_context_menu(
 // layouts. Each tier is a real layout, not the same layout at a different size,
 // and each is sized from the content it has to hold:
 //
-//   Rail (56pt) — a navigation rail, not a squeezed sidebar. Uniform centred
-//     square targets, one glyph each, no text at all: names live in the
-//     tooltip. Text was tried here and it is what made the tier unusable —
-//     56pt cannot hold "Traumprinz", so names wrapped into two- and three-line
-//     blocks and every tile became a different height. A rail's whole value is
-//     a predictable column of identical targets, so the rule is absolute:
-//     nothing in this tier renders a string.
+//   Rail (56pt) — a navigation rail, not a squeezed sidebar. One centred
+//     column: the two source tiles as filled squares, the rows under them
+//     flat, one mark each. Names live in the tooltip. Names were tried here
+//     and they are what made the tier unusable — 56pt cannot hold
+//     "Traumprinz", so names wrapped into two- and three-line blocks and
+//     every tile became a different height. The one string this tier
+//     renders is a row's two-letter initials, which cannot wrap.
 //
 //   Narrow (212pt) — the default, and the only captioned layout. One
 //     full-width tile per row, single-line. A third, wider tier used to sit
 //     above this one; it earned its width only by putting the "Library" /
-//     "New" pair on a shared row, and once "New" became a badge inside the
-//     "Library" tile there was nothing left for the extra 76pt to do but
+//     "New" pair on a shared row, and once "New" left that row
+//     there was nothing left for the extra 76pt to do but
 //     stretch the same rows. The width here is set by the one string that
 //     actually varies — a playlist name — leaving a useful prefix beside its
 //     glyph and track count before the ellipsis.
@@ -1865,41 +1863,6 @@ impl NavDensity {
     /// Icon tier hides every text label except playlist names.
     pub(crate) fn icons_only(self) -> bool {
         self == NavDensity::Icon
-    }
-}
-
-/// A nav tile that collapses to its glyph at the rail tier. `icon` is the
-/// leading glyph, `label` the text that follows it at the wider tiers.
-///
-/// At the rail tier the label is dropped entirely and the glyph is centred in
-/// a uniform square (see [`NavDensity::RAIL_TILE`]) — the caller's `height` and
-/// `text_size` are deliberately ignored there, because a rail whose rows are
-/// different heights is exactly the failure this tier exists to avoid. The name
-/// moves to the tooltip, which is the only place it fits.
-pub(crate) fn nav_button_dense(
-    ui: &mut egui::Ui,
-    density: NavDensity,
-    icon: &str,
-    label: &str,
-    selected: bool,
-    height: f32,
-    font: egui::FontId,
-) -> egui::Response {
-    if density.icons_only() {
-        // The wide tiers rank tiles by height and text size; the rail has only
-        // one square, so carry that ranking over as glyph size instead. The
-        // tall tiles (the top-level libraries) are the ones worth enlarging.
-        let glyph = if height >= 40.0 {
-            RAIL_GLYPH_LEAD
-        } else {
-            RAIL_GLYPH
-        };
-        rail_tile_sized(ui, icon, selected, glyph)
-    } else {
-        // Icon and label as one line, the icon set in the icon face (see
-        // `ui::icon_text`), inset like every other tile's label.
-        let w = ui.available_width();
-        nav_button_text_sized(ui, crate::ui::icon_text(icon, label, font), selected, w, height)
     }
 }
 
@@ -1997,6 +1960,7 @@ pub(crate) fn nav_button_truncated(
         ui,
         &format!("{icon}  {shown}"),
         selected,
+        true,
         w,
         height,
         font,
@@ -2030,12 +1994,12 @@ pub(crate) fn nav_button_painted(
     // captions are gone.
     let r = if density.icons_only() { 10.0 } else { 7.5 };
     let resp = if density.icons_only() {
-        rail_tile_sized(ui, "", selected, RAIL_GLYPH)
+        rail_tile_sized(ui, "", selected, false, RAIL_GLYPH)
     } else {
         // Indent the label with spaces to clear the mark, which is painted over
         // the tile afterwards. Crude, but it keeps every nav tile going through
         // the one `nav_button` path rather than forking the layout.
-        nav_button_sized(ui, &format!("       {label}"), selected, ui.available_width(), height, font)
+        nav_button_sized(ui, &format!("       {label}"), selected, false, ui.available_width(), height, font)
     };
     let cx = if density.icons_only() {
         resp.rect.center().x
@@ -2053,79 +2017,28 @@ pub(crate) fn nav_button_painted(
 /// Glyph point size for an ordinary rail tile (a playlist, a USB volume).
 pub(crate) const RAIL_GLYPH: f32 = 16.0;
 
-/// Glyph point size for the rail's primary destinations — "Library" and the
-/// vinyl shelf. At the icon tier every tile is the same square with no caption
-/// to rank it, so size is the only thing left to say which entries are the
-/// top-level libraries and which are the list of playlists under them.
-pub(crate) const RAIL_GLYPH_LEAD: f32 = 24.0;
-
-/// The rail's "new playlist" target. It keeps the tile's square and column so
-/// the rail stays one aligned stack, but it is drawn as a ghost: no fill, a
-/// dashed outline, a dim "+". A filled tile in that slot read as one more
-/// playlist you could open; the empty dashed square is the shape of a thing
-/// not yet there, so it reads as "make one" instead. Hover solidifies the
-/// outline in the accent and brightens the glyph so it still feels pressable.
+/// The rail's "new playlist" (crate, tag) target: a flat row with a "+",
+/// in the rail's column like the rows it adds to. It has no fill at rest
+/// and no initials, so it does not read as one more place to open.
 pub(crate) fn rail_add_tile(ui: &mut egui::Ui) -> egui::Response {
-    let side = NavDensity::RAIL_TILE;
-    let indent = ((ui.available_width() - side) / 2.0).max(0.0);
-    ui.horizontal(|ui| {
-        ui.add_space(indent);
-        let (rect, resp) =
-            ui.allocate_exact_size(egui::vec2(side, side), egui::Sense::click());
-        if !ui.is_rect_visible(rect) {
-            return resp;
-        }
-        let hovered = resp.hovered();
-        let rounding = egui::Rounding::same(radius::SM);
-        // Inset by half the stroke so the outline sits fully inside the square.
-        let outline = rect.shrink(1.0);
-        let painter = ui.painter();
-        if hovered {
-            painter.rect(
-                outline,
-                rounding,
-                color::surface_hi(),
-                egui::Stroke::new(1.0, color::accent()),
-            );
-        } else {
-            let mut path = Vec::new();
-            egui::epaint::tessellator::path::rounded_rectangle(&mut path, outline, rounding);
-            if let Some(first) = path.first().copied() {
-                path.push(first);
-            }
-            painter.extend(egui::Shape::dashed_line(
-                &path,
-                egui::Stroke::new(1.0, color::LABEL_4),
-                3.0,
-                3.0,
-            ));
-        }
-        let glyph = if hovered { color::LABEL } else { color::LABEL_2 };
-        painter.text(
-            rect.center(),
-            egui::Align2::CENTER_CENTER,
-            named(icons::PLUS),
-            font::icon(RAIL_GLYPH),
-            glyph,
-        );
-        resp
-    })
-    .inner
+    rail_tile_sized(ui, named(icons::PLUS), false, true, RAIL_GLYPH)
 }
 
-/// One square target in the rail tier: a glyph centred in a fixed
-/// [`NavDensity::RAIL_TILE`] box, itself centred in the rail's width. Every
-/// rail tile is this exact size, whatever it stands for, so the rail is a
-/// predictable column your eye can run down; `glyph` is the point size, so
-/// the rail can rank its entries.
+/// One target in the rail tier: a glyph centred in a box
+/// [`NavDensity::RAIL_TILE`] wide, itself centred in the rail's width. A
+/// source tile is that square, filled; a `flat` one (a row under it) is a
+/// nav row's height with no fill at rest, so the two libraries stand out of
+/// the column the way their tiles do at the captioned tier. `glyph` is the
+/// point size.
 pub(crate) fn rail_tile_sized(
     ui: &mut egui::Ui,
     icon: &str,
     selected: bool,
+    flat: bool,
     glyph: f32,
 ) -> egui::Response {
     let side = NavDensity::RAIL_TILE;
-    // Centre the square in the rail rather than letting it sit flush left: the
+    // Centre the tile in the rail rather than letting it sit flush left: the
     // gutter is what stops the tiles reading as a clipped-off wider sidebar.
     let indent = ((ui.available_width() - side) / 2.0).max(0.0);
     ui.horizontal(|ui| {
@@ -2134,8 +2047,9 @@ pub(crate) fn rail_tile_sized(
             ui,
             icon,
             selected,
+            flat,
             side,
-            side,
+            if flat { PLAYLIST_ROW_H } else { side },
             font::icon(glyph),
         )
     })
@@ -2145,6 +2059,15 @@ pub(crate) fn rail_tile_sized(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn initials_take_two_words_or_two_letters() {
+        assert_eq!(initials("Hypnotic Techno"), "HT");
+        assert_eq!(initials("opening duties tonight"), "OD");
+        assert_eq!(initials("idk"), "Id");
+        assert_eq!(initials("Ä"), "Ä");
+        assert_eq!(initials(""), "");
+    }
 
     /// A caption scrolled under the panel's top is pinned there, and the
     /// next caption pushes it out as it arrives.

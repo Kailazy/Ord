@@ -64,6 +64,9 @@ pub trait HoverNoteExt {
     /// with the widget's top: for a tile in a column, where a note under
     /// it would cover the next tile.
     fn on_hover_note_beside(self, text: impl Into<String>) -> Self;
+    /// [`Self::on_hover_note_beside`] with its own layout: a short menu
+    /// hung off a rail tile.
+    fn on_hover_note_ui_beside(self, add: impl FnOnce(&mut egui::Ui)) -> Self;
 }
 
 impl HoverNoteExt for egui::Response {
@@ -121,6 +124,17 @@ impl HoverNoteExt for egui::Response {
     }
 
     fn on_hover_note_beside(self, text: impl Into<String>) -> Self {
+        let text = text.into();
+        if text.is_empty() {
+            return self;
+        }
+        let text = note(text);
+        self.on_hover_note_ui_beside(|ui| {
+            ui.label(text);
+        })
+    }
+
+    fn on_hover_note_ui_beside(self, add: impl FnOnce(&mut egui::Ui)) -> Self {
         // egui sets a note's left-top 4 pt under its widget's left-bottom
         // (`find_tooltip_position`), so the note is attached to a copy of
         // the response whose rect is the point that lands it beside the
@@ -131,7 +145,7 @@ impl HoverNoteExt for egui::Response {
             rect: egui::Rect::from_min_size(at, egui::Vec2::ZERO),
             ..self.clone()
         }
-        .on_hover_note(text);
+        .on_hover_note_ui(add);
         self
     }
 }

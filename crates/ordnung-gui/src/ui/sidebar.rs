@@ -129,8 +129,9 @@ pub fn section_with_action(
 /// row's right end. One row for the header and every section, so the
 /// panel's title is set the way its sections are. The library nav's list
 /// headers ("Playlists", "Crates") are this row too, with the "+" as the
-/// action, so both edges of the app set a caption the same way.
-pub fn caption_row(ui: &mut egui::Ui, title: &str, add_action: impl FnOnce(&mut egui::Ui)) {
+/// action, so both edges of the app set a caption the same way. Returns
+/// where the caption's text was set, for a caller that hangs a mark on it.
+pub fn caption_row(ui: &mut egui::Ui, title: &str, add_action: impl FnOnce(&mut egui::Ui)) -> egui::Rect {
     let h = ui.spacing().interact_size.y.max(window::CLOSE_SIDE);
     let (row, _) = ui.allocate_exact_size(egui::vec2(ui.available_width(), h), egui::Sense::hover());
     // The action first, from the right, so the caption is capped to what
@@ -148,11 +149,12 @@ pub fn caption_row(ui: &mut egui::Ui, title: &str, add_action: impl FnOnce(&mut 
         row.width()
     };
     let galley = super::text::truncated(ui, title, font::strong(font::footnote().size), color::LABEL_3, cap, true);
-    ui.painter().galley(
+    let text = egui::Rect::from_min_size(
         egui::pos2(row.left(), row.center().y - galley.size().y / 2.0),
-        galley,
-        color::LABEL_3,
+        galley.size(),
     );
+    ui.painter().galley(text.min, galley, color::LABEL_3);
+    text
 }
 
 /// The hairline under a caption, across the content.
