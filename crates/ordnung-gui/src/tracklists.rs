@@ -71,7 +71,7 @@ enum ListAct {
 fn list_menu(ui: &mut egui::Ui, busy: bool, with_match: bool) -> Option<ListAct> {
     let mut act = None;
     if with_match
-        && ui.add_enabled(!busy, egui::Button::new("Match")).on_hover_note("Look up the lines that aren't settled yet").clicked()
+        && ui.add_enabled(!busy, egui::Button::new("Match")).on_hover_note("Look up the lines without a sure record").clicked()
     {
         act = Some(ListAct::Match);
     }
@@ -624,13 +624,13 @@ impl App {
                     });
                     let open = self.tracklist_entries.iter().any(unsettled);
                     if crate::ui::button::button_enabled(ui, open && !busy, "Match")
-                        .on_hover_note("Look up the lines that aren't settled yet")
+                        .on_hover_note("Look up the lines without a sure record")
                         .clicked()
                     {
                         act = Some(ListAct::Match);
                     }
                     // The Liked view's switch, here between every line and
-                    // the ones still to settle.
+                    // the ones still to check.
                     if open || self.tracklist_unsettled_only {
                         use crate::ui::button::{segmented, Segment};
                         let picked = segmented(
@@ -638,7 +638,7 @@ impl App {
                             Some(usize::from(self.tracklist_unsettled_only)),
                             &[
                                 Segment { icon: "", label: "All", tip: "Every line" },
-                                Segment { icon: "", label: "To settle", tip: "Only the lines without a sure record" },
+                                Segment { icon: "", label: "To check", tip: "Only the lines without a sure record" },
                             ],
                         );
                         if let Some(p) = picked {
