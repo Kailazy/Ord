@@ -390,6 +390,7 @@ impl App {
             usb_tree_edited: false,
             usb_playlists: Vec::new(),
             usb_playlist_tracks: HashMap::new(),
+            vinyl_syncing: false,
             usb_loading: false,
             usb_rx: None,
             usb_eject_rx: None,

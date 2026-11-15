@@ -27,6 +27,7 @@ impl App {
         }
         let (tx, rx) = mpsc::channel();
         self.job_rx = Some(rx);
+        self.vinyl_syncing = false;
         let cancel = Arc::new(AtomicBool::new(false));
         self.job_cancel = cancellable.then(|| cancel.clone());
         Some((tx, cancel))
@@ -719,7 +720,7 @@ impl App {
         // far; the next refresh resumes with what's still unpriced.
         let ledger = self.vinyl_confirmed.clone();
         let username = self.config.discogs_username.trim().to_string();
-        self.spawn_job(ctx, "Syncing vinyl collection and wantlist…", true, move |db, cancel, tx, ctx| {
+        self.vinyl_syncing = self.spawn_job(ctx, "Syncing vinyl collection and wantlist…", true, move |db, cancel, tx, ctx| {
             run_refresh_vinyl(db, token, username, cancel, false, ledger, tx, ctx)
         });
     }

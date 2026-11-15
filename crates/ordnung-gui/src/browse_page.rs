@@ -925,23 +925,27 @@ impl App {
             ui.add_space(4.0);
             return;
         }
+        // The window's list opens on a few ghost rows and grows to its cap
+        // when the run lands (the versions panel does the same).
+        let grow_id = egui::Id::new(("run_grow", thread as u8, &snap.name));
         if loading && rows.is_empty() {
-            ui.horizontal(|ui| {
-                ui.spinner();
-                let reading = match thread {
-                    BrowseThread::Label => "Reading the label's run…",
-                    BrowseThread::Artist => "Reading the artist's run…",
-                };
-                ui.label(egui::RichText::new(reading).weak());
-            });
-            ui.add_space(4.0);
+            let top = ui.cursor().top();
+            for i in 0..3 {
+                crate::ui::ghost_row(ui, THUMB, THUMB, i);
+                ui.add_space(crate::ui::tokens::space::S2);
+                ui.separator();
+                ui.add_space(crate::ui::tokens::space::S2);
+            }
+            ui.ctx().animate_value_with_time(grow_id, ui.cursor().top() - top, 0.0);
             return;
         }
         let grow = snap.about.as_ref().map_or(0.0, |a| label_about_ui(ui, a, out, fill));
         if rows.is_empty() {
             ui.label(egui::RichText::new("No records on this page of the run").weak());
         }
-        let list_h = 440.0 - grow;
+        let list_h = ui
+            .ctx()
+            .animate_value_with_time(grow_id, 440.0 - grow, crate::versions::GROW_ANIM);
         let list = |ui: &mut egui::Ui, out: &mut BrowseOut| {
         let mut area = egui::ScrollArea::vertical()
             .id_salt((thread as u8, &snap.name))

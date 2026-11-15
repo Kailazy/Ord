@@ -2780,11 +2780,26 @@ Everything already on it stays as it is."
                                 (Some(_), _) => {
                                     ui.label(egui::RichText::new("No new fields").small().weak());
                                 }
+                                // The fields on their way, as the grid they land in.
                                 (None, true) => {
-                                    ui.horizontal(|ui| {
-                                        ui.add(egui::Spinner::new());
-                                        ui.label(egui::RichText::new("Loading release details…").weak());
-                                    });
+                                    egui::Grid::new(("preview-ghost", choices.id))
+                                        .num_columns(2)
+                                        .spacing(egui::vec2(12.0, 4.0))
+                                        .show(ui, |ui| {
+                                            for i in 0..4 {
+                                                crate::ui::ghost_line(
+                                                    ui,
+                                                    crate::ui::ghost_w(i, 36.0, 34),
+                                                    egui::TextStyle::Body,
+                                                );
+                                                crate::ui::ghost_line(
+                                                    ui,
+                                                    crate::ui::ghost_w(i + 1, 90.0, 90),
+                                                    egui::TextStyle::Body,
+                                                );
+                                                ui.end_row();
+                                            }
+                                        });
                                 }
                                 // No token: nothing to preview.
                                 (None, false) => {}

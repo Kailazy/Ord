@@ -102,8 +102,8 @@ const COVER_FADE_ANIM: f32 = 0.22;
 pub(crate) enum RecordSearch {
     /// Nothing typed, or the query is still inside the debounce window.
     Idle,
-    /// A request is in flight. Carries the query so the popup can say what it's
-    /// waiting on rather than showing a bare spinner.
+    /// A request is in flight. Carries the query so the same one isn't
+    /// asked twice.
     Loading(String),
     /// Results for the query, possibly empty.
     Done {
@@ -360,19 +360,12 @@ impl App {
         match state {
             // Returned above; the match still has to be total.
             RecordSearch::Idle => None,
-            RecordSearch::Loading(q) => {
-                ui.add_space(space::S2);
-                ui.horizontal(|ui| {
-                    ui.add_space(space::S3);
-                    ui.spinner();
-                    ui.label(
-                        egui::RichText::new(format!("Searching Discogs for “{q}”…"))
-                            .color(color::LABEL_3),
-                    );
-                });
-                ui.add_space(space::S2);
-                // A spinner only reads as motion if frames keep coming.
-                ui.ctx().request_repaint();
+            // The rows the answer lands in, as ghosts: the query is in the
+            // field above and the lane is named, so no words are needed.
+            RecordSearch::Loading(_) => {
+                for i in 0..RECORD_HITS_SHOWN {
+                    crate::ui::ghost_row(ui, ROW_H, ROW_COVER_PX, i);
+                }
                 None
             }
             RecordSearch::Failed(e) => {

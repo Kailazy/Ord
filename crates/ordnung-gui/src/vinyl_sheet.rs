@@ -1528,9 +1528,11 @@ impl App {
         let price_line = match &self.vinyl_sheet.as_ref().unwrap().price {
             PriceState::Ready(Some(p)) => format!("From {}", fmt_market_price(p)),
             PriceState::Ready(None) | PriceState::Elsewhere { .. } => "No copies for sale".to_string(),
-            PriceState::Loading => "Checking price…".to_string(),
+            // A ghost stands in the slot (see `price_loading`).
+            PriceState::Loading => String::new(),
             PriceState::Idle | PriceState::Failed => "Price unknown".to_string(),
         };
+        let price_loading = matches!(self.vinyl_sheet.as_ref().unwrap().price, PriceState::Loading);
         // The concrete copy this sheet was opened on (a seller card): what
         // that shop wants for it, at what grading. Snapshot like `alt` so the
         // window closure doesn't borrow the sheet.
@@ -1951,17 +1953,23 @@ impl App {
                             // The price lands after the sheet opens. Its slot
                             // is as wide as its longest reading, so the shops
                             // and Bandcamp after it don't shift when it does.
-                            let price = crate::ui::button::name_link(
-                                ui,
-                                &price_line,
-                                crate::ui::tokens::font::body(),
-                                price_ink,
-                            )
-                            .on_hover_note("Open on discogs.com");
-                            if price.clicked() {
-                                open_url(&format!("https://www.discogs.com/release/{release_id}"));
-                            }
-                            ui.add_space((text_w("No copies for sale") - price.rect.width()).max(0.0));
+                            let price_w = if price_loading {
+                                crate::ui::ghost_line(ui, 84.0, egui::TextStyle::Body);
+                                84.0
+                            } else {
+                                let price = crate::ui::button::name_link(
+                                    ui,
+                                    &price_line,
+                                    crate::ui::tokens::font::body(),
+                                    price_ink,
+                                )
+                                .on_hover_note("Open on discogs.com");
+                                if price.clicked() {
+                                    open_url(&format!("https://www.discogs.com/release/{release_id}"));
+                                }
+                                price.rect.width()
+                            };
+                            ui.add_space((text_w("No copies for sale") - price_w).max(0.0));
                             if !stocked.is_empty() {
                                 let shops = stocked
                                     .iter()
@@ -1992,13 +2000,12 @@ impl App {
                                 });
                             }
                             // The Bandcamp slot is on the line from the start:
-                            // "Looking…" until the lookup answers, then the
+                            // a ghost until the lookup answers, then the
                             // price, or that there is none. A slot that
                             // appeared with its answer moved the line.
-                            let bc_wait = if bandcamp_pending { "Looking…" } else { "Not on Bandcamp" };
                             let (line, rows, page) = match &bandcamp {
                                 Some((line, rows, page)) => (line.as_str(), rows.as_slice(), Some(page.as_str())),
-                                None => (bc_wait, &[][..], None),
+                                None => ("Not on Bandcamp", &[][..], None),
                             };
                             {
                                 // Lands after the record, so it keeps to the
@@ -2069,7 +2076,11 @@ impl App {
                                 // after the price then lists. Source, price,
                                 // tool: the two money lines keep one shape.
                                 let Some(page) = page else {
-                                    ui.label(egui::RichText::new(shown).weak());
+                                    if bandcamp_pending {
+                                        crate::ui::ghost_line(ui, 56.0, egui::TextStyle::Body);
+                                    } else {
+                                        ui.label(egui::RichText::new(shown).weak());
+                                    }
                                     return;
                                 };
                                 let url = match rows {
@@ -2408,7 +2419,7 @@ impl App {
                             ui.horizontal(|ui| {
                                 ui.set_min_height(24.0);
                                 ui.add_space(MARKER_W + POS_W);
-                                crate::ui::ghost_line(ui, 110.0 + (i * 37 % 90) as f32, egui::TextStyle::Body);
+                                crate::ui::ghost_line(ui, crate::ui::ghost_w(i, 110.0, 90), egui::TextStyle::Body);
                             });
                         }
                         return;

@@ -2375,6 +2375,13 @@ impl App {
         }
 
         if self.vinyl.is_empty() && self.wantlist.is_empty() {
+            // The first sync is on its way: the top of the wall as ghosts,
+            // not an empty state with a dead button.
+            if busy && self.vinyl_syncing {
+                ui.add_space(8.0);
+                crate::ui::ghost_wall(ui, 42.0, 2, 2);
+                return;
+            }
             ui.centered_and_justified(|ui| {
                 ui.vertical_centered(|ui| {
                     ui.heading("No vinyl synced yet");
@@ -2762,20 +2769,10 @@ impl App {
     }
 
     fn vinyl_grid(&self, ui: &mut egui::Ui, cells: &[VinylCell]) -> Option<VinylGridAction> {
-        /// Gap between cells (and the width budget for the caption under each).
-        const GAP: f32 = 14.0;
-        /// Covers size to whatever fills the row exactly: fit as many columns
-        /// as the width allows at this minimum, then stretch them so the wall
-        /// runs edge to edge with no dead margin on the right.
-        const MIN_COVER: f32 = 132.0;
-        const MAX_COVER: f32 = 170.0;
-        let avail = ui.available_width();
-        let cols = ((avail + GAP) / (MIN_COVER + GAP)).floor().max(1.0);
-        let cover_side = ((avail - GAP * (cols - 1.0)) / cols)
-            .floor()
-            .clamp(MIN_COVER.min(avail.max(1.0)), MAX_COVER);
+        const GAP: f32 = crate::ui::cover::WALL_GAP;
+        let (cols, cover_side) = crate::ui::cover::wall_fit(ui.available_width());
         ui.ctx()
-            .data_mut(|d| d.insert_temp(Self::vinyl_grid_cols_id(), cols as usize));
+            .data_mut(|d| d.insert_temp(Self::vinyl_grid_cols_id(), cols));
 
         // The record whose video is playing in the mini-player, so its cover
         // keeps a visible pause disc while the wall scrolls.

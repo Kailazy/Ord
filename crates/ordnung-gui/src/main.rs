@@ -2382,6 +2382,10 @@ struct App {
     /// Playlist id → indices into `usb_tracks`, in playlist order. Resolved by
     /// the scan worker (pdb paths matched to scanned files case-insensitively).
     usb_playlist_tracks: HashMap<u32, Vec<usize>>,
+    /// The job in the slot is the vinyl sync the user asked for (cleared when
+    /// the next job claims the slot), so empty shelves can show the wall on
+    /// its way instead of the empty state.
+    vinyl_syncing: bool,
     /// A background USB scan is in flight; drives the view's spinner and gates
     /// re-spawning. The result arrives over `usb_rx` tagged with its volume.
     usb_loading: bool,

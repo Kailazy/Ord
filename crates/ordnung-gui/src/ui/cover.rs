@@ -13,6 +13,22 @@ pub fn thumb<'a>(ui: &mut egui::Ui, side: f32, tex: Option<impl Into<egui::Image
     paint_at(ui, rect, tex, 4.0, Some(side * 0.45));
 }
 
+/// Gap between the cells of a cover wall.
+pub const WALL_GAP: f32 = 14.0;
+
+/// How a wall of covers fits `avail` width: as many columns as fit at the
+/// minimum cover, then the covers stretched so the wall runs edge to edge.
+/// The column count and the cover's side.
+pub fn wall_fit(avail: f32) -> (usize, f32) {
+    const MIN_COVER: f32 = 132.0;
+    const MAX_COVER: f32 = 170.0;
+    let cols = ((avail + WALL_GAP) / (MIN_COVER + WALL_GAP)).floor().max(1.0);
+    let side = ((avail - WALL_GAP * (cols - 1.0)) / cols)
+        .floor()
+        .clamp(MIN_COVER.min(avail.max(1.0)), MAX_COVER);
+    (cols as usize, side)
+}
+
 /// The art in `rect` the caller laid out, or the blank square where there
 /// is none; `note` puts the ♪ on the blank at that font size.
 pub fn paint_at<'a>(
@@ -30,7 +46,7 @@ pub fn paint_at<'a>(
                 .paint_at(ui, rect);
         }
         None => {
-            ui.painter().rect_filled(rect, egui::Rounding::same(rounding), egui::Color32::from_gray(34));
+            ui.painter().rect_filled(rect, egui::Rounding::same(rounding), super::tokens::color::surface_hi());
             if let Some(size) = note {
                 ui.painter().text(
                     rect.center(),

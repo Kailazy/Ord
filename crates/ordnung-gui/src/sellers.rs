@@ -667,11 +667,17 @@ impl App {
         });
         ui.add_space(4.0);
 
-        // Being read (see `ensure_seller_listings`): a spinner, not an
-        // empty shop.
+        // Being read (see `ensure_seller_listings`): the first of the stock
+        // as ghosts, not an empty shop.
         if self.seller_listings_rx.is_some() && self.seller_listings.is_empty() {
-            ui.add_space(crate::ui::tokens::space::S7);
-            ui.vertical_centered(|ui| ui.spinner());
+            if self.config.vinyl_view == "list" {
+                ui.spacing_mut().item_spacing.y = 0.0;
+                for i in 0..3 {
+                    crate::ui::ghost_row(ui, ROW_H, 60.0, i);
+                }
+            } else {
+                crate::ui::ghost_wall(ui, CAPTION_H, 3, 2);
+            }
             return;
         }
         if self.seller_listings.is_empty() {
@@ -726,9 +732,7 @@ impl App {
         // which is how a shop's crates get compared.
         let mut act: Option<SellerAct> = None;
         let list_mode = self.config.vinyl_view == "list";
-        const GAP: f32 = 14.0;
-        const MIN_COVER: f32 = 132.0;
-        const MAX_COVER: f32 = 170.0;
+        const GAP: f32 = crate::ui::cover::WALL_GAP;
         /// Caption budget under each cover: artist, title, price line.
         const CAPTION_H: f32 = 58.0;
         /// List rows run taller than the wall's: a shop is read one row at a
@@ -736,14 +740,8 @@ impl App {
         /// sleeve on its own.
         const ROW_H: f32 = 72.0;
         let avail = ui.available_width();
-        let cols = if list_mode {
-            1
-        } else {
-            (((avail + GAP) / (MIN_COVER + GAP)).floor().max(1.0)) as usize
-        };
-        let cover_side = ((avail - GAP * (cols as f32 - 1.0)) / cols as f32)
-            .floor()
-            .clamp(MIN_COVER.min(avail.max(1.0)), MAX_COVER);
+        let (grid_cols, cover_side) = crate::ui::cover::wall_fit(avail);
+        let cols = if list_mode { 1 } else { grid_cols };
         let row_h = if list_mode { ROW_H } else { cover_side + CAPTION_H + GAP };
         let n_rows = filtered.len().div_ceil(cols);
 

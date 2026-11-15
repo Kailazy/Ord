@@ -26,6 +26,10 @@ const MAX_VERSIONS: usize = 100;
 /// those turns a scannable list into a wall.
 const PANEL_W: f32 = 560.0;
 
+/// How long the list takes to grow from its ghost rows to the rows that
+/// landed.
+pub(crate) const GROW_ANIM: f32 = 0.2;
+
 /// Side of a row's sleeve thumbnail. Sized to the two text lines beside it, so
 /// the covers read as a scannable column rather than dominating the row — you
 /// pick a pressing by its stamp and catalog number, with the sleeve confirming
@@ -243,13 +247,20 @@ impl App {
                 ui.set_min_width(PANEL_W);
                 ui.set_max_width(PANEL_W);
                 ui.add_space(6.0);
+                // The list opens on a few ghost rows and grows to its cap
+                // when the pressings land, so a short answer never leaves a
+                // tall empty window behind.
+                let grow = egui::Id::new(("versions_grow", current));
                 if loading {
-                    ui.horizontal(|ui| {
-                        ui.spinner();
-                        ui.label(egui::RichText::new("Looking up versions…").weak());
-                    });
+                    let top = ui.cursor().top();
+                    for i in 0..3 {
+                        crate::ui::ghost_row(ui, THUMB, THUMB, i);
+                        ui.separator();
+                    }
+                    ui.ctx().animate_value_with_time(grow, ui.cursor().top() - top, 0.0);
                     return;
                 }
+                let list_h = ui.ctx().animate_value_with_time(grow, 440.0, GROW_ANIM);
                 if let Some(e) = &error {
                     ui.label(egui::RichText::new(e).weak());
                     return;
@@ -262,7 +273,7 @@ impl App {
                     return;
                 }
                 egui::ScrollArea::vertical()
-                    .max_height(440.0)
+                    .max_height(list_h)
                     .show(ui, |ui| {
                         for r in &rows {
                             let is_current = r.release_id == current;

@@ -373,9 +373,8 @@ impl App {
             // panel width rather than a centred square: artwork is the one
             // thing here that benefits from size, and a media panel's hero
             // image spans its column (Music, Spotify, Finder's preview all
-            // do this). While the worker decodes, a spinner on the same
-            // square so a large source image never makes the panel look
-            // empty or frozen, and nothing below jumps once the decode lands.
+            // do this). While the worker decodes, the blank sleeve holds the
+            // same square, so nothing below jumps once the decode lands.
             ui.add_space(egui::Frame::window(ui.style()).inner_margin.top);
             if let Some(tex) = &cover_tex {
                 let side = ui.available_width();
@@ -397,9 +396,13 @@ impl App {
             } else if cover_loading {
                 let side = ui.available_width();
                 let (rect, _) = ui.allocate_exact_size(egui::vec2(side, side), egui::Sense::hover());
-                ui.painter()
-                    .rect_filled(rect, crate::ui::tokens::radius::MD, color::field());
-                ui.put(rect, egui::Spinner::new());
+                crate::ui::cover::paint_at(
+                    ui,
+                    rect,
+                    None::<&egui::TextureHandle>,
+                    crate::ui::tokens::radius::MD,
+                    None,
+                );
                 ui.add_space(space::S4);
             }
 

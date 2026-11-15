@@ -120,6 +120,31 @@ pub fn gauge(p: &egui::Painter, line: egui::Rect, frac: f32, ink: egui::Color32)
     p.rect_filled(fill, tokens::radius::XS, ink);
 }
 
+/// The ink every ghost shares: the separator grey on one slow pulse read off
+/// the clock, so all the ghosts on screen breathe in phase and a wait of
+/// several seconds reads as work in progress, not a hang.
+pub fn ghost_ink(ui: &egui::Ui) -> egui::Color32 {
+    let t = ui.input(|i| i.time);
+    ui.ctx().request_repaint_after(std::time::Duration::from_millis(33));
+    // 1.0 down to 0.55 and back, 1.2 s each way.
+    let a = 0.775 + 0.225 * (t * std::f64::consts::PI / 1.2).cos() as f32;
+    tokens::color::separator_opaque().gamma_multiply(a)
+}
+
+/// The width of ghost bar `i` in a run of them: `base` plus a spread up to
+/// `span` that depends on the index alone, so the bars look like text of
+/// different lengths and hold still from frame to frame.
+pub fn ghost_w(i: usize, base: f32, span: usize) -> f32 {
+    base + (i * 37 % span) as f32
+}
+
+/// A ghost bar `w` wide centred on `line`'s left edge and middle.
+fn ghost_bar(ui: &egui::Ui, left_mid: egui::Pos2, w: f32) {
+    let h = 2.0 * tokens::radius::XS;
+    let bar = egui::Rect::from_min_size(left_mid - egui::vec2(0.0, h / 2.0), egui::vec2(w, h));
+    ui.painter().rect_filled(bar, tokens::radius::XS, ghost_ink(ui));
+}
+
 /// A line of text that hasn't arrived: a quiet bar `w` wide at the height a
 /// line of `style` takes, where the words will land. The zone keeps its
 /// place while the data loads and the text replaces the bar without moving
@@ -127,8 +152,41 @@ pub fn gauge(p: &egui::Painter, line: egui::Rect, frac: f32, ink: egui::Color32)
 pub fn ghost_line(ui: &mut egui::Ui, w: f32, style: egui::TextStyle) {
     let h = ui.text_style_height(&style);
     let (rect, _) = ui.allocate_exact_size(egui::vec2(w, h), egui::Sense::hover());
-    let bar = egui::Rect::from_center_size(rect.center(), egui::vec2(w, 2.0 * tokens::radius::XS));
-    ui.painter().rect_filled(bar, tokens::radius::XS, tokens::color::separator_opaque());
+    ghost_bar(ui, rect.left_center(), w);
+}
+
+/// A list row that hasn't arrived: the blank sleeve `thumb` square and two
+/// bars of text beside it, in a slot `h` tall across the width. `i` is the
+/// row's place in the list and only varies the bars.
+pub fn ghost_row(ui: &mut egui::Ui, h: f32, thumb: f32, i: usize) {
+    let (slot, _) = ui.allocate_exact_size(egui::vec2(ui.available_width(), h), egui::Sense::hover());
+    let pad = (h - thumb) / 2.0;
+    let art = egui::Rect::from_min_size(slot.min + egui::vec2(pad, pad), egui::vec2(thumb, thumb));
+    cover::paint_at(ui, art, None::<&egui::TextureHandle>, tokens::radius::XS, None);
+    let x = art.right() + tokens::space::S3;
+    ghost_bar(ui, egui::pos2(x, slot.center().y - 9.0), ghost_w(i, 150.0, 90));
+    ghost_bar(ui, egui::pos2(x, slot.center().y + 8.0), ghost_w(i + 2, 90.0, 70));
+}
+
+/// A wall of covers that hasn't arrived: `rows` rows of blank sleeves at the
+/// wall's own fit, each over `lines` caption bars in `caption_h`.
+pub fn ghost_wall(ui: &mut egui::Ui, caption_h: f32, lines: usize, rows: usize) {
+    let (cols, side) = cover::wall_fit(ui.available_width());
+    ui.spacing_mut().item_spacing = egui::vec2(cover::WALL_GAP, cover::WALL_GAP);
+    for row in 0..rows {
+        ui.horizontal_top(|ui| {
+            for col in 0..cols {
+                let (cell, _) =
+                    ui.allocate_exact_size(egui::vec2(side, side + caption_h), egui::Sense::hover());
+                let art = egui::Rect::from_min_size(cell.min, egui::vec2(side, side));
+                cover::paint_at(ui, art, None::<&egui::TextureHandle>, 6.0, None);
+                for l in 0..lines {
+                    let at = egui::pos2(cell.left(), art.bottom() + 12.0 + 14.0 * l as f32);
+                    ghost_bar(ui, at, ghost_w(row * cols + col + 2 * l, 60.0, 60));
+                }
+            }
+        });
+    }
 }
 
 /// The chip that floats at the pointer while something is dragged inside
