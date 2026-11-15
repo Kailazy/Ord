@@ -1101,6 +1101,8 @@ struct ArtworkChoice {
     title: String,
     year: String,
     label: String,
+    /// Catalog number; names one pressing among look-alikes.
+    catno: String,
     country: String,
     format: String,
     thumb_url: String,
@@ -1118,6 +1120,7 @@ impl ArtworkChoice {
             title: c.title,
             year: c.year,
             label: c.label,
+            catno: c.catno,
             country: c.country,
             format: c.format,
             thumb_url: c.thumb_url,

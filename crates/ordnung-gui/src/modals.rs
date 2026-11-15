@@ -1,5 +1,7 @@
 //! Split out of `main.rs`; part of the GUI `App`.
 use super::*;
+use crate::ui::phosphor_icons;
+use crate::ui::tokens::{color, font, radius};
 use crate::ui::choices::{choices, Choice};
 
 impl App {
@@ -2519,13 +2521,13 @@ Everything already on it stays as it is."
             .unwrap_or((0, 0));
         let mut apply_album = self.artwork_apply_album;
         let mut album_overwrite = self.artwork_album_overwrite;
-        // The album-mates' song names (with whether each already has a cover),
+        // The names of the other local songs on the same release,
         // cloned out so the window closure can list which tracks share the cover
         // without borrowing `self`. Empty when this track has no album-mates.
-        let album_mate_labels: Vec<(String, bool)> = self
+        let album_mate_labels: Vec<String> = self
             .artwork_album_siblings
             .as_ref()
-            .map(|(_, v)| v.iter().map(|(_, l, h)| (l.clone(), *h)).collect())
+            .map(|(_, v)| v.iter().map(|(_, l, _)| l.clone()).collect())
             .unwrap_or_default();
         let remaining = self.artwork_queue.len();
         let choices = self.artwork_queue.front().expect("front checked above");
@@ -2563,11 +2565,10 @@ Everything already on it stays as it is."
         let max_w = (screen.width() - 80.0).clamp(320.0, 560.0);
         // Space reserved for the fixed chrome (header, preview/album toggles,
         // buttons) so they stay visible; the list scrolls within the remainder.
-        let reserve = if enrich { 320.0 } else { 200.0 };
+        let reserve = if enrich { 470.0 } else { 250.0 };
         let list_h = (max_h - reserve).clamp(100.0, 360.0);
         crate::ui::window::Window::new(picker_title)
             .dismiss_on_escape(&mut stays)
-            .resizable(true)
             .default_width(460.0)
             .max_width(max_w)
             .max_height(max_h)
@@ -2578,270 +2579,264 @@ Everything already on it stays as it is."
                 ui.set_max_width(max_w);
                 ui.label(egui::RichText::new(&choices.label).strong());
                 let found = if choices.candidates.is_empty() {
-                    "Nothing found on Discogs. Paste a link to the right release".to_string()
+                    "Nothing on Discogs".to_string()
                 } else {
-                    format!(
-                        "{} on Discogs",
-                        util::count(choices.candidates.len(), "release")
-                    )
+                    format!("{} on Discogs", util::count(choices.candidates.len(), "release"))
                 };
                 ui.label(egui::RichText::new(found).small().weak());
-                // The release the search missed: paste its Discogs link and it
-                // joins the list at the top, selected.
-                crate::ui::control_row(ui, |ui| {
-                    ui.horizontal(|ui| {
-                        let field = ui.add(
-                            egui::TextEdit::singleline(&mut link)
-                                .hint_text("Paste a Discogs release link")
-                                .desired_width(ui.available_width() - 90.0),
-                        );
-                        let entered = field.lost_focus()
-                            && ui.input(|i| i.key_pressed(egui::Key::Enter));
-                        if link_busy {
-                            ui.add(egui::Spinner::new());
-                        } else if ui
-                            .add_enabled(
-                                discogs::release_id_from_link(&link).is_some(),
-                                egui::Button::new("Use link"),
-                            )
-                            .on_hover_note("Add this release to the list")
-                            .clicked()
-                            || entered
-                        {
-                            use_link = true;
-                        }
-                    });
-                });
-                if enrich {
-                }
-                ui.separator();
 
-                egui::ScrollArea::vertical()
-                    .max_height(list_h)
+                // The candidates in one outlined list. The release the search
+                // missed is its last row: paste the Discogs link and it joins
+                // the list at the top, selected.
+                let hairline = ui.visuals().widgets.noninteractive.bg_stroke;
+                egui::Frame::none()
+                    .stroke(egui::Stroke::new(1.0, color::OUTLINE))
+                    .rounding(radius::SM)
+                    .inner_margin(1.0)
                     .show(ui, |ui| {
-                        for (i, c) in choices.candidates.iter().enumerate() {
-                            let is_sel = i == selected;
-                            let resp = ui
-                                .horizontal(|ui| {
-                                    match previews.and_then(|t| t.get(i)).and_then(|t| t.as_ref()) {
-                                        Some(tex) => {
-                                            ui.add(
-                                                egui::Image::new(tex)
-                                                    .fit_to_exact_size(egui::vec2(64.0, 64.0)),
-                                            );
-                                        }
-                                        None => {
-                                            let (rect, _) = ui.allocate_exact_size(
-                                                egui::vec2(64.0, 64.0),
-                                                egui::Sense::hover(),
-                                            );
-                                            ui.painter().rect_filled(
-                                                rect,
-                                                egui::Rounding::same(3.0),
-                                                egui::Color32::from_gray(40),
-                                            );
-                                        }
+                        ui.set_width(ui.available_width());
+                        ui.spacing_mut().item_spacing.y = 0.0;
+                        if !choices.candidates.is_empty() {
+                            egui::ScrollArea::vertical().max_height(list_h).show(ui, |ui| {
+                                for (i, c) in choices.candidates.iter().enumerate() {
+                                    let is_sel = i == selected;
+                                    // The row's fill goes under its content, so
+                                    // its slot is taken before the content is laid out.
+                                    let bg = ui.painter().add(egui::Shape::Noop);
+                                    let rect = egui::Frame::none()
+                                        .inner_margin(egui::Margin::symmetric(10.0, 8.0))
+                                        .show(ui, |ui| {
+                                            ui.set_width(ui.available_width());
+                                            ui.horizontal(|ui| {
+                                                crate::ui::cover::thumb(
+                                                    ui,
+                                                    44.0,
+                                                    previews.and_then(|t| t.get(i)).and_then(|t| t.as_ref()),
+                                                );
+                                                ui.vertical(|ui| {
+                                                    ui.spacing_mut().item_spacing.y = 2.0;
+                                                    // Room for the check on the picked row.
+                                                    ui.set_width(ui.available_width() - 24.0);
+                                                    ui.add(
+                                                        egui::Label::new(
+                                                            egui::RichText::new(short(&c.title, "Untitled release"))
+                                                                .strong(),
+                                                        )
+                                                        .truncate(),
+                                                    );
+                                                    let meta = [
+                                                        c.year.as_str(),
+                                                        c.label.as_str(),
+                                                        c.catno.as_str(),
+                                                        c.country.as_str(),
+                                                        c.format.as_str(),
+                                                    ]
+                                                    .iter()
+                                                    .filter(|s| !s.is_empty())
+                                                    .cloned()
+                                                    .collect::<Vec<&str>>()
+                                                    .join(" · ");
+                                                    if !meta.is_empty() {
+                                                        ui.add(
+                                                            egui::Label::new(egui::RichText::new(meta).small().weak())
+                                                                .truncate(),
+                                                        );
+                                                    }
+                                                });
+                                                if is_sel {
+                                                    ui.label(
+                                                        egui::RichText::new(phosphor_icons::named(
+                                                            phosphor_icons::app::CHECK,
+                                                        ))
+                                                        .font(font::icon(font::body().size + 2.0))
+                                                        .color(color::accent()),
+                                                    );
+                                                }
+                                            });
+                                        })
+                                        .response
+                                        .rect;
+                                    let row = ui.interact(
+                                        rect,
+                                        egui::Id::new(("art-cand", choices.id, i)),
+                                        egui::Sense::click(),
+                                    );
+                                    let fill = if is_sel {
+                                        Some(color::accent_soft())
+                                    } else if row.hovered() {
+                                        Some(color::surface_hover())
+                                    } else {
+                                        None
+                                    };
+                                    if let Some(fill) = fill {
+                                        ui.painter().set(bg, egui::Shape::rect_filled(rect, 0.0, fill));
                                     }
-                                    ui.vertical(|ui| {
-                                        ui.label(
-                                            egui::RichText::new(short(
-                                                &c.title,
-                                                "Untitled release",
-                                            ))
-                                            .strong(),
-                                        );
-                                        let meta = [
-                                            c.year.as_str(),
-                                            c.label.as_str(),
-                                            c.country.as_str(),
-                                            c.format.as_str(),
-                                        ]
-                                        .iter()
-                                        .filter(|s| !s.is_empty())
-                                        .cloned()
-                                        .collect::<Vec<&str>>()
-                                        .join(" · ");
-                                        if !meta.is_empty() {
-                                            ui.label(egui::RichText::new(meta).small().weak());
-                                        }
-                                        ui.label(
-                                            egui::RichText::new(format!(
-                                                "Discogs release {}",
-                                                c.release_id
-                                            ))
-                                            .small()
-                                            .weak(),
-                                        );
-                                    });
-                                })
-                                .response;
-                            let row = ui.interact(
-                                resp.rect,
-                                egui::Id::new(("art-cand", choices.id, i)),
-                                egui::Sense::click(),
-                            );
-                            if is_sel {
-                                ui.painter().rect_stroke(
-                                    resp.rect,
-                                    egui::Rounding::same(4.0),
-                                    egui::Stroke::new(2.0, egui::Color32::LIGHT_BLUE),
-                                );
-                            }
-                            if row.clicked() {
-                                selected = i;
-                            }
-                            ui.separator();
+                                    ui.painter().hline(rect.x_range(), rect.bottom(), hairline);
+                                    if row.clicked() {
+                                        selected = i;
+                                    }
+                                }
+                            });
                         }
+                        egui::Frame::none()
+                            .inner_margin(egui::Margin::symmetric(10.0, 7.0))
+                            .show(ui, |ui| {
+                                crate::ui::control_row(ui, |ui| {
+                                    ui.horizontal(|ui| {
+                                        let field = ui.add(
+                                            egui::TextEdit::singleline(&mut link)
+                                                .hint_text(if choices.candidates.is_empty() {
+                                                    "Paste a Discogs link"
+                                                } else {
+                                                    "Or paste a Discogs link"
+                                                })
+                                                .desired_width(ui.available_width() - 90.0),
+                                        );
+                                        let entered = field.lost_focus()
+                                            && ui.input(|i| i.key_pressed(egui::Key::Enter));
+                                        if link_busy {
+                                            ui.add(egui::Spinner::new());
+                                        } else if crate::ui::button::button_enabled(
+                                            ui,
+                                            discogs::release_id_from_link(&link).is_some(),
+                                            "Use link",
+                                        )
+                                        .clicked()
+                                            || entered
+                                        {
+                                            use_link = true;
+                                        }
+                                    });
+                                });
+                            });
                     });
 
-                // Song-data mode: show exactly which fields the highlighted
-                // release would write (and their values) before the user commits.
-                if enrich {
+                // Song-data mode: exactly which fields the picked release
+                // writes, and their values, before the user commits.
+                if enrich && !choices.candidates.is_empty() {
                     ui.add_space(6.0);
-                    ui.checkbox(&mut overwrite, "Overwrite existing fields")
-                        .on_hover_note(
-                            "On: replace existing values too. Off: fill only empty \
-                             fields. Catalog only; files are never touched.",
-                        );
                     egui::Frame::none()
                         .fill(egui::Color32::from_gray(28))
                         .inner_margin(egui::Margin::same(8.0))
-                        .rounding(egui::Rounding::same(4.0))
-                        .show(ui, |ui| match (&preview_rows, preview_loading) {
-                            (Some(rows), _) if !rows.is_empty() => {
-                                // Scrolls when a release fills many fields, so the
-                                // grid can't push the action buttons off-screen.
-                                egui::ScrollArea::vertical()
-                                    .max_height(160.0)
-                                    .show(ui, |ui| {
-                                        egui::Grid::new(("preview-grid", choices.id))
-                                            .num_columns(2)
-                                            .spacing(egui::vec2(12.0, 4.0))
-                                            .show(ui, |ui| {
-                                                for (field, value) in rows {
-                                                    ui.label(
-                                                        egui::RichText::new(field.as_str()).weak(),
-                                                    );
-                                                    // Wrap long values (genre/style
-                                                    // lists run very long) so they
-                                                    // flow downward instead of
-                                                    // widening the modal.
-                                                    ui.add(egui::Label::new(value.as_str()).wrap());
-                                                    ui.end_row();
-                                                }
-                                            });
-                                    });
-                            }
-                            (Some(_), _) => {
-                                ui.label(
-                                    egui::RichText::new(
-                                        "No new fields",
-                                    )
-                                    .small()
-                                    .weak(),
-                                );
-                            }
-                            (None, true) => {
-                                ui.horizontal(|ui| {
-                                    ui.add(egui::Spinner::new());
-                                    ui.label(
-                                        egui::RichText::new("Loading release details…").weak(),
-                                    );
-                                });
-                            }
-                            (None, false) => {
-                                ui.label(
-                                    egui::RichText::new("Select a release to preview its fields.")
-                                        .small()
-                                        .weak(),
-                                );
-                            }
-                        });
-                }
-
-                // Song-data run: setting the cover is optional and separate from
-                // the tag fill, so enriching a track that already has artwork
-                // doesn't silently replace it. Defaulted off when the track has a
-                // cover, on when it doesn't (see the front-track refresh above).
-                if enrich {
-                    ui.add_space(6.0);
-                    ui.checkbox(&mut set_cover, "Set the album cover from this release")
-                        .on_hover_note(
-                            "On: also replace the current cover. Off: keep it and \
-                             only fill tag fields.",
-                        );
-                }
-
-                // Offer to dress the rest of the album in one go: copy the chosen
-                // cover to its album-mates. By default only the cover-less ones;
-                // an opt-in sub-toggle also overwrites mates that already have art
-                // so the whole album matches exactly. Shown only when album-mates
-                // exist, a cover is actually being written, and no save is in flight.
-                if album_total > 0 && (set_cover || !enrich) && !saving {
-                    ui.add_space(6.0);
-                    ui.checkbox(
-                        &mut apply_album,
-                        "Also apply this cover to other tracks on this album",
-                    )
-                    .on_hover_note("Copy this artwork to the album's other tracks");
-                    // Spell out exactly which tracks share this album, so the user
-                    // knows what "apply to album" (and the overwrite toggle) touches.
-                    if !album_mate_labels.is_empty() {
-                        egui::CollapsingHeader::new(format!(
-                            "{} on this album",
-                            util::count(album_mate_labels.len(), "other track")
-                        ))
-                        .id_salt(("album-mate-list", choices.id))
-                        .default_open(false)
+                        .rounding(radius::SM)
                         .show(ui, |ui| {
-                            egui::ScrollArea::vertical()
-                                .max_height(120.0)
-                                .show(ui, |ui| {
-                                    for (label, has) in &album_mate_labels {
-                                        ui.horizontal(|ui| {
-                                            ui.label(egui::RichText::new(label).small());
-                                            if *has {
-                                                ui.label(
-                                                    egui::RichText::new("· has cover")
-                                                        .small()
-                                                        .weak(),
-                                                );
-                                            }
-                                        });
+                            ui.set_width(ui.available_width());
+                            ui.horizontal(|ui| {
+                                ui.label(
+                                    egui::RichText::new(if overwrite {
+                                        "Writes to this track"
+                                    } else {
+                                        "Adds to this track"
+                                    })
+                                    .strong(),
+                                );
+                                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                    use crate::ui::button::{segmented, Segment};
+                                    if let Some(i) = segmented(
+                                        ui,
+                                        Some(overwrite as usize),
+                                        &[
+                                            Segment { icon: "", label: "Fill empty", tip: "" },
+                                            Segment {
+                                                icon: "",
+                                                label: "Replace all",
+                                                tip: "Overwrites filled fields in the catalog, never the file",
+                                            },
+                                        ],
+                                    ) {
+                                        overwrite = i == 1;
                                     }
                                 });
+                            });
+                            ui.add_space(4.0);
+                            match (&preview_rows, preview_loading) {
+                                (Some(rows), _) if !rows.is_empty() => {
+                                    // Scrolls when a release fills many fields, so the
+                                    // grid can't push the action buttons off-screen.
+                                    egui::ScrollArea::vertical()
+                                        .id_salt("preview-scroll")
+                                        .max_height(120.0)
+                                        .show(ui, |ui| {
+                                            egui::Grid::new(("preview-grid", choices.id))
+                                                .num_columns(2)
+                                                .spacing(egui::vec2(12.0, 4.0))
+                                                .show(ui, |ui| {
+                                                    for (field, value) in rows {
+                                                        ui.label(egui::RichText::new(field.as_str()).weak());
+                                                        // Long values (style lists) wrap
+                                                        // downward instead of widening the window.
+                                                        ui.add(
+                                                            egui::Label::new(
+                                                                egui::RichText::new(value.as_str())
+                                                                    .color(color::POSITIVE),
+                                                            )
+                                                            .wrap(),
+                                                        );
+                                                        ui.end_row();
+                                                    }
+                                                });
+                                        });
+                                }
+                                (Some(_), _) => {
+                                    ui.label(egui::RichText::new("No new fields").small().weak());
+                                }
+                                (None, true) => {
+                                    ui.horizontal(|ui| {
+                                        ui.add(egui::Spinner::new());
+                                        ui.label(egui::RichText::new("Loading release details…").weak());
+                                    });
+                                }
+                                // No token: nothing to preview.
+                                (None, false) => {}
+                            }
                         });
-                    }
-                    if apply_album {
+                }
+
+                // The cover toggles on one line. In a song-data run the cover is
+                // optional and separate from the tag fill, so enriching a track
+                // that already has artwork doesn't silently replace it. The
+                // second copies the chosen cover to the other local songs on
+                // the same release; hovering it lists them.
+                let any = !choices.candidates.is_empty();
+                let covers_others = any && album_total > 0 && (set_cover || !enrich) && !saving;
+                if (enrich && any) || covers_others {
+                    ui.add_space(6.0);
+                    ui.horizontal_wrapped(|ui| {
+                        if enrich {
+                            ui.checkbox(&mut set_cover, "Album cover from this release");
+                        }
+                        if covers_others {
+                            const SHOWN: usize = 15;
+                            let mut note = album_mate_labels
+                                .iter()
+                                .take(SHOWN)
+                                .map(String::as_str)
+                                .collect::<Vec<_>>()
+                                .join("\n");
+                            if album_mate_labels.len() > SHOWN {
+                                note.push_str(&format!("\nand {} more", album_mate_labels.len() - SHOWN));
+                            }
+                            ui.checkbox(
+                                &mut apply_album,
+                                format!("{} on same release", util::count(album_total, "other song")),
+                            )
+                            .on_hover_note(note);
+                        }
+                    });
+                    if covers_others && apply_album {
                         ui.indent("apply_album_opts", |ui| {
                             ui.add_enabled_ui(album_total > album_missing, |ui| {
-                                ui.checkbox(
-                                    &mut album_overwrite,
-                                    "Replace covers they already have (match the whole album)",
-                                )
-                                .on_hover_note(
-                                    "On: replace every track's cover. Off: fill only \
-                                     tracks with no cover.",
-                                );
+                                ui.checkbox(&mut album_overwrite, "Replace covers they already have");
                             });
-                            // Spell out exactly how many tracks will be touched.
-                            let n = if album_overwrite {
-                                album_total
-                            } else {
-                                album_missing
-                            };
+                            // The scope of the write: how many songs it touches.
                             let detail = if album_overwrite {
-                                format!(
-                                    "Applies to {} on this album.",
-                                    util::count(album_total, "other track")
-                                )
+                                format!("Applies to {}", util::count(album_total, "other song"))
                             } else if album_missing == 0 {
-                                "Every track on this album has a cover"
-                                    .to_string()
+                                "Every one already has a cover".to_string()
                             } else {
                                 format!(
-                                    "Applies to {}; {} with art untouched.",
-                                    util::count(n, "cover-less track"),
+                                    "Applies to {}, {} with a cover untouched",
+                                    util::count(album_missing, "song"),
                                     album_total - album_missing
                                 )
                             };
@@ -2854,60 +2849,49 @@ Everything already on it stays as it is."
                 ui.horizontal(|ui| {
                     if saving {
                         // Full-res download + write is running on a worker; show
-                        // a spinner in place of Save and lock the other controls
-                        // so the front track can't change mid-save.
+                        // a spinner in place of the buttons so the front track
+                        // can't change mid-save.
                         ui.add(egui::Spinner::new());
                         ui.label(
                             egui::RichText::new(if enrich { "Filling…" } else { "Saving…" }).weak(),
                         );
-                    } else {
-                        // Picking a release commits both its tags and its cover, so
-                        // it's available whenever a candidate exists — even if the
-                        // release adds no new fields, its artwork is still applied.
-                        let (btn_label, can_commit) = if enrich {
-                            ("Use this release", !choices.candidates.is_empty())
-                        } else {
-                            ("Save selected", !choices.candidates.is_empty())
-                        };
+                        return;
+                    }
+                    // Song-data run only: a definitive "none of these is right"
+                    // that marks the track fetched so it isn't offered again
+                    // (vs. Skip, which keeps it re-fetchable).
+                    if enrich
+                        && ui
+                            .button("None of these")
+                            .on_hover_note("Mark done so it isn't offered again. Undo from the right-click menu")
+                            .clicked()
+                    {
+                        no_match = true;
+                    }
+                    if remaining > 1 && ui.button(format!("Skip all ({remaining})")).clicked() {
+                        skip_all = true;
+                    }
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        // Picking a release commits both its tags and its cover,
+                        // so it's on whenever a candidate exists, even one that
+                        // adds no new fields.
+                        let label = if enrich { "Use this release" } else { "Save selected" };
                         if ui
-                            .add_enabled(can_commit, egui::Button::new(btn_label))
+                            .add_enabled_ui(!choices.candidates.is_empty(), |ui| {
+                                crate::ui::button::primary(ui, label)
+                            })
+                            .inner
                             .clicked()
                         {
                             save = true;
                         }
                         if ui
-                            .button("Skip track")
+                            .button("Skip")
                             .on_hover_note("Decide later. The track can be offered again")
                             .clicked()
                         {
                             skip = true;
                         }
-                        // Song-data run only: a definitive "none of these is right"
-                        // that marks the track fetched so it isn't offered again
-                        // (vs. Skip, which keeps it re-fetchable). Wrong matches
-                        // are a song-details problem; the artwork-only run has no
-                        // fetch marker to set.
-                        if enrich
-                            && ui
-                                .button("None of these")
-                                .on_hover_note(
-                                    "Mark done so it isn't offered again. Undo later \
-                                     from the right-click menu.",
-                                )
-                                .clicked()
-                        {
-                            no_match = true;
-                        }
-                        if remaining > 1 && ui.button(format!("Skip all ({remaining})")).clicked() {
-                            skip_all = true;
-                        }
-                    }
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        ui.label(
-                            egui::RichText::new(format!("{} to review", util::count(remaining, "track")))
-                                .small()
-                                .weak(),
-                        );
                     });
                 });
             });
