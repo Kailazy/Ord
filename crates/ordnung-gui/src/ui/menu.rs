@@ -51,6 +51,8 @@ const ROW_H: f32 = 26.0;
 /// Width reserved for the ✓ column in selectable rows, so labels align whether
 /// checked or not (the Apple menu convention).
 const CHECK_W: f32 = 18.0;
+/// Width a [`MenuUi::place`] row's mark is centred in.
+const MARK_W: f32 = 14.0;
 /// Horizontal text inset inside a row.
 const ROW_PAD: f32 = space::S3;
 /// Gap between the columns of a [`MenuUi::columns`] run.
@@ -507,6 +509,20 @@ impl MenuUi<'_> {
         .clicked()
     }
 
+    /// A place to go: its own mark where a [`Self::selectable`] row has its
+    /// ✓, in the accent on the accent wash while `current`. `mark` paints
+    /// around the centre it is handed, in the ink it is handed. Returns
+    /// true on click.
+    pub fn place(
+        &mut self,
+        current: bool,
+        label: impl Into<String>,
+        mark: impl Fn(&egui::Painter, egui::Pos2, egui::Color32),
+    ) -> bool {
+        self.row_marked(Some(current), Some(&mark), label.into(), None, color::LABEL, |_| false)
+            .clicked()
+    }
+
     /// A section caption, small, semibold and quiet, for a menu that
     /// groups rows under headings (facet pickers). Aligned to the row text
     /// inset.
@@ -681,6 +697,20 @@ impl MenuUi<'_> {
         text_color: egui::Color32,
         lit: impl FnOnce(&egui::Response) -> bool,
     ) -> egui::Response {
+        self.row_marked(selected, None, label, detail, text_color, lit)
+    }
+
+    /// [`Self::row`] with `mark` in the ✓ column in place of the ✓ (see
+    /// [`Self::place`]).
+    fn row_marked(
+        &mut self,
+        selected: Option<bool>,
+        mark: Option<&dyn Fn(&egui::Painter, egui::Pos2, egui::Color32)>,
+        label: String,
+        detail: Option<(String, egui::Color32)>,
+        text_color: egui::Color32,
+        lit: impl FnOnce(&egui::Response) -> bool,
+    ) -> egui::Response {
         let i = self.row;
         self.row += 1;
         // This row's entrance, 0 → 1: the first `STAGGER_ROWS` rows trail each
@@ -746,16 +776,20 @@ impl MenuUi<'_> {
         // into place. Subtle by design — the slide is 5pt over 160 ms.
         let slide = (1.0 - enter) * 5.0;
         let mut x = rect.left() + ROW_PAD + slide;
-        if selected == Some(true) {
-            painter.text(
-                egui::pos2(x, rect.center().y),
-                egui::Align2::LEFT_CENTER,
-                "✓",
-                font::body(),
-                color::accent().gamma_multiply(enter),
-            );
-        }
-        if selected.is_some() {
+        if let Some(mark) = mark {
+            let ink = if selected == Some(true) { color::accent() } else { color::LABEL_2 };
+            mark(painter, egui::pos2(x + MARK_W / 2.0, rect.center().y), ink.gamma_multiply(enter));
+            x += MARK_W + space::S2;
+        } else if let Some(on) = selected {
+            if on {
+                painter.text(
+                    egui::pos2(x, rect.center().y),
+                    egui::Align2::LEFT_CENTER,
+                    "✓",
+                    font::body(),
+                    color::accent().gamma_multiply(enter),
+                );
+            }
             x += CHECK_W;
         }
         // The detail claims its width first; the label gets the rest and

@@ -85,13 +85,14 @@ pub mod app {
     pub const USER: &str = "user";
     pub const USERS: &str = "users";
     pub const VIDEO: &str = "video";
+    pub const STOREFRONT: &str = "storefront";
 
     #[cfg(test)]
     pub const ALL: &[&str] = &[
         MUSIC_NOTE, VINYL, HEART, SPARKLE, WARNING, EJECT, LIGHTNING, PLUS, PACKAGE, TAG, FOLDER,
         FILE_AUDIO, CARET_UP, CARET_DOWN, CARET_LEFT, CARET_RIGHT, CLIPBOARD_TEXT, LOCK_KEY, WAVE_SINE, INFO,
         CHAT_TEARDROP_TEXT, MAGNIFYING_GLASS, SHUFFLE, HOUSE, PLAY, PENCIL_SIMPLE, TRASH, LINK,
-        GEAR, STAR, FUNNEL, CHECK, COPY, USER, USERS, VIDEO,
+        GEAR, STAR, FUNNEL, CHECK, COPY, USER, USERS, VIDEO, STOREFRONT,
     ];
 }
 

@@ -106,21 +106,8 @@ impl HoverNoteExt for egui::Response {
     }
 
     fn on_hover_note_now(self, text: impl Into<String>) -> Self {
-        // egui reads the delay from the style as it decides, so it is
-        // zeroed for this one attach and put back after, only when the
-        // note could show at all (see `show`).
-        if !(self.contains_pointer() || self.is_tooltip_open()) {
-            return self;
-        }
-        let ctx = self.ctx.clone();
-        let saved = ctx.style();
-        ctx.style_mut(|s| {
-            s.interaction.tooltip_delay = 0.0;
-            s.interaction.show_tooltips_only_when_still = false;
-        });
-        let resp = self.on_hover_note(text);
-        ctx.set_style(saved);
-        resp
+        let text = text.into();
+        undelayed(self, |resp| resp.on_hover_note(text))
     }
 
     fn on_hover_note_beside(self, text: impl Into<String>) -> Self {
@@ -138,16 +125,55 @@ impl HoverNoteExt for egui::Response {
         // egui sets a note's left-top 4 pt under its widget's left-bottom
         // (`find_tooltip_position`), so the note is attached to a copy of
         // the response whose rect is the point that lands it beside the
-        // widget. The copy keeps the hover flags, so the delay, the
-        // still-pointer rule and the dismissal stay egui's.
+        // widget. The copy keeps the hover flags, so the dismissal stays
+        // egui's. A rail tile's note is its label, so it is up with the
+        // pointer and fades in rather than waiting for it to rest.
         let at = egui::pos2(self.rect.right() + space::S2, self.rect.top() - 4.0);
-        egui::Response {
-            rect: egui::Rect::from_min_size(at, egui::Vec2::ZERO),
-            ..self.clone()
+        let fade = self.id.with("beside-note");
+        let mut shown = false;
+        undelayed(
+            egui::Response {
+                rect: egui::Rect::from_min_size(at, egui::Vec2::ZERO),
+                ..self.clone()
+            },
+            |resp| {
+                show(resp, |resp| {
+                    resp.on_hover_ui(|ui| {
+                        shown = true;
+                        ui.multiply_opacity(ui.ctx().animate_bool_with_time(fade, true, FADE));
+                        on_glass(ui, add);
+                    })
+                })
+            },
+        );
+        if !shown {
+            // Back to clear, so the next hover fades in from nothing.
+            self.ctx.animate_bool_with_time(fade, false, FADE);
         }
-        .on_hover_note_ui(add);
         self
     }
+}
+
+/// Seconds a beside-note takes to fade in.
+const FADE: f32 = 0.12;
+
+/// `attach` a note that is up the moment the pointer arrives. egui reads
+/// the delay from the style as it decides, so it is zeroed for this one
+/// attach and put back after, only when the note could show at all (see
+/// [`show`]).
+fn undelayed(resp: egui::Response, attach: impl FnOnce(egui::Response) -> egui::Response) -> egui::Response {
+    if !(resp.contains_pointer() || resp.is_tooltip_open()) {
+        return resp;
+    }
+    let ctx = resp.ctx.clone();
+    let saved = ctx.style();
+    ctx.style_mut(|s| {
+        s.interaction.tooltip_delay = 0.0;
+        s.interaction.show_tooltips_only_when_still = false;
+    });
+    let resp = attach(resp);
+    ctx.set_style(saved);
+    resp
 }
 
 /// The one glass entry every tooltip shares (see the module docs).
@@ -197,4 +223,33 @@ fn on_glass(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui)) {
     let rounding = ui.style().visuals.menu_rounding;
     glass::end(&ctx, slot, id, rect, rounding, stroke());
     glass::drawn(&ctx, id);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A beside-note is up as soon as the pointer is on its widget: the
+    /// pointer sweeps onto the tile and never rests, where egui's own
+    /// delay waits half a second for it to.
+    #[test]
+    fn beside_note_shows_without_a_delay() {
+        let ctx = egui::Context::default();
+        let mut open = false;
+        for i in 0..10 {
+            let input = egui::RawInput {
+                time: Some(1.0 + 0.01 * i as f64),
+                // In from the right, on the tile from the eighth pass.
+                events: vec![egui::Event::PointerMoved(egui::pos2(110.0 - 10.0 * i as f32, 20.0))],
+                ..Default::default()
+            };
+            let _ = ctx.run(input, |ctx| {
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    let tile = ui.add_sized([40.0, 40.0], egui::Button::new("V"));
+                    open = tile.on_hover_note_beside("Vinyl").is_tooltip_open();
+                });
+            });
+        }
+        assert!(open);
+    }
 }

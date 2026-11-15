@@ -4156,12 +4156,32 @@ impl App {
                         tile.on_hover_note_ui_beside(|ui| {
                             ui.set_max_width(150.0);
                             crate::ui::menu::embedded(ui, |m| {
+                                // The rail shows the glyph alone, so the
+                                // menu names the tile it hangs off.
+                                m.header("Vinyl");
                                 for (tab, label) in [
                                     (VinylTab::Shelf(VinylList::Collection), "Collection"),
                                     (VinylTab::Shelf(VinylList::Wantlist), "Wantlist"),
                                     (VinylTab::Sellers, "Market"),
                                 ] {
-                                    if m.selectable(on_vinyl && vinyl_tab == tab, label) {
+                                    let on = on_vinyl && vinyl_tab == tab;
+                                    // The shelves wear the marks their
+                                    // pills do in the captioned tile.
+                                    let mark = |p: &egui::Painter, c: egui::Pos2, ink: egui::Color32| match tab {
+                                        VinylTab::Shelf(list) => {
+                                            crate::ui::icon::shelf(p, c, crate::ui::icon::SHELF_R, ink, on, list)
+                                        }
+                                        _ => {
+                                            p.text(
+                                                c,
+                                                egui::Align2::CENTER_CENTER,
+                                                named(icons::STOREFRONT),
+                                                font::icon(font::body().size + 2.0),
+                                                ink,
+                                            );
+                                        }
+                                    };
+                                    if m.place(on, label, mark) {
                                         pick = Some(tab);
                                     }
                                 }
