@@ -2193,7 +2193,7 @@ pub(crate) fn fmt_duration(ms: u64) -> String {
 /// `RandomState` is seeded from per-process entropy plus a per-instance
 /// counter, so one fresh hasher's output is unpredictable enough for
 /// picking a shuffle track. `len` must be non-zero.
-fn random_index(len: usize) -> usize {
+pub(crate) fn random_index(len: usize) -> usize {
     use std::hash::{BuildHasher, Hasher};
     let h = std::collections::hash_map::RandomState::new().build_hasher();
     h.finish() as usize % len

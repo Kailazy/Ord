@@ -761,13 +761,23 @@ impl App {
         };
         let mut out = BrowseOut::default();
         let mut open = true;
+        let mut shuffle = false;
         let title = crate::ui::icon_text(thread_icon(snap.thread), &snap.name, crate::ui::tokens::font::title());
-        crate::ui::window::Window::new(title)
+        let mut window = crate::ui::window::Window::new(title)
             .id(egui::Id::new("browse-page"))
             .open(&mut open)
             .resizable_height()
-            .default_width(PANEL_W)
-            .show(ctx, |ui| {
+            .default_width(PANEL_W);
+        if snap.thread == BrowseThread::Artist {
+            window = window.mark(crate::ui::window::Mark {
+                glyph: crate::ui::phosphor_icons::named(crate::ui::phosphor_icons::app::SHUFFLE),
+                tip: "Play a random song",
+                enabled: self.browse_panel.as_ref().is_some_and(|p| !p.releases.is_empty()),
+                busy: self.vinyl_sheet.as_ref().is_some_and(|s| s.shuffle > 0),
+                clicked: &mut shuffle,
+            });
+        }
+        window.show(ctx, |ui| {
                 ui.set_min_width(PANEL_W);
                 ui.set_max_width(PANEL_W);
                 // The alias bar: every other name the artist records under,
@@ -797,7 +807,42 @@ impl App {
             self.browse_panel = None;
             return;
         }
+        if shuffle {
+            self.shuffle_run(5, ctx);
+        }
         self.browse_apply(ctx, snap.thread, out);
+    }
+
+    /// A row of the run opened as the record sheet.
+    fn open_run_row(&mut self, r: &BrowseRelease, ctx: &egui::Context) {
+        let (artist, title) = crate::dig::row_artist_title(r);
+        let sub = dots(&[
+            r.year.filter(|y| *y > 0).map(|y| y.to_string()).as_deref(),
+            (!r.format.trim().is_empty()).then_some(r.format.as_str()),
+        ]);
+        let thumb = (!r.thumb_url.trim().is_empty()).then(|| r.thumb_url.clone());
+        self.open_release_sheet(r.release_id, artist, title, sub, thumb, ctx);
+    }
+
+    /// Play a random song off a random record of the whole open run, from
+    /// the bottom bar with the sheet unseen, the way a tracklist line plays
+    /// (see `pending_play`). `tries`: how many records it may still draw
+    /// when one turns out to have nothing to play.
+    pub(crate) fn shuffle_run(&mut self, tries: u8, ctx: &egui::Context) {
+        let Some(r) = self
+            .browse_panel
+            .as_ref()
+            .filter(|p| !p.releases.is_empty())
+            .map(|p| p.releases[crate::player::random_index(p.releases.len())].clone())
+        else {
+            return;
+        };
+        self.open_run_row(&r, ctx);
+        if let Some(sheet) = self.vinyl_sheet.as_mut().filter(|s| s.release_id == r.release_id) {
+            sheet.pending_play = true;
+            sheet.hidden = true;
+            sheet.shuffle = tries;
+        }
     }
 
     /// The open run as the rows draw it: whose, which page, and each row
@@ -1221,13 +1266,7 @@ impl App {
         match out.act {
             Some(Act::Open(i)) => {
                 if let Some(r) = row_of(i).cloned() {
-                    let (artist, title) = crate::dig::row_artist_title(&r);
-                    let sub = dots(&[
-                        r.year.filter(|y| *y > 0).map(|y| y.to_string()).as_deref(),
-                        (!r.format.trim().is_empty()).then_some(r.format.as_str()),
-                    ]);
-                    let thumb = (!r.thumb_url.trim().is_empty()).then(|| r.thumb_url.clone());
-                    self.open_release_sheet(r.release_id, artist, title, sub, thumb, ctx);
+                    self.open_run_row(&r, ctx);
                 }
             }
             Some(Act::Want(i)) => {

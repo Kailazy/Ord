@@ -48,7 +48,20 @@ enum Place {
 /// below cover exactly what egui offers.
 pub const CORNER_GRIP: f32 = 14.0;
 
+/// A mark beside a titled window's close cross: one act on the whole
+/// window (shuffle an artist's run), named by its hover note.
+pub struct Mark<'o> {
+    /// From the app's icon face (see `phosphor_icons::named`).
+    pub glyph: &'o str,
+    pub tip: &'o str,
+    pub enabled: bool,
+    /// A spinner in the mark's place while its act is under way.
+    pub busy: bool,
+    pub clicked: &'o mut bool,
+}
+
 pub struct Window<'o> {
+    mark: Option<Mark<'o>>,
     title: egui::WidgetText,
     id: Option<egui::Id>,
     open: Option<&'o mut bool>,
@@ -82,7 +95,13 @@ impl<'o> Window<'o> {
             inner_margin: None,
             glass: None,
             spawn: None,
+            mark: None,
         }
+    }
+
+    pub fn mark(mut self, mark: Mark<'o>) -> Self {
+        self.mark = Some(mark);
+        self
     }
 
     /// An id apart from the title, for a window whose title changes (or
@@ -292,6 +311,9 @@ impl<'o> Window<'o> {
         let open = self.open;
         let escape = self.escape;
         let close = open.is_some();
+        let mark = self.mark;
+        // The title clears the mark as it does the cross.
+        let clear = title_clear(close) + if mark.is_some() { CLOSE_W } else { 0.0 };
         if self.auto_sized {
             w = w.auto_sized();
         }
@@ -377,7 +399,7 @@ impl<'o> Window<'o> {
             if let Some(rect) = last_rect.filter(|_| resizable[0] || resizable[1]) {
                 block_grips(ui, id, rect, resizable[0]);
             }
-            let bar = with_title_bar.then(|| title_row(ui, &title, close, title_gap));
+            let bar = with_title_bar.then(|| title_row(ui, &title, clear, title_gap));
             let from = first_shape(ui);
             let r = contents(ui);
             // The frame covers everything the content painted. egui wraps
@@ -438,7 +460,7 @@ impl<'o> Window<'o> {
                 ui.min_rect().right()
             };
             if let Some(bar) = bar {
-                title_bar(ui, &title, bar, close, left..=right, margin);
+                title_bar(ui, &title, bar, clear, left..=right, margin);
             }
             if close {
                 let centre_y = match bar {
@@ -446,6 +468,9 @@ impl<'o> Window<'o> {
                     None => ui.max_rect().top() + control_row_h(ui) / 2.0,
                 };
                 closed = close_button(ui, id, right, centre_y);
+            }
+            if let (Some(m), Some(bar)) = (mark, bar) {
+                *m.clicked = mark_button(ui, id, &m, right - CLOSE_W, bar.center().y);
             }
             r
         });
@@ -570,7 +595,7 @@ fn title_clear(close: bool) -> f32 {
 /// its title, up to the width egui was asked for (`default_width`, or
 /// egui's own), never past it: that's where the title gets cut instead.
 /// Returns the title's line, without the gap.
-fn title_row(ui: &mut egui::Ui, title: &egui::WidgetText, close: bool, gap: f32) -> egui::Rect {
+fn title_row(ui: &mut egui::Ui, title: &egui::WidgetText, clear: f32, gap: f32) -> egui::Rect {
     let full = title.clone().into_galley(
         ui,
         Some(egui::TextWrapMode::Extend),
@@ -582,7 +607,7 @@ fn title_row(ui: &mut egui::Ui, title: &egui::WidgetText, close: bool, gap: f32)
         .y
         .max(ui.spacing().interact_size.y)
         .max(CLOSE_SIDE);
-    let w = (full.size().x + 2.0 * title_clear(close))
+    let w = (full.size().x + 2.0 * clear)
         .min(ui.available_width())
         .max(0.0);
     let spacing = ui.spacing().item_spacing.y;
@@ -602,12 +627,12 @@ fn title_bar(
     ui: &mut egui::Ui,
     title: &egui::WidgetText,
     row: egui::Rect,
-    close: bool,
+    clear: f32,
     x: std::ops::RangeInclusive<f32>,
     margin: egui::Margin,
 ) {
     let row = egui::Rect::from_x_y_ranges(x, row.y_range());
-    let avail = (row.width() - 2.0 * title_clear(close)).max(0.0);
+    let avail = (row.width() - 2.0 * clear).max(0.0);
     let galley = title.clone().into_galley(
         ui,
         Some(egui::TextWrapMode::Truncate),
@@ -648,6 +673,30 @@ fn close_button(ui: &mut egui::Ui, id: egui::Id, right: f32, centre_y: f32) -> b
     icon::close(ui.painter(), rect.center(), icon::col(&resp), icon::CLOSE_ARM);
     ui.set_clip_rect(clip);
     resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked()
+}
+
+/// The window's [`Mark`], in the close cross's square one place in from
+/// it (`right` is the square's right edge). True when clicked.
+fn mark_button(ui: &mut egui::Ui, id: egui::Id, m: &Mark, right: f32, centre_y: f32) -> bool {
+    use super::hover::HoverNoteExt;
+    let rect = egui::Rect::from_center_size(
+        egui::pos2(right - CLOSE_SIDE / 2.0, centre_y),
+        egui::Vec2::splat(CLOSE_SIDE),
+    );
+    let live = m.enabled && !m.busy;
+    let clip = ui.clip_rect();
+    ui.set_clip_rect(clip.union(rect));
+    let sense = if live { egui::Sense::click() } else { egui::Sense::hover() };
+    let resp = ui.interact(rect, id.with("corner-mark"), sense);
+    if m.busy {
+        egui::Spinner::new().paint_at(ui, rect.shrink(5.0));
+    } else {
+        let ink = if live { icon::col(&resp) } else { icon::REST.gamma_multiply(0.5) };
+        let font = super::tokens::font::icon(super::tokens::font::body().size + 2.0);
+        ui.painter().text(rect.center(), egui::Align2::CENTER_CENTER, m.glyph, font, ink);
+    }
+    ui.set_clip_rect(clip);
+    resp.on_hover_note(m.tip).clicked()
 }
 
 /// Whether one of egui's own grips on the window is being dragged: egui

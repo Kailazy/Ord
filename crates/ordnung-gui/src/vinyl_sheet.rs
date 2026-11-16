@@ -148,6 +148,10 @@ pub(crate) struct VinylSheet {
     /// Set when the user hit play on the cover rather than opening the sheet:
     /// start the record as soon as there's a tracklist to start it from.
     pub pending_play: bool,
+    /// Set by an artist run's shuffle: the pending play starts on a random
+    /// row, and a record with nothing to play hands on to another of the
+    /// run, this many times at most.
+    pub shuffle: u8,
     /// The row a play would start on and since when it has been that row,
     /// so the readying of its video waits for the choice to settle.
     pub preload_since: Option<(usize, Instant)>,
@@ -610,6 +614,7 @@ impl App {
             video_uri: None,
             video_scrub: None,
             pending_play: false,
+            shuffle: 0,
             preload_since: None,
             price: PriceState::Idle,
             bandcamp: None,
@@ -1273,12 +1278,20 @@ impl App {
 
     /// Start a stopped record from [`VinylSheet::start_row`]: the song it was
     /// opened on when that one can play, else the first row that can.
-    fn play_sheet_from_start(&mut self, frame: &eframe::Frame) {
+    fn play_sheet_from_start(&mut self, ctx: &egui::Context, frame: &eframe::Frame) {
+        let tries = self.vinyl_sheet.as_mut().map_or(0, |s| std::mem::take(&mut s.shuffle));
         let Some(sheet) = self.vinyl_sheet.as_ref() else {
             return;
         };
-        match sheet.start_row() {
+        let row = if tries > 0 {
+            let ok: Vec<usize> = (0..sheet.rows.len()).filter(|&r| sheet.playable(r)).collect();
+            (!ok.is_empty()).then(|| ok[crate::player::random_index(ok.len())])
+        } else {
+            sheet.start_row()
+        };
+        match row {
             Some(row) => self.play_sheet_row(row, frame),
+            None if tries > 1 => self.shuffle_run(tries - 1, ctx),
             // A sheet on screen shows why nothing sounds; one unseen has
             // only the status bar to say so.
             None if sheet.hidden => {
@@ -1303,7 +1316,7 @@ impl App {
             go
         });
         if start_now {
-            self.play_sheet_from_start(frame);
+            self.play_sheet_from_start(ctx, frame);
         }
         if self.vinyl_sheet.as_ref().is_none_or(|s| s.hidden) {
             return;
@@ -2747,7 +2760,7 @@ impl App {
                             a.toggle_pause();
                         }
                     }
-                    RecordPlay::Stopped => self.play_sheet_from_start(frame),
+                    RecordPlay::Stopped => self.play_sheet_from_start(ctx, frame),
                 }
             }
             Some(Act::PlayExtra(v)) => {
