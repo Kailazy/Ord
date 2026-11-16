@@ -1655,7 +1655,20 @@ struct App {
     seller_genres: HashMap<u64, Vec<String>>,
     /// The current seller's listings and genre tags being read off the UI
     /// thread, named by seller (see `ensure_seller_listings`).
-    seller_listings_rx: Option<(String, Receiver<(Vec<SellerListing>, HashMap<u64, Vec<String>>)>)>,
+    seller_listings_rx: Option<(String, Receiver<sellers::SellerStock>)>,
+    /// The Market tab is browsing every saved shop at once: one card per
+    /// record, its cheapest copy. `seller_current` keeps the shop last
+    /// open, which is where leaving this scope lands.
+    seller_all: bool,
+    /// The shop selling each row of `seller_listings` (same indices) in the
+    /// all-shops scope; empty while one shop is open, whose rows are all its.
+    seller_listing_shops: Vec<String>,
+    /// How many saved shops stock each release, for the releases more than
+    /// one stocks: the count on a card's shops mark. Loaded with the listings.
+    seller_shop_counts: HashMap<u64, u32>,
+    /// The rows of the shops mark that is open, by release: read once when
+    /// the mark opens, not on every frame it stays open.
+    seller_mark_rows: Option<(u64, Vec<vinyl_sheet::StockedRow>)>,
     /// The crate of liked songs (see `liked`), from the `liked_songs`
     /// table, newest like first; reloaded with the catalog.
     liked: Vec<SongPin>,
@@ -1728,15 +1741,9 @@ struct App {
     seller_add: String,
     /// Genres the seller being added will keep; empty keeps every genre.
     seller_add_genres: Vec<String>,
-    /// The Sellers tab's find box: a record search across every saved
-    /// seller's cached crates, answered by a dropdown of `seller_find_hits`.
-    seller_find: String,
-    /// The find box's results, `(seller, listing)`, computed for
-    /// `seller_find_for` so a frame that types nothing re-runs no query.
-    seller_find_hits: Vec<(String, SellerListing)>,
-    seller_find_for: String,
-    /// The listing a find-box pick landed on, ringed in the crates so the
-    /// eye finds it. Cleared when the shop is switched by hand.
+    /// The listing a shops-mark pick landed on (or the keyboard cursor),
+    /// ringed in the crates so the eye finds it. Cleared when the shop is
+    /// switched by hand.
     seller_highlight: Option<u64>,
     /// Set with `seller_highlight`: the crates should scroll the ringed
     /// listing into view on the next draw, then stay put.

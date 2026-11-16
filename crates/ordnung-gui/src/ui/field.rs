@@ -35,11 +35,11 @@ const TRAILING_PAD: f32 = space::S3;
 /// under it.
 const TRAILING_GAP: f32 = space::S2;
 
-/// What a field with a trailing button hands back: the field itself, and
-/// the button, which is `None` when the field has no trailing button.
+/// What a field with trailing buttons hands back: the field itself, and
+/// its buttons left to right, in the order they were added.
 pub struct FieldResponse {
     pub field: egui::Response,
-    pub trailing: Option<egui::Response>,
+    pub trailing: Vec<egui::Response>,
 }
 
 pub struct Field<'t> {
@@ -47,7 +47,7 @@ pub struct Field<'t> {
     outline: bool,
     /// No frame stroke at rest or under the pointer either (see [`Field::quiet`]).
     quiet: bool,
-    trailing: Option<egui::WidgetText>,
+    trailing: Vec<egui::WidgetText>,
     margin: Margin,
     /// The text width asked for, kept so a trailing button can be taken
     /// out of it rather than added to the frame.
@@ -61,7 +61,7 @@ impl<'t> Field<'t> {
             edit: egui::TextEdit::singleline(text).margin(margin()),
             outline: true,
             quiet: false,
-            trailing: None,
+            trailing: Vec::new(),
             margin: margin(),
             width: None,
         }
@@ -73,7 +73,7 @@ impl<'t> Field<'t> {
             edit: egui::TextEdit::multiline(text).margin(margin()),
             outline: true,
             quiet: false,
-            trailing: None,
+            trailing: Vec::new(),
             margin: margin(),
             width: None,
         }
@@ -127,9 +127,10 @@ impl<'t> Field<'t> {
     /// row. It sits a few points in from the frame on every side, so it
     /// reads as part of the box, and the text keeps clear of it. Its click
     /// comes back through [`Field::show_with_trailing`]; `show` and `ui.add`
-    /// draw it but only hand back the field.
+    /// draw it but only hand back the field. Called again, it adds another
+    /// button to the right of the last.
     pub fn trailing(mut self, label: impl Into<egui::WidgetText>) -> Self {
-        self.trailing = Some(label.into());
+        self.trailing.push(label.into());
         self
     }
 
@@ -169,15 +170,19 @@ impl<'t> Field<'t> {
         // A field given a width keeps it: the button comes out of the
         // text's room, so the frame (and everything laid out after it)
         // stays put as the label changes ("Filters" to "Filters (2)").
-        let trailing = trailing.map(|label| {
-            let galley =
-                label.into_galley(ui, Some(egui::TextWrapMode::Extend), f32::INFINITY, font::callout());
-            let h = super::control_h(ui) - 2.0 * TRAILING_INSET;
-            let size = egui::vec2(galley.size().x + 2.0 * TRAILING_PAD, h);
-            (galley, size)
-        });
-        if let Some((_, size)) = &trailing {
-            let extra = TRAILING_GAP + size.x + TRAILING_INSET;
+        let trailing: Vec<_> = trailing
+            .into_iter()
+            .map(|label| {
+                let galley =
+                    label.into_galley(ui, Some(egui::TextWrapMode::Extend), f32::INFINITY, font::callout());
+                let h = super::control_h(ui) - 2.0 * TRAILING_INSET;
+                let size = egui::vec2(galley.size().x + 2.0 * TRAILING_PAD, h);
+                (galley, size)
+            })
+            .collect();
+        if !trailing.is_empty() {
+            let extra =
+                TRAILING_GAP + trailing.iter().map(|(_, size)| size.x + TRAILING_INSET).sum::<f32>();
             margin.right += extra;
             edit = edit.margin(margin);
             if let Some(w) = width.filter(|w| w.is_finite()) {
@@ -212,21 +217,21 @@ impl<'t> Field<'t> {
             let pass = ui.ctx().cumulative_pass_nr();
             ui.ctx().data_mut(|d| d.insert_temp(lost_focus_pass(), pass));
         }
-        let trailing = trailing.map(|(galley, size)| {
-            // The field's response rect is the text; the frame is that
-            // rect plus the (widened) margin on each side.
-            let frame = egui::Rect::from_min_max(
-                field.rect.min - egui::vec2(margin.left, margin.top),
-                field.rect.max + egui::vec2(margin.right, margin.bottom),
-            );
+        // The field's response rect is the text; the frame is that rect
+        // plus the (widened) margin on each side. The buttons are set from
+        // the frame's right edge in, the last one added outermost.
+        let frame = egui::Rect::from_min_max(
+            field.rect.min - egui::vec2(margin.left, margin.top),
+            field.rect.max + egui::vec2(margin.right, margin.bottom),
+        );
+        let mut right = frame.right();
+        let mut trailing: Vec<egui::Response> = trailing.into_iter().enumerate().rev().map(|(i, (galley, size))| {
+            right -= TRAILING_INSET + size.x;
             let rect = egui::Rect::from_min_size(
-                egui::pos2(
-                    frame.right() - TRAILING_INSET - size.x,
-                    frame.center().y - size.y / 2.0,
-                ),
+                egui::pos2(right, frame.center().y - size.y / 2.0),
                 size,
             );
-            let resp = ui.interact(rect, field.id.with("trailing"), egui::Sense::click());
+            let resp = ui.interact(rect, field.id.with(("trailing", i)), egui::Sense::click());
             // The field claims the text cursor over its whole frame; over
             // the button the pointer is a pointer.
             if resp.hovered() {
@@ -244,7 +249,8 @@ impl<'t> Field<'t> {
                 ui.painter().galley(pos, galley, visuals.text_color());
             }
             resp
-        });
+        }).collect();
+        trailing.reverse();
         FieldResponse { field, trailing }
     }
 }
@@ -339,8 +345,8 @@ mod tests {
                     .show_with_trailing(ui),
             );
         });
-        let out = out.unwrap();
-        let button = out.trailing.expect("a trailing button");
+        let mut out = out.unwrap();
+        let button = out.trailing.pop().expect("a trailing button");
         let text_rect = out.field.rect;
         let frame_right = text_rect.right() + margin().right + TRAILING_GAP + button.rect.width() + TRAILING_INSET;
         assert_eq!(button.rect.right(), frame_right - TRAILING_INSET);
@@ -365,9 +371,32 @@ mod tests {
                         .show_with_trailing(ui),
                 );
             });
-            out.unwrap().trailing.unwrap().rect.right() + TRAILING_INSET
+            out.unwrap().trailing.pop().unwrap().rect.right() + TRAILING_INSET
         };
         assert_eq!(right("Filters"), right("Filters (12)"));
+    }
+
+    /// Two trailing buttons sit side by side in the order added, both out of
+    /// the text's width.
+    #[test]
+    fn two_trailing_buttons_keep_their_order_and_the_frame() {
+        let mut text = String::new();
+        let mut out = None;
+        row_height(|ui| {
+            out = Some(
+                Field::singleline(&mut text)
+                    .width(300.0)
+                    .trailing("Shop")
+                    .trailing("Filters")
+                    .show_with_trailing(ui),
+            );
+        });
+        let out = out.unwrap();
+        let [shop, filters] = &out.trailing[..] else { panic!("two buttons") };
+        assert_eq!(shop.rect.right() + TRAILING_INSET, filters.rect.left());
+        assert!(out.field.rect.right() + TRAILING_GAP <= shop.rect.left());
+        let frame_w = filters.rect.right() + TRAILING_INSET - out.field.rect.left() + margin().left;
+        assert_eq!(frame_w, 300.0 + margin().sum().x);
     }
 
     /// Enter ends the edit and drops egui's focus in the same pass, but the

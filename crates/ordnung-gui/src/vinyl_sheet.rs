@@ -382,15 +382,16 @@ fn offer_line(o: &SellerOffer) -> String {
 
 /// One row of the sheet's "from your sellers" dropdown.
 #[derive(Debug, Clone, PartialEq)]
-struct StockedRow {
-    seller: String,
+pub(crate) struct StockedRow {
+    pub(crate) seller: String,
     /// `€21.59 · NM/Generic · SandkastenVinylstore ×2`
-    label: String,
+    pub(crate) label: String,
     /// Right-aligned: how many identical copies when more than one, and the
     /// quoted shipping — `×2 · +€5.00 shipping`, either half, or nothing.
-    detail: String,
-    /// The first listing's page — for a folded pair, the two are the same
-    /// copy twice over as far as buying goes.
+    pub(crate) detail: String,
+    /// The first listing's id and page — for a folded pair, the two are the
+    /// same copy twice over as far as buying goes.
+    pub(crate) listing_id: u64,
     uri: Option<String>,
 }
 
@@ -399,7 +400,7 @@ struct StockedRow {
 /// lines; the copy the sheet was opened on (`skip`) is left out, since it has
 /// its own line above. Order is kept — the catalog hands them over cheapest
 /// first.
-fn stocked_rows(stocked: &[SellerOffer], skip: Option<u64>) -> Vec<StockedRow> {
+pub(crate) fn stocked_rows(stocked: &[SellerOffer], skip: Option<u64>) -> Vec<StockedRow> {
     let short = crate::sellers::cond_short;
     let mut rows: Vec<(String, StockedRow, usize)> = Vec::new();
     for o in stocked.iter().filter(|o| Some(o.listing_id) != skip) {
@@ -425,6 +426,7 @@ fn stocked_rows(stocked: &[SellerOffer], skip: Option<u64>) -> Vec<StockedRow> {
                 seller: o.seller.clone(),
                 label: base,
                 detail,
+                listing_id: o.listing_id,
                 uri: o.uri.clone(),
             },
             1,
@@ -730,7 +732,7 @@ impl App {
     /// The saved sellers' cached copies of one pressing, as offers the sheet
     /// can draw — see [`VinylSheet::stocked`]. A local read, so it costs no
     /// request; a shop that was never swept simply contributes nothing.
-    fn sheet_stocked(&self, release_id: u64) -> Vec<SellerOffer> {
+    pub(crate) fn sheet_stocked(&self, release_id: u64) -> Vec<SellerOffer> {
         let Ok(cat) = Catalog::open(&self.db_path) else {
             return Vec::new();
         };

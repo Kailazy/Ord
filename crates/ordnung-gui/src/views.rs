@@ -2035,7 +2035,9 @@ impl App {
             // a wall of covers, so it shouldn't be hiding out with the utility
             // buttons on the far right.
             ui.add_space(10.0);
-            let hint = if seller_mode {
+            let hint = if seller_mode && self.seller_all {
+                "Search all shops"
+            } else if seller_mode {
                 "Search this shop"
             } else if graph_mode {
                 "Find on the map"
@@ -2054,14 +2056,27 @@ impl App {
                 &if active == 0 { "Filters".to_string() } else { format!("Filters ({active})") },
                 crate::ui::tokens::font::callout(),
             );
+            // The Market's shop sits in the field too, left of the filters:
+            // the shop is what the search searches. One width on every tab,
+            // so the field and the text typed in it hold still across a
+            // tab switch; a narrow window takes it out of the field (the
+            // right-hand group keeps its room) and then out of the shop's
+            // name, about 8 pt a letter past the filters and the text.
+            let field_w = (ui.available_width() - 340.0).clamp(200.0, 380.0);
+            let name_chars = (((field_w - 170.0) / 8.0) as usize).clamp(6, 18);
+            let shop_label = seller_mode.then(|| self.shop_segment_label(name_chars));
             let mut field = crate::ui::field::Field::singleline(&mut self.vinyl_filter)
-                .width(200.0)
+                .width(field_w)
                 .hint(hint);
+            if let Some(label) = shop_label {
+                field = field.trailing(label);
+            }
             if !graph_mode {
                 field = field.trailing(flt_label);
             }
-            let out = field.show_with_trailing(ui);
-            let flt_btn = out.trailing.map(|b| {
+            let mut trailing = field.show_with_trailing(ui).trailing.into_iter();
+            let shop_btn = if seller_mode { trailing.next() } else { None };
+            let flt_btn = trailing.next().map(|b| {
                 b.on_hover_note(if active == 0 {
                     "Filter by year, format, genre and style; each added constraint narrows further"
                         .to_string()
@@ -2085,6 +2100,9 @@ impl App {
                     .clicked()
             {
                 self.vinyl_filter.clear();
+            }
+            if let Some(shop_btn) = &shop_btn {
+                self.draw_shop_segment(ui, ctx, shop_btn);
             }
             if graph_mode {
                 // What the map gathers around: artists, or genre clouds.
@@ -2255,7 +2273,10 @@ impl App {
                     + sort_w
                     + 2.0 * gap;
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    ui.add_space(shared);
+                    // The open shop's cart takes the far end of that room.
+                    let room = ui.available_width();
+                    self.draw_shop_cart(ui, ctx);
+                    ui.add_space((shared - (room - ui.available_width())).max(0.0));
                     self.vinyl_view_toggle(ui);
                 });
                 return;
