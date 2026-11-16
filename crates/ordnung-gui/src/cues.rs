@@ -993,9 +993,6 @@ impl App {
                         .auto_shrink([false, true])
                         .show(ui, |ui| {
                             ui.spacing_mut().item_spacing.x = GAP;
-                            // Off the clip's edge, so the first chip's outline
-                            // and corner aren't shaved by it.
-                            ui.add_space(2.0);
                             for (idx, c) in &memory {
                                 let (idx, c) = (*idx, *c);
                                 let glyph = if c.is_loop() { "⟲" } else { "▸" };
@@ -1040,8 +1037,11 @@ impl App {
                                     egui::Rounding::same(radius::SM),
                                     if hot { color::surface_hover() } else { color::surface_hi() },
                                 );
+                                // Half a point in, so the whole line sits inside
+                                // the chip: at Compact the strip's clip is the
+                                // chip's own height and shaved the top and bottom.
                                 ui.painter().rect_stroke(
-                                    rect,
+                                    rect.shrink(0.5),
                                     egui::Rounding::same(radius::SM),
                                     egui::Stroke::new(
                                         1.0,
