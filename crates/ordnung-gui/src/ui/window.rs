@@ -49,7 +49,7 @@ enum Place {
 pub const CORNER_GRIP: f32 = 14.0;
 
 /// A mark beside a titled window's close cross: one act on the whole
-/// window (shuffle an artist's run), named by its hover note.
+/// window (shuffle a run), named by its hover note.
 pub struct Mark<'o> {
     /// From the app's icon face (see `phosphor_icons::named`).
     pub glyph: &'o str,

@@ -763,21 +763,19 @@ impl App {
         let mut open = true;
         let mut shuffle = false;
         let title = crate::ui::icon_text(thread_icon(snap.thread), &snap.name, crate::ui::tokens::font::title());
-        let mut window = crate::ui::window::Window::new(title)
+        crate::ui::window::Window::new(title)
             .id(egui::Id::new("browse-page"))
             .open(&mut open)
             .resizable_height()
-            .default_width(PANEL_W);
-        if snap.thread == BrowseThread::Artist {
-            window = window.mark(crate::ui::window::Mark {
+            .default_width(PANEL_W)
+            .mark(crate::ui::window::Mark {
                 glyph: crate::ui::phosphor_icons::named(crate::ui::phosphor_icons::app::SHUFFLE),
                 tip: "Play a random song",
                 enabled: self.browse_panel.as_ref().is_some_and(|p| !p.releases.is_empty()),
                 busy: self.vinyl_sheet.as_ref().is_some_and(|s| s.shuffle > 0),
                 clicked: &mut shuffle,
-            });
-        }
-        window.show(ctx, |ui| {
+            })
+            .show(ctx, |ui| {
                 ui.set_min_width(PANEL_W);
                 ui.set_max_width(PANEL_W);
                 // The alias bar: every other name the artist records under,

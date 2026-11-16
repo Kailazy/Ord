@@ -148,7 +148,7 @@ pub(crate) struct VinylSheet {
     /// Set when the user hit play on the cover rather than opening the sheet:
     /// start the record as soon as there's a tracklist to start it from.
     pub pending_play: bool,
-    /// Set by an artist run's shuffle: the pending play starts on a random
+    /// Set by a run's shuffle: the pending play starts on a random
     /// row, and a record with nothing to play hands on to another of the
     /// run, this many times at most.
     pub shuffle: u8,
