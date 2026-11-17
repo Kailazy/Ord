@@ -15,7 +15,7 @@
 use crate::error::{Error, Result};
 use crate::model::{SellerListing, Tags, VinylRecord};
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{HashMap, HashSet};
 use std::io::Cursor;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Mutex, OnceLock};
@@ -58,27 +58,12 @@ const VINYL_COVER_MAX_SIDE: u32 = 400;
 /// fire up to four search calls (see [`Client::resolve_hits`]), so pacing tracks
 /// undercounts and bursts straight through the limit. CDN image downloads are
 /// exempt: they don't count against the API rate limit.
+///
+/// One fixed pace, never a burst: bursting while Discogs reported room left
+/// spent the window, and then either drew a 429 or (with a local cap) stalled
+/// the next loads for most of a minute. A steady pace is never refused, so a
+/// load waits its turn in the queue and nothing more.
 const MIN_API_INTERVAL: Duration = Duration::from_millis(1100);
-/// Spacing while the rolling window still has room. Discogs reports how much
-/// of the 60/min window is left on every response (`X-Discogs-Ratelimit-
-/// Remaining`); while that stays above [`BURST_RESERVE`] the next request can
-/// follow the last almost immediately rather than a full second later, and the
-/// pace drops back to [`MIN_API_INTERVAL`] as the window fills. Not zero: a
-/// few concurrent workers each reading a stale "plenty left" would otherwise
-/// fire together, and the server counts what it *receives*.
-const BURST_INTERVAL: Duration = Duration::from_millis(200);
-/// Requests left in the window below which bursting stops. Holds back enough
-/// that a retry, or a worker whose response hasn't refreshed the count yet,
-/// can't tip the window into a 429.
-const BURST_RESERVE: u32 = 12;
-/// Discogs's rolling rate-limit window.
-const WINDOW: Duration = Duration::from_secs(60);
-/// Most requests this process sends inside any [`WINDOW`]: under Discogs's 60
-/// so the server's moving count, a retry or another app on the same address
-/// can't tip it. Without this a burst at [`BURST_INTERVAL`] drained the window
-/// to [`BURST_RESERVE`], and the fixed pace then spent that reserve in ~13 s
-/// while the burst was still being counted: a reliable 429 under load.
-const WINDOW_CAP: usize = 55;
 /// How long a background request sleeps before re-checking whether a
 /// foreground one is still waiting for the pace.
 const YIELD_SLICE: Duration = Duration::from_millis(40);
@@ -1364,45 +1349,21 @@ pub struct Client {
 struct PaceState {
     /// `None` until the first request.
     last: Option<Instant>,
-    /// `X-Discogs-Ratelimit-Remaining` from the latest response, decremented
-    /// locally per request sent so concurrent workers can't all spend the same
-    /// headroom before a response refreshes it. `None` until a response has
-    /// carried the header; the pace is the conservative fixed interval then.
-    remaining: Option<u32>,
-    /// When each request of the last [`WINDOW`] went out, oldest first.
-    sent: VecDeque<Instant>,
     /// After a 429: no request goes out before this.
     hold_until: Option<Instant>,
 }
 
 impl PaceState {
-    /// How long after the previous request the next may go out.
-    fn interval(&self) -> Duration {
-        match self.remaining {
-            Some(r) if r > BURST_RESERVE => BURST_INTERVAL,
-            _ => MIN_API_INTERVAL,
-        }
-    }
-
-    /// How long until the next request may go out: the spacing after the
-    /// last one, a 429's hold, and room in the local window, whichever is
-    /// latest.
-    fn wait(&mut self) -> Duration {
-        let now = Instant::now();
-        while self.sent.front().is_some_and(|t| now - *t >= WINDOW) {
-            self.sent.pop_front();
-        }
+    /// How long until the next request may go out: [`MIN_API_INTERVAL`] after
+    /// the last one, or a 429's hold, whichever is later.
+    fn wait(&self) -> Duration {
         let spaced = self
             .last
-            .map_or(Duration::ZERO, |p| self.interval().saturating_sub(p.elapsed()));
+            .map_or(Duration::ZERO, |p| MIN_API_INTERVAL.saturating_sub(p.elapsed()));
         let held = self
             .hold_until
-            .map_or(Duration::ZERO, |h| h.saturating_duration_since(now));
-        let full = match self.sent.front() {
-            Some(t) if self.sent.len() >= WINDOW_CAP => WINDOW - (now - *t),
-            _ => Duration::ZERO,
-        };
-        spaced.max(held).max(full)
+            .map_or(Duration::ZERO, |h| h.saturating_duration_since(Instant::now()));
+        spaced.max(held)
     }
 }
 
@@ -1434,8 +1395,6 @@ fn session_memo<K: std::hash::Hash + Eq, T: Clone>(
 
 static PACE: Mutex<PaceState> = Mutex::new(PaceState {
     last: None,
-    remaining: None,
-    sent: VecDeque::new(),
     hold_until: None,
 });
 
@@ -1535,45 +1494,16 @@ impl Client {
         }
     }
 
-    /// Stamp the slot as taken: now is the last request, and the window has
-    /// one fewer left until a response says otherwise.
+    /// Stamp the slot as taken: now is the last request.
     fn claim(pace: &mut PaceState) {
-        let now = Instant::now();
-        pace.last = Some(now);
-        pace.sent.push_back(now);
-        if let Some(r) = pace.remaining.as_mut() {
-            *r = r.saturating_sub(1);
-        }
+        pace.last = Some(Instant::now());
     }
 
-    /// Learn how much of the rolling window is left from a response's
-    /// `X-Discogs-Ratelimit-Remaining`. A response that doesn't carry it (a
-    /// proxy, an error page) leaves the count as it was.
-    fn note_ratelimit(resp: &ureq::Response) {
-        let Some(remaining) = resp
-            .header("X-Discogs-Ratelimit-Remaining")
-            .and_then(|v| v.trim().parse::<u32>().ok())
-        else {
-            return;
-        };
-        if let Ok(mut pace) = PACE.lock() {
-            pace.remaining = Some(remaining);
-        }
-    }
-
-    /// The window is spent: hold every request, from every worker, for
-    /// `retry_after` when Discogs sent one, else until this process's oldest
-    /// counted request leaves the window, and at least `floor`. Then go back
-    /// to the fixed pace until a response says there's room again.
+    /// Discogs refused: hold every request, from every worker, for
+    /// `retry_after` when Discogs sent one, else `floor`.
     fn note_limited(retry_after: Option<Duration>, floor: Duration) {
         if let Ok(mut pace) = PACE.lock() {
-            let now = Instant::now();
-            let clear = pace
-                .sent
-                .front()
-                .map_or(Duration::ZERO, |t| WINDOW.saturating_sub(now - *t));
-            pace.hold_until = Some(now + retry_after.unwrap_or(clear.max(floor)));
-            pace.remaining = Some(0);
+            pace.hold_until = Some(Instant::now() + retry_after.unwrap_or(floor));
         }
     }
 
@@ -1605,10 +1535,7 @@ impl Client {
             self.throttle();
             let backoff = || Duration::from_secs(2 * (attempt as u64 + 1));
             match build().call() {
-                Ok(resp) => {
-                    Self::note_ratelimit(&resp);
-                    return Ok(resp);
-                }
+                Ok(resp) => return Ok(resp),
                 Err(ureq::Error::Status(429, resp)) if attempt < MAX_RETRIES => {
                     // The wait happens in `throttle`, so every worker holds,
                     // not just this one. Floors of 10/20/30 s add up to a
@@ -1623,7 +1550,6 @@ impl Client {
                 Err(ureq::Error::Status(code, resp))
                     if (500..600).contains(&code) && attempt < MAX_RETRIES =>
                 {
-                    Self::note_ratelimit(&resp);
                     let wait = retry_after(&resp).unwrap_or_else(backoff);
                     std::thread::sleep(wait);
                     attempt += 1;
@@ -4560,23 +4486,6 @@ mod throttle_tests {
     /// per-instance clock would give each concurrent worker its own full
     /// allowance — which is exactly how the dig's prefetch started drawing 429s
     /// the moment it put a second caller on Discogs at the same time.
-    /// A window holding [`WINDOW_CAP`] sends waits for the oldest to age
-    /// out, even while the server's last count still read "plenty left".
-    #[test]
-    fn full_window_waits_for_the_oldest_send() {
-        let old = Instant::now() - Duration::from_secs(50);
-        let mut pace = PaceState {
-            last: Some(old),
-            remaining: Some(40),
-            sent: std::iter::repeat(old).take(WINDOW_CAP).collect(),
-            hold_until: None,
-        };
-        let wait = pace.wait();
-        assert!(wait > Duration::from_secs(9) && wait <= Duration::from_secs(10), "{wait:?}");
-        pace.sent.pop_back();
-        assert!(pace.wait().is_zero(), "room in the window, spacing long past");
-    }
-
     #[test]
     fn throttle_is_shared_across_separately_built_clients() {
         let a = Client::new("t");
