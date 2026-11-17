@@ -662,7 +662,7 @@ mod tests {
 /// easing in. egui spreads any wheel event of 8 pt or more over ~0.1 s, which
 /// reads as a soft ramp-up on every flick; front-loading this much of it keeps
 /// the tail smooth but makes the scroll answer the hand right away.
-const WHEEL_INSTANT_FRACTION: f32 = 0.35;
+const WHEEL_INSTANT_FRACTION: f32 = 0.6;
 
 /// Longest event egui still delivers unsmoothed (its threshold is `< 8.0`).
 const WHEEL_INSTANT_CHUNK: f32 = 7.5;
