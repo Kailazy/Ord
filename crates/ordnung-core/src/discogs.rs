@@ -15,7 +15,7 @@
 use crate::error::{Error, Result};
 use crate::model::{SellerListing, Tags, VinylRecord};
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::io::Cursor;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Mutex, OnceLock};
@@ -71,6 +71,14 @@ const BURST_INTERVAL: Duration = Duration::from_millis(200);
 /// that a retry, or a worker whose response hasn't refreshed the count yet,
 /// can't tip the window into a 429.
 const BURST_RESERVE: u32 = 12;
+/// Discogs's rolling rate-limit window.
+const WINDOW: Duration = Duration::from_secs(60);
+/// Most requests this process sends inside any [`WINDOW`]: under Discogs's 60
+/// so the server's moving count, a retry or another app on the same address
+/// can't tip it. Without this a burst at [`BURST_INTERVAL`] drained the window
+/// to [`BURST_RESERVE`], and the fixed pace then spent that reserve in ~13 s
+/// while the burst was still being counted: a reliable 429 under load.
+const WINDOW_CAP: usize = 55;
 /// How long a background request sleeps before re-checking whether a
 /// foreground one is still waiting for the pace.
 const YIELD_SLICE: Duration = Duration::from_millis(40);
@@ -1361,6 +1369,10 @@ struct PaceState {
     /// headroom before a response refreshes it. `None` until a response has
     /// carried the header; the pace is the conservative fixed interval then.
     remaining: Option<u32>,
+    /// When each request of the last [`WINDOW`] went out, oldest first.
+    sent: VecDeque<Instant>,
+    /// After a 429: no request goes out before this.
+    hold_until: Option<Instant>,
 }
 
 impl PaceState {
@@ -1370,6 +1382,27 @@ impl PaceState {
             Some(r) if r > BURST_RESERVE => BURST_INTERVAL,
             _ => MIN_API_INTERVAL,
         }
+    }
+
+    /// How long until the next request may go out: the spacing after the
+    /// last one, a 429's hold, and room in the local window, whichever is
+    /// latest.
+    fn wait(&mut self) -> Duration {
+        let now = Instant::now();
+        while self.sent.front().is_some_and(|t| now - *t >= WINDOW) {
+            self.sent.pop_front();
+        }
+        let spaced = self
+            .last
+            .map_or(Duration::ZERO, |p| self.interval().saturating_sub(p.elapsed()));
+        let held = self
+            .hold_until
+            .map_or(Duration::ZERO, |h| h.saturating_duration_since(now));
+        let full = match self.sent.front() {
+            Some(t) if self.sent.len() >= WINDOW_CAP => WINDOW - (now - *t),
+            _ => Duration::ZERO,
+        };
+        spaced.max(held).max(full)
     }
 }
 
@@ -1402,6 +1435,8 @@ fn session_memo<K: std::hash::Hash + Eq, T: Clone>(
 static PACE: Mutex<PaceState> = Mutex::new(PaceState {
     last: None,
     remaining: None,
+    sent: VecDeque::new(),
+    hold_until: None,
 });
 
 /// How many foreground requests are currently waiting for the pace. Background
@@ -1465,13 +1500,7 @@ impl Client {
             Priority::Foreground => {
                 FOREGROUND_WAITING.fetch_add(1, Ordering::SeqCst);
                 let mut pace = PACE.lock().expect("discogs throttle lock");
-                if let Some(prev) = pace.last {
-                    let interval = pace.interval();
-                    let elapsed = prev.elapsed();
-                    if elapsed < interval {
-                        std::thread::sleep(interval - elapsed);
-                    }
-                }
+                std::thread::sleep(pace.wait());
                 Self::claim(&mut pace);
                 FOREGROUND_WAITING.fetch_sub(1, Ordering::SeqCst);
             }
@@ -1482,22 +1511,19 @@ impl Client {
                 }
                 let mut pace = PACE.lock().expect("discogs throttle lock");
                 let mut yielded = false;
-                if let Some(prev) = pace.last {
-                    // Sleep in slices so a foreground request that shows up
-                    // mid-wait can have this slot: drop the lock without
-                    // stamping and go back to standing aside.
-                    loop {
-                        let interval = pace.interval();
-                        let elapsed = prev.elapsed();
-                        if elapsed >= interval {
-                            break;
-                        }
-                        if FOREGROUND_WAITING.load(Ordering::SeqCst) > 0 {
-                            yielded = true;
-                            break;
-                        }
-                        std::thread::sleep((interval - elapsed).min(YIELD_SLICE));
+                // Sleep in slices so a foreground request that shows up
+                // mid-wait can have this slot: drop the lock without stamping
+                // and go back to standing aside.
+                loop {
+                    let wait = pace.wait();
+                    if wait.is_zero() {
+                        break;
                     }
+                    if FOREGROUND_WAITING.load(Ordering::SeqCst) > 0 {
+                        yielded = true;
+                        break;
+                    }
+                    std::thread::sleep(wait.min(YIELD_SLICE));
                 }
                 if yielded {
                     drop(pace);
@@ -1512,7 +1538,9 @@ impl Client {
     /// Stamp the slot as taken: now is the last request, and the window has
     /// one fewer left until a response says otherwise.
     fn claim(pace: &mut PaceState) {
-        pace.last = Some(Instant::now());
+        let now = Instant::now();
+        pace.last = Some(now);
+        pace.sent.push_back(now);
         if let Some(r) = pace.remaining.as_mut() {
             *r = r.saturating_sub(1);
         }
@@ -1533,10 +1561,18 @@ impl Client {
         }
     }
 
-    /// The window is spent: go back to the fixed pace until a response says
-    /// there's room again.
-    fn note_limited() {
+    /// The window is spent: hold every request, from every worker, for
+    /// `retry_after` when Discogs sent one, else until this process's oldest
+    /// counted request leaves the window, and at least `floor`. Then go back
+    /// to the fixed pace until a response says there's room again.
+    fn note_limited(retry_after: Option<Duration>, floor: Duration) {
         if let Ok(mut pace) = PACE.lock() {
+            let now = Instant::now();
+            let clear = pace
+                .sent
+                .front()
+                .map_or(Duration::ZERO, |t| WINDOW.saturating_sub(now - *t));
+            pace.hold_until = Some(now + retry_after.unwrap_or(clear.max(floor)));
             pace.remaining = Some(0);
         }
     }
@@ -1574,9 +1610,12 @@ impl Client {
                     return Ok(resp);
                 }
                 Err(ureq::Error::Status(429, resp)) if attempt < MAX_RETRIES => {
-                    Self::note_limited();
-                    let wait = retry_after(&resp).unwrap_or_else(backoff);
-                    std::thread::sleep(wait);
+                    // The wait happens in `throttle`, so every worker holds,
+                    // not just this one. Floors of 10/20/30 s add up to a
+                    // whole window, so the last retry lands in a fresh one
+                    // even when the requests that spent it weren't ours.
+                    let floor = Duration::from_secs(10 * (attempt as u64 + 1));
+                    Self::note_limited(retry_after(&resp), floor);
                     attempt += 1;
                 }
                 // 5xx: server-side and usually momentary. Honour `Retry-After`
@@ -4521,6 +4560,23 @@ mod throttle_tests {
     /// per-instance clock would give each concurrent worker its own full
     /// allowance — which is exactly how the dig's prefetch started drawing 429s
     /// the moment it put a second caller on Discogs at the same time.
+    /// A window holding [`WINDOW_CAP`] sends waits for the oldest to age
+    /// out, even while the server's last count still read "plenty left".
+    #[test]
+    fn full_window_waits_for_the_oldest_send() {
+        let old = Instant::now() - Duration::from_secs(50);
+        let mut pace = PaceState {
+            last: Some(old),
+            remaining: Some(40),
+            sent: std::iter::repeat(old).take(WINDOW_CAP).collect(),
+            hold_until: None,
+        };
+        let wait = pace.wait();
+        assert!(wait > Duration::from_secs(9) && wait <= Duration::from_secs(10), "{wait:?}");
+        pace.sent.pop_back();
+        assert!(pace.wait().is_zero(), "room in the window, spacing long past");
+    }
+
     #[test]
     fn throttle_is_shared_across_separately_built_clients() {
         let a = Client::new("t");
