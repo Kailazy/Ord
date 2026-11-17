@@ -2,6 +2,7 @@
 
 # v0.153's one mid-start switch carries over to the records switch.
 mid_start = true
+cue_bar_open = true
 # The retired wide sidebar tier lands on the designed default.
 nav_density = "wide"
 # The retired inspector tiers named the old 320/440 pair.

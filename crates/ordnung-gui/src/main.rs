@@ -2577,6 +2577,14 @@ struct NowPlaying {
     /// panel. The catalog's for a library track, the stick's for a device
     /// track (read-only). See [`cues`].
     cues: Vec<Cue>,
+    /// The song's key, for the DJ view's key chip.
+    camelot: Option<Camelot>,
+    /// Where the Cue button returns to, in seconds: a CDJ's main cue. The
+    /// top of the song until the button sets one; not saved.
+    main_cue_s: f32,
+    /// The Cue button is held down on a paused deck: the song plays from
+    /// the cue and goes back to it on release.
+    cue_preview: bool,
 }
 
 /// The constant-tempo beatgrid the player overlays on the zoom lane. Beats are at

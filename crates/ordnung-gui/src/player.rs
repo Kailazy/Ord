@@ -148,6 +148,11 @@ impl App {
                     );
                 }
             }
+            let camelot = analysis
+                .as_ref()
+                .and_then(|a| a.key)
+                .map(|k| k.camelot())
+                .or_else(|| self.rows.iter().find(|r| r.id == id).and_then(|r| r.camelot));
             let cues = self.load_cues(id);
             self.cue_rename = None;
             self.now_playing = Some(NowPlaying {
@@ -161,6 +166,9 @@ impl App {
                 hires_requested: false,
                 grid,
                 cues,
+                camelot,
+                main_cue_s: 0.0,
+                cue_preview: false,
             });
             self.scrub = None;
             // The inspector follows whatever starts playing. A row click still
@@ -234,6 +242,46 @@ impl App {
         self.scrub = None;
     }
 
+    /// The Cue button, a CDJ's. Playing: back to the cue, paused there.
+    /// Paused: the cue moves to the playhead (onto the beat with Q on), and
+    /// holding the button plays from it; letting go returns to the cue.
+    fn main_cue(&mut self, pressed: bool, held: bool, playing: bool) {
+        let Some((cue, preview)) = self.now_playing.as_ref().map(|n| (n.main_cue_s, n.cue_preview)) else {
+            return;
+        };
+        if preview {
+            if !held {
+                if let Some(a) = self.audio.as_mut() {
+                    if playing {
+                        a.toggle_pause();
+                    }
+                    a.seek(cue);
+                }
+                self.now_playing.as_mut().unwrap().cue_preview = false;
+            }
+            return;
+        }
+        if !pressed {
+            return;
+        }
+        if playing {
+            if let Some(a) = self.audio.as_mut() {
+                a.toggle_pause();
+                a.seek(cue);
+            }
+            return;
+        }
+        let at = self.snap_ms(self.playhead_ms()) as f32 / 1000.0;
+        self.claim_sound(Sound::Player);
+        if let Some(a) = self.audio.as_mut() {
+            a.seek(at);
+            a.toggle_pause();
+        }
+        let np = self.now_playing.as_mut().unwrap();
+        np.main_cue_s = at;
+        np.cue_preview = true;
+    }
+
     pub(crate) fn draw_player(&mut self, ctx: &egui::Context) {
         let Some(np_id) = self.now_playing.as_ref().map(|n| n.id) else {
             return;
@@ -303,6 +351,8 @@ impl App {
         let hires = np.hires_bands.clone().unwrap_or_default();
         let grid = np.grid;
         let cues = np.cues.clone();
+        let camelot = np.camelot;
+        let cue_preview = np.cue_preview;
         let wave_style = WaveformStyle::from_config(&self.config);
 
         const ACCENT: egui::Color32 = crate::ui::tokens::color::PLAY;
@@ -316,6 +366,11 @@ impl App {
         let mut set_pitch: Option<f32> = None;
         let mut toggle_key_lock = false;
         let mut toggle_vinyl_mode = false;
+        let mut toggle_quantize = false;
+        let mut toggle_dj_view = false;
+        // The Cue button: went down this frame, and is held.
+        let mut cue_pressed = false;
+        let mut cue_held = false;
         // Set by clicking the title/artist labels; applied after the panel closure
         // (jumping rebuilds rows and selection, which needs `&mut self`).
         let mut reveal_track = false;
@@ -340,19 +395,18 @@ impl App {
         // there at once, no reveal. The panel grows by the strip and the row
         // gap after it, exactly, so the lane and the controls under it stay
         // where they were: the bar only adds height above them.
-        let cue_open = !waveform.is_empty() && self.config.cue_bar_open;
+        // The DJ view (cue bar, zoom lane, tempo, Cue) or the one-row simple
+        // player. An unanalyzed song has no lane, so it is always simple.
+        let can_dj = !waveform.is_empty();
+        let dj = can_dj && self.config.dj_view;
         let cue_bar_h = crate::cues::cue_bar_h(ctx);
         let cue_gap = crate::ui::tokens::density::get().bar_pad();
-        let cue_strip_h = if cue_open {
+        let cue_strip_h = if dj {
             cue_bar_h + cue_gap + ctx.style().spacing.item_spacing.y
         } else {
             0.0
         };
-        let panel_h = if waveform.is_empty() {
-            150.0
-        } else {
-            PANEL_BASE_H + lane_h + cue_strip_h
-        };
+        let panel_h = if dj { PANEL_BASE_H + lane_h + cue_strip_h } else { SIMPLE_H };
         let active_loop = self.active_loop_ms();
 
         // The bar is glass, like a window: the app blurred under a tint.
@@ -380,8 +434,8 @@ impl App {
                 // Zoomed detail lane — a window of `wave_zoom_secs` centered on the
                 // playhead, scrolling under it during playback. Wheel to zoom,
                 // grab and drag to scrub. Skipped for unanalyzed tracks (no waveform).
-                if !waveform.is_empty() {
-                    if cue_open {
+                if dj {
+                    {
                         // The strip is the bar and the density gap under it; the bar
                         // draws in a child, which leaves the layout to the
                         // strip (a child allocated in the parent pulled the
@@ -394,12 +448,30 @@ impl App {
                             ),
                             egui::Sense::hover(),
                         );
+                        // The bar, and at its right end the mark back to the
+                        // simple player.
+                        let side = ui.spacing().interact_size.y;
                         let bar = egui::Rect::from_min_size(
                             strip.min,
-                            egui::vec2(strip.width(), cue_bar_h),
+                            egui::vec2(strip.width() - side - 10.0, cue_bar_h),
                         );
                         let mut child = ui.new_child(egui::UiBuilder::new().max_rect(bar));
                         self.draw_cue_bar(&mut child);
+                        let mark = egui::Rect::from_center_size(
+                            egui::pos2(strip.right() - 10.0 - side / 2.0, bar.center().y),
+                            egui::vec2(side, side),
+                        );
+                        let mut child = ui.new_child(egui::UiBuilder::new().max_rect(mark));
+                        if crate::ui::button::icon(
+                            &mut child,
+                            crate::ui::phosphor_icons::named(crate::ui::phosphor_icons::app::ARROWS_IN),
+                            true,
+                        )
+                        .on_hover_note("Simple player")
+                        .clicked()
+                        {
+                            toggle_dj_view = true;
+                        }
                     }
                     // Prefer the high-res envelope; fall back to the coarse preview
                     // bands while the PCM is still decoding.
@@ -555,6 +627,21 @@ impl App {
                     }
                     ui.add_space(16.0);
 
+                    if dj {
+                        // The deck: Cue and Play, the clock counting down,
+                        // the whole song, the tempo, the key and the deck keys.
+                        let cue = cue_key(ui, cue_preview, !loading);
+                        cue_pressed = cue.is_pointer_button_down_on()
+                            && ui.input(|i| i.pointer.primary_pressed());
+                        // A preview runs until the button comes up, wherever
+                        // the pointer is by then; the widget itself stops
+                        // counting as pressed once a note covers it.
+                        cue_held = ui.input(|i| i.pointer.primary_down());
+                        if !cue_preview {
+                            let _ = cue.on_hover_note("Paused: set the cue, hold to play. Playing: back to the cue.");
+                        }
+                        ui.add_space(6.0);
+                    }
                     // Play / pause button — a white disc with a hand-drawn glyph so
                     // it renders identically regardless of which fonts are present.
                     let btn = play_disc(ui, playing, loading);
@@ -563,138 +650,94 @@ impl App {
                     }
                     ui.add_space(10.0);
 
-                    // Shuffle + smart-shuffle: plain glyphs beside the play disc,
-                    // hand-drawn like the play glyph so no icon font is needed.
-                    // Shuffle jumps to a random track from the current view; the
-                    // vinyl "DJ" button restricts the pool to tracks harmonically
-                    // compatible with the playing key on the Camelot wheel.
-                    let (sh_rect, sh) =
-                        ui.allocate_exact_size(egui::vec2(28.0, 36.0), egui::Sense::click());
-                    let sh = sh.on_hover_note("Play a random track");
-                    let col = if sh.hovered() {
-                        egui::Color32::WHITE
-                    } else {
-                        egui::Color32::from_gray(170)
-                    };
-                    crate::ui::icon::shuffle(ui.painter(), sh_rect.center(), col);
-                    if sh.hovered() {
-                        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
-                    }
-                    if sh.clicked() {
-                        shuffle = true;
-                    }
-                    ui.add_space(6.0);
-
-                    let (dj_rect, dj) =
-                        ui.allocate_exact_size(egui::vec2(30.0, 36.0), egui::Sense::click());
-                    let dj = dj.on_hover_note("Play a random track in a compatible key");
-                    let col = if dj.hovered() {
-                        egui::Color32::WHITE
-                    } else {
-                        egui::Color32::from_gray(170)
-                    };
-                    draw_vinyl_glyph(ui.painter(), dj_rect.center(), col, ACCENT);
-                    if dj.hovered() {
-                        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
-                    }
-                    if dj.clicked() {
-                        smart_shuffle = true;
-                    }
-                    ui.add_space(12.0);
-
-                    // Pitch fader and key lock: the tempo section of the deck.
-                    // The fader is a turntable's (see `ui::fader`); the key is
-                    // a CDJ's master tempo, lit while it holds the key. Both
-                    // read and drive the engine directly, so the fader keeps
-                    // its position from one record to the next as a real one
-                    // would.
-                    if let Some(v) = crate::ui::fader::pitch(
-                        ui,
-                        pitch_pct,
-                        crate::audio::PITCH_RANGE_PCT,
-                        grid.map(|g| g.bpm),
-                    ) {
-                        set_pitch = Some(v);
-                    }
-                    ui.add_space(6.0);
-                    // On a narrow window the key gives up its word for the
-                    // lock mark, and the scrubber after it gets the width.
-                    let compact = ui.available_width() < KEY_WORD_ROOM;
-                    crate::ui::control_row(ui, |ui| {
-                        let lit = key_lock.then_some(crate::ui::tokens::color::accent_hover());
-                        let key = if compact {
-                            crate::ui::button::deck_icon(
-                                ui,
-                                crate::ui::phosphor_icons::named(
-                                    crate::ui::phosphor_icons::app::LOCK_KEY,
-                                ),
-                                lit,
-                                true,
-                            )
+                    if dj {
+                        if loading && self.scrub.is_none() {
+                            ui.add_sized(egui::vec2(CLOCK_W, 36.0), egui::Spinner::new().size(14.0));
                         } else {
-                            crate::ui::button::deck(ui, "Key lock", lit, true)
-                        };
-                        if key
-                        .on_hover_note(if key_lock {
-                            "Key lock on: the fader changes tempo, the key stays"
-                        } else {
-                            "Key lock off: the fader shifts tempo and pitch like a turntable"
-                        })
-                        .clicked()
-                        {
-                            toggle_key_lock = true;
+                            deck_clock(ui, shown_frac * dur, dur);
                         }
-                        // Vinyl mode, the table's harmonic cue through a
-                        // turntable's pitch shift; its own toggle, not the
-                        // lock's inverse.
-                        let vinyl_lit =
-                            self.config.vinyl_mode.then_some(crate::ui::tokens::color::accent_hover());
-                        let vinyl = if compact {
-                            crate::ui::button::deck_icon(
-                                ui,
-                                crate::ui::phosphor_icons::named(
-                                    crate::ui::phosphor_icons::app::VINYL,
-                                ),
-                                vinyl_lit,
-                                true,
-                            )
-                        } else {
-                            crate::ui::button::deck(ui, "Vinyl", vinyl_lit, true)
-                        };
-                        if vinyl
-                            .on_hover_note(if self.config.vinyl_mode {
-                                "Vinyl mode on: new songs start at the last tempo, green keys mix at that pitch"
-                            } else {
-                                "Vinyl mode off: keys compared as tagged"
-                            })
-                            .clicked()
-                        {
-                            toggle_vinyl_mode = true;
-                        }
-                    });
-                    ui.add_space(12.0);
-
-                    // Elapsed time. Fixed-width so the digits changing during a
-                    // scrub (e.g. "0:05" → "0:00", or crossing "10:00") can't shift
-                    // the waveform that follows it — that shift was the scrub jitter.
-                    if loading && self.scrub.is_none() {
-                        // Nothing to count yet: the track is loading. The
-                        // playhead already waits at its start point.
-                        ui.add_sized(egui::vec2(46.0, 18.0), egui::Spinner::new().size(14.0));
+                        ui.add_space(8.0);
                     } else {
-                        ui.add_sized(
-                            egui::vec2(46.0, 18.0),
-                            egui::Label::new(
-                                egui::RichText::new(fmt_time(shown_frac * dur))
-                                    .font(crate::ui::tokens::font::mono_small())
-                                    .color(egui::Color32::from_gray(170)),
-                            ),
-                        );
+                        // Shuffle + smart-shuffle: plain glyphs beside the play disc,
+                        // hand-drawn like the play glyph so no icon font is needed.
+                        // Shuffle jumps to a random track from the current view; the
+                        // vinyl "DJ" button restricts the pool to tracks harmonically
+                        // compatible with the playing key on the Camelot wheel.
+                        let (sh_rect, sh) =
+                            ui.allocate_exact_size(egui::vec2(28.0, 36.0), egui::Sense::click());
+                        let sh = sh.on_hover_note("Play a random track");
+                        let col = if sh.hovered() {
+                            egui::Color32::WHITE
+                        } else {
+                            egui::Color32::from_gray(170)
+                        };
+                        crate::ui::icon::shuffle(ui.painter(), sh_rect.center(), col);
+                        if sh.hovered() {
+                            ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+                        }
+                        if sh.clicked() {
+                            shuffle = true;
+                        }
+                        ui.add_space(6.0);
+
+                        let (dj_rect, djr) =
+                            ui.allocate_exact_size(egui::vec2(30.0, 36.0), egui::Sense::click());
+                        let djr = djr.on_hover_note("Play a random track in a compatible key");
+                        let col = if djr.hovered() {
+                            egui::Color32::WHITE
+                        } else {
+                            egui::Color32::from_gray(170)
+                        };
+                        draw_vinyl_glyph(ui.painter(), dj_rect.center(), col, ACCENT);
+                        if djr.hovered() {
+                            ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+                        }
+                        if djr.clicked() {
+                            smart_shuffle = true;
+                        }
+                        ui.add_space(12.0);
+
+                        // Elapsed time. Fixed-width so the digits changing during a
+                        // scrub (e.g. "0:05" → "0:00", or crossing "10:00") can't shift
+                        // the waveform that follows it — that shift was the scrub jitter.
+                        if loading && self.scrub.is_none() {
+                            // Nothing to count yet: the track is loading. The
+                            // playhead already waits at its start point.
+                            ui.add_sized(egui::vec2(46.0, 18.0), egui::Spinner::new().size(14.0));
+                        } else {
+                            ui.add_sized(
+                                egui::vec2(46.0, 18.0),
+                                egui::Label::new(
+                                    egui::RichText::new(fmt_time(shown_frac * dur))
+                                        .font(crate::ui::tokens::font::mono_small())
+                                        .color(egui::Color32::from_gray(170)),
+                                ),
+                            );
+                        }
                     }
 
-                    // Scrubber — fills the space left after the trailing time label
-                    // and close button.
-                    let track_w = (ui.available_width() - 86.0).max(60.0);
+                    // What the row keeps right of the song strip. In the DJ
+                    // view on a narrow window the deck keys give up their
+                    // words for their marks, and the strip gets the width.
+                    let gap = ui.spacing().item_spacing.x;
+                    let side = ui.spacing().interact_size.y;
+                    let close_w = 4.0 + 24.0 + gap;
+                    let mark_w = if can_dj { side + gap } else { 0.0 };
+                    let words_w = 156.0 + 3.0 * gap;
+                    let tail = |compact: bool| {
+                        if dj {
+                            12.0 + crate::ui::fader::W + 8.0 + KEY_CHIP_W + 8.0
+                                + if compact { 106.0 + 3.0 * gap } else { words_w }
+                                + close_w
+                                + 4.0 * gap
+                        } else {
+                            6.0 + 46.0 + 4.0 + mark_w + close_w + gap
+                        }
+                    };
+                    let compact = dj && ui.available_width() - tail(false) < MIN_STRIP_W;
+
+                    // Scrubber — fills the space the tail leaves.
+                    let track_w = (ui.available_width() - tail(compact)).max(60.0);
                     let (rect, resp) = ui.allocate_exact_size(
                         egui::vec2(track_w, 40.0),
                         egui::Sense::click_and_drag(),
@@ -728,9 +771,109 @@ impl App {
                         seek_to = Some(s);
                     }
 
-                    // Total time.
-                    ui.add_space(6.0);
-                    time_readout(ui, &fmt_time(dur));
+                    if dj {
+                        ui.add_space(12.0);
+                        // The tempo is the BPM itself (see `ui::fader`). It
+                        // reads and drives the engine directly, so it keeps
+                        // its setting from one record to the next.
+                        if let Some(v) = crate::ui::fader::pitch(
+                            ui,
+                            pitch_pct,
+                            crate::audio::PITCH_RANGE_PCT,
+                            grid.map(|g| g.bpm),
+                        ) {
+                            set_pitch = Some(v);
+                        }
+                        ui.add_space(8.0);
+                        key_chip(ui, camelot);
+                        ui.add_space(8.0);
+                        crate::ui::control_row(ui, |ui| {
+                            let lit = key_lock.then_some(crate::ui::tokens::color::accent_hover());
+                            let key = if compact {
+                                crate::ui::button::deck_icon(
+                                    ui,
+                                    crate::ui::phosphor_icons::named(
+                                        crate::ui::phosphor_icons::app::LOCK_KEY,
+                                    ),
+                                    lit,
+                                    true,
+                                )
+                            } else {
+                                crate::ui::button::deck(ui, "Key lock", lit, true)
+                            };
+                            if key
+                                .on_hover_note(if key_lock {
+                                    "Key lock on: the tempo changes, the key stays"
+                                } else {
+                                    "Key lock off: tempo and pitch move together like a turntable"
+                                })
+                                .clicked()
+                            {
+                                toggle_key_lock = true;
+                            }
+                            // Vinyl mode, the table's harmonic cue through a
+                            // turntable's pitch shift; its own toggle, not the
+                            // lock's inverse.
+                            let vinyl_lit = self
+                                .config
+                                .vinyl_mode
+                                .then_some(crate::ui::tokens::color::accent_hover());
+                            let vinyl = if compact {
+                                crate::ui::button::deck_icon(
+                                    ui,
+                                    crate::ui::phosphor_icons::named(
+                                        crate::ui::phosphor_icons::app::VINYL,
+                                    ),
+                                    vinyl_lit,
+                                    true,
+                                )
+                            } else {
+                                crate::ui::button::deck(ui, "Vinyl", vinyl_lit, true)
+                            };
+                            if vinyl
+                                .on_hover_note(if self.config.vinyl_mode {
+                                    "Vinyl mode on: new songs start at the last tempo, green keys mix at that pitch"
+                                } else {
+                                    "Vinyl mode off: keys compared as tagged"
+                                })
+                                .clicked()
+                            {
+                                toggle_vinyl_mode = true;
+                            }
+                            let quantize = self.config.cue_quantize;
+                            if crate::ui::button::deck(
+                                ui,
+                                "Q",
+                                quantize.then_some(crate::ui::tokens::color::accent_hover()),
+                                true,
+                            )
+                            .on_hover_note(if quantize {
+                                "Quantize on: cues and loops snap to the beat"
+                            } else {
+                                "Quantize off: cues land exactly at the playhead"
+                            })
+                            .clicked()
+                            {
+                                toggle_quantize = true;
+                            }
+                        });
+                    } else {
+                        // Total time.
+                        ui.add_space(6.0);
+                        time_readout(ui, &fmt_time(dur));
+                        ui.add_space(4.0);
+                        if can_dj
+                            && crate::ui::button::icon(
+                                ui,
+                                crate::ui::phosphor_icons::named(crate::ui::phosphor_icons::app::ARROWS_OUT),
+                                true,
+                            )
+                            .on_hover_note("DJ view")
+                            .clicked()
+                        {
+                            toggle_dj_view = true;
+                        }
+                    }
 
                     // Dismiss the player.
                     ui.add_space(4.0);
@@ -778,6 +921,15 @@ impl App {
             }
             let _ = self.config.save();
         }
+        if toggle_quantize {
+            self.config.cue_quantize = !self.config.cue_quantize;
+            let _ = self.config.save();
+        }
+        if toggle_dj_view {
+            self.config.dj_view = !self.config.dj_view;
+            let _ = self.config.save();
+        }
+        self.main_cue(cue_pressed, cue_held, playing);
         if toggle {
             // Resuming from the bar is a start too: a video that paused this
             // track must not keep playing under it.
@@ -1344,8 +1496,6 @@ impl App {
             } else {
                 false
             };
-            // Cues: the CUES tab beside GRID toggles the cue bar above the lane.
-            self.draw_cue_tab(ui, rect);
 
             // Grab and scrub: pressing holds the record where it is, dragging
             // pulls the waveform under the fixed playhead by exactly the hand's
@@ -1446,7 +1596,7 @@ impl App {
 /// hovered, lit while what it opens is showing. It senses drags as well as
 /// clicks so a press on it never falls through to the lane underneath,
 /// which would grab the record and hold the playhead.
-pub(crate) fn lane_tab(
+fn lane_tab(
     ui: &mut egui::Ui,
     rect: egui::Rect,
     salt: &str,
@@ -2770,14 +2920,16 @@ fn zoom_step(secs: f32) -> usize {
         .unwrap_or(ZOOM_STEPS_SECS.len() - 1)
 }
 
-/// Room left on the artwork row, after the pitch fader, under which the key
-/// lock and vinyl buttons drop their words for their marks: the words take
-/// 68 and 50 pt, the marks 34 each, and past the 12 pt gap, the 46 pt clock
-/// and the 86 pt tail (time and close) the scrubber wants 240 pt or so to
-/// be worth looking at.
-const KEY_WORD_ROOM: f32 = 520.0;
-
-/// How long the cue bar takes to slide into or out of the player.
+/// Narrowest the DJ view's song strip may get before the deck keys drop
+/// their words (Key lock 68, Vinyl 50, Q 30 pt) for their marks.
+const MIN_STRIP_W: f32 = 240.0;
+/// The DJ view's countdown clock column.
+const CLOCK_W: f32 = 96.0;
+/// The DJ view's key chip.
+const KEY_CHIP_W: f32 = 40.0;
+/// The simple player: the frame's margins, the top gap, the 56 pt artwork
+/// row and the gap under it.
+const SIMPLE_H: f32 = 2.0 + PANEL_TOP_GAP + 56.0 + LANE_ROW_GAP + 2.0;
 
 /// Default pixel height of the moving zoomed detail lane.
 pub(crate) const DEFAULT_LANE_H: f32 = 46.0;
@@ -3332,6 +3484,88 @@ fn fill_envelope(mesh: &mut egui::epaint::Mesh, pts: &[(f32, f32, egui::Color32)
 /// glyph, so it renders identically regardless of which fonts are present.
 /// `loading` shows an ellipsis while the engine brings the track in. The
 /// caller reads `clicked()` off the response.
+/// The DJ view's Cue key: an orange outline beside the play disc, filled
+/// while it is held. `enabled` is off while the song loads.
+fn cue_key(ui: &mut egui::Ui, held: bool, enabled: bool) -> egui::Response {
+    use crate::ui::tokens::{color, font};
+    let (rect, resp) = ui.allocate_exact_size(
+        egui::vec2(48.0, 36.0),
+        if enabled { egui::Sense::click() } else { egui::Sense::hover() },
+    );
+    let r = egui::Rounding::same(18.0);
+    let ink = if enabled { color::ORANGE } else { color::ORANGE.gamma_multiply(0.35) };
+    let down = held || resp.is_pointer_button_down_on();
+    if down {
+        ui.painter().rect_filled(rect, r, ink);
+    } else {
+        if resp.hovered() {
+            ui.painter().rect_filled(rect, r, color::surface_hover());
+        }
+        ui.painter().rect_stroke(rect.shrink(0.75), r, egui::Stroke::new(1.5, ink));
+    }
+    ui.painter().text(
+        rect.center(),
+        egui::Align2::CENTER_CENTER,
+        "CUE",
+        font::strong(font::footnote().size),
+        if down { egui::Color32::from_gray(16) } else { ink },
+    );
+    if enabled && resp.hovered() {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+    }
+    resp
+}
+
+/// The DJ view's clock: the time left, large and to a tenth, turning orange
+/// in the last thirty seconds; the time played and the length under it.
+fn deck_clock(ui: &mut egui::Ui, at: f32, dur: f32) {
+    use crate::ui::tokens::{color, font};
+    let tenths = |s: f32| {
+        let t = (s.max(0.0) * 10.0).floor() as u64;
+        format!("{}:{:02}.{}", t / 600, (t / 10) % 60, t % 10)
+    };
+    let left = (dur - at).max(0.0);
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(CLOCK_W, 36.0), egui::Sense::hover());
+    ui.painter().text(
+        egui::pos2(rect.right(), rect.top()),
+        egui::Align2::RIGHT_TOP,
+        format!("-{}", tenths(left)),
+        font::strong(font::title().size),
+        if dur > 0.0 && left < 30.0 { color::ORANGE } else { color::LABEL },
+    );
+    ui.painter().text(
+        egui::pos2(rect.right(), rect.bottom()),
+        egui::Align2::RIGHT_BOTTOM,
+        format!("{} / {}", fmt_time(at), fmt_time(dur)),
+        font::mono_small(),
+        color::LABEL_3,
+    );
+}
+
+/// The DJ view's key: the Camelot key on its wheel colour, the same colour
+/// the Key column gives it. An empty well when the song has no key.
+fn key_chip(ui: &mut egui::Ui, camelot: Option<ordnung_core::model::key::Camelot>) {
+    use crate::ui::tokens::{color, font, radius};
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(KEY_CHIP_W, 28.0), egui::Sense::hover());
+    let r = egui::Rounding::same(radius::SM);
+    match camelot {
+        Some(c) => {
+            let bg = crate::table::camelot_color(c);
+            ui.painter().rect_filled(rect, r, bg);
+            ui.painter().text(
+                rect.center(),
+                egui::Align2::CENTER_CENTER,
+                c.label(),
+                font::strong(font::headline().size),
+                crate::table::chip_text_color(bg),
+            );
+        }
+        None => {
+            ui.painter().rect_filled(rect, r, color::field());
+        }
+    }
+}
+
 pub(crate) fn play_disc(ui: &mut egui::Ui, playing: bool, loading: bool) -> egui::Response {
     let (btn_rect, btn) = ui.allocate_exact_size(egui::vec2(36.0, 36.0), egui::Sense::click());
     let c = btn_rect.center();

@@ -170,11 +170,11 @@ pub struct Config {
     /// imported, instead of waiting for the explicit "Analyze" action. On by
     /// default; defaults to on for older configs that predate the field too.
     pub auto_analyze: bool,
-    /// The cue bar (hot cue pads, loop, memory cues) is showing above the
-    /// player's zoom lane. Mirrors the lane's CUES tab so it comes back the
-    /// way it was left. Hidden by default: the player stays a bar until a
-    /// DJ asks for pads.
-    pub cue_bar_open: bool,
+    /// The player is in its DJ view (cue bar, zoom lane, tempo, main cue)
+    /// rather than the simple one-row player. Off by default: the player
+    /// stays a bar until a DJ expands it. Was `cue_bar_open`.
+    #[serde(alias = "cue_bar_open")]
+    pub dj_view: bool,
     /// Quantize: new cues and loops snap to the track's beatgrid, and beat
     /// loops are exact beat multiples, the way rekordbox's Q button works.
     /// Off, cues land exactly where the playhead is.
@@ -761,7 +761,7 @@ impl Default for Config {
             artist_run_by_alias: false,
             startup_view: StartupView::Library,
             auto_analyze: true,
-            cue_bar_open: false,
+            dj_view: false,
             cue_quantize: true,
             auto_write_tags: true,
             onboarding_completed_version: 0,
@@ -1235,7 +1235,7 @@ mod tests {
             artist_run_by_alias: true,
             startup_view: StartupView::Recent,
             auto_analyze: false,
-            cue_bar_open: true,
+            dj_view: true,
             cue_quantize: false,
             auto_write_tags: false,
             onboarding_completed_version: 3,
@@ -1336,6 +1336,7 @@ mod tests {
         let c: Config = toml::from_str(LEGACY).unwrap();
         assert!(c.mid_start_videos);
         assert!(!c.mid_start_files);
+        assert!(c.dj_view);
         assert_eq!(c.nav_density, NavDensity::Narrow);
         assert_eq!(c.inspector_density, InspectorDensity::Expanded);
         assert_eq!(c.discogs_auto_match, ReleaseAutoMatch::MostCollected);

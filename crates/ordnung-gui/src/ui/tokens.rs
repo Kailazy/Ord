@@ -147,8 +147,6 @@ pub mod color {
     /// translucent, so it reads as one flat line rather than a tint of what
     /// sits behind it. The way a macOS toolbar button sits on its bar.
     pub const OUTLINE: Color32 = Color32::from_rgb(78, 78, 82);
-    /// The same outline while the pointer is on the control.
-    pub const OUTLINE_HOVER: Color32 = Color32::from_rgb(98, 98, 102);
 
     // --- Labels, primary → faint ---
     pub const LABEL: Color32 = Color32::from_rgb(235, 235, 240);
