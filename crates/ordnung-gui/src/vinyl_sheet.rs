@@ -1937,37 +1937,35 @@ impl App {
                         } else if loading {
                             crate::ui::ghost_line(ui, 160.0, egui::TextStyle::Small);
                         }
-                        // What it costs, right under what it is — the sheet is
-                        // where the buy decision happens. One row, each
-                        // price under the name of the shop it comes from:
-                        // the Discogs market on the left, the same record
-                        // new from the artist or label on Bandcamp on the
-                        // right, a rule between them. Each price is the link
-                        // to its page. Next to the Discogs
-                        // price, the shops the user already digs through
-                        // that have this pressing in stock, folded into one
-                        // dropdown so five copies don't take five lines; it
-                        // reads from the sellers' cached crates, so it's
-                        // exactly as fresh as the last sweep.
-                        // The controls on these lines are compact: the
-                        // lines keep the pitch of the text above them, and a
-                        // dropdown landing later does not move the row.
-                        ui.horizontal_wrapped(|ui| {
-                            ui.spacing_mut().item_spacing.x = 6.0;
-                            let price_ink = crate::ui::tokens::color::POSITIVE;
-                            let font = egui::TextStyle::Body.resolve(ui.style());
-                            let ctx = ui.ctx().clone();
-                            let text_w = move |s: &str| {
-                                ctx.fonts(|f| {
-                                    f.layout_no_wrap(s.to_owned(), font.clone(), price_ink)
-                                        .size()
-                                        .x
-                                })
-                            };
-                            ui.label(egui::RichText::new("Discogs").weak());
-                            // The price lands after the sheet opens. Its slot
-                            // is as wide as its longest reading, so the shops
-                            // and Bandcamp after it don't shift when it does.
+                        // What it costs, right under what it is: the sheet is
+                        // where the buy decision happens. Set as a table, one
+                        // row per source: its name, its price (the link to
+                        // its page), and the tool that goes with it (the
+                        // shops you follow that stock it, another pressing,
+                        // Bandcamp's formats). Every price slot is as wide as
+                        // the longest Discogs reading, so the two prices and
+                        // their chips line up and nothing moves when the
+                        // answers land. The rows are there from the first
+                        // frame; the copy a seller card opened is known then.
+                        ui.add_space(4.0);
+                        let price_ink = crate::ui::tokens::color::POSITIVE;
+                        let body = crate::ui::tokens::font::body();
+                        let text_w = |ui: &egui::Ui, s: &str| {
+                            ui.fonts(|f| f.layout_no_wrap(s.to_owned(), body.clone(), price_ink).size().x)
+                        };
+                        let word_w = ["Discogs", "This copy", "Bandcamp"]
+                            .into_iter()
+                            .map(|w| text_w(ui, w))
+                            .fold(0.0, f32::max)
+                            + 12.0;
+                        let slot_w = text_w(ui, "No copies for sale") + 12.0;
+                        let source = |ui: &mut egui::Ui, word: &str| {
+                            let r = ui.label(egui::RichText::new(word).weak());
+                            ui.add_space(word_w - r.rect.width());
+                        };
+                        crate::ui::text_line(ui, |ui| {
+                            ui.spacing_mut().item_spacing.x = 0.0;
+                            source(ui, "Discogs");
                             let price_w = if price_loading {
                                 crate::ui::ghost_line(ui, 84.0, egui::TextStyle::Body);
                                 84.0
@@ -1975,7 +1973,7 @@ impl App {
                                 let price = crate::ui::button::name_link(
                                     ui,
                                     &price_line,
-                                    crate::ui::tokens::font::body(),
+                                    body.clone(),
                                     price_ink,
                                 )
                                 .on_hover_note("Open on discogs.com");
@@ -1984,7 +1982,7 @@ impl App {
                                 }
                                 price.rect.width()
                             };
-                            ui.add_space((text_w("No copies for sale") - price_w).max(0.0));
+                            ui.add_space((slot_w - price_w).max(6.0));
                             if !stocked.is_empty() {
                                 let shops = stocked
                                     .iter()
@@ -2013,122 +2011,24 @@ impl App {
                                         }
                                     }
                                 });
-                            }
-                            // The Bandcamp slot is on the line from the start:
-                            // a ghost until the lookup answers, then the
-                            // price, or that there is none. A slot that
-                            // appeared with its answer moved the line.
-                            let (line, rows, page) = match &bandcamp {
-                                Some((line, rows, page)) => (line.as_str(), rows.as_slice(), Some(page.as_str())),
-                                None => ("Not on Bandcamp", &[][..], None),
-                            };
-                            {
-                                // Lands after the record, so it keeps to the
-                                // room left on the line: the shop's name goes
-                                // first when tight, then the price is cut (the
-                                // dropdown has every format in full). A nested
-                                // row here once widened the sheet by 180 pt.
-                                let gap = ui.spacing().item_spacing.x;
-                                // The Formats chip after the price, when
-                                // there is one: its word, its padding, the
-                                // gap before it (measured in body type, a
-                                // little over).
-                                let menu_w = if rows.len() > 1 {
-                                    text_w("Formats ▾") + 12.0 + gap
-                                } else {
-                                    0.0
-                                };
-                                let avail = ui.available_size_before_wrap().x;
-                                let sep_w = 6.0 + gap;
-                                let word_w = text_w("Bandcamp") + gap;
-                                let mut room = avail - sep_w - word_w - menu_w - 6.0;
-                                if room >= 80.0 {
-                                    ui.separator();
-                                    ui.label(egui::RichText::new("Bandcamp").weak());
-                                } else if avail - sep_w - menu_w - 6.0 >= 40.0 {
-                                    ui.separator();
-                                    room = avail - sep_w - menu_w - 6.0;
-                                } else {
-                                    // ponytail: no room at all on the line
-                                    // (long Discogs price plus a sellers
-                                    // menu): take the next one, the one
-                                    // case the sheet still grows a line.
-                                    ui.end_row();
-                                    ui.label(egui::RichText::new("Bandcamp").weak());
-                                    room = ui.available_size_before_wrap().x - word_w - menu_w - 6.0;
+                            } else if let Some((alt_fmt, alt_catno, alt_price)) = &alt {
+                                // This pressing is a dead end, but another
+                                // isn't: offer it, rather than leaving "no
+                                // copies for sale" to imply the record can't
+                                // be bought. The note says which one.
+                                let mut what = alt_fmt.clone();
+                                if !alt_catno.trim().is_empty() {
+                                    what = format!("{what} · {alt_catno}");
                                 }
-                                // The whole line when it fits; else the
-                                // longest run of whole parts that does, cut
-                                // at a " · " with no ellipsis (the Formats
-                                // chip says there is more); mid-word only
-                                // when not even the first part fits.
-                                let fits = |s: &str| text_w(s) <= room;
-                                let shown = if fits(line) {
-                                    line.to_owned()
-                                } else {
-                                    line.rmatch_indices(" · ")
-                                        .map(|(i, _)| &line[..i])
-                                        .find(|s| fits(s))
-                                        .map(str::to_owned)
-                                        .unwrap_or_else(|| {
-                                            crate::ui::text::truncated(
-                                                ui,
-                                                line,
-                                                egui::TextStyle::Body.resolve(ui.style()),
-                                                price_ink,
-                                                room,
-                                                true,
-                                            )
-                                            .rows
-                                            .first()
-                                            .map(|r| r.text())
-                                            .unwrap_or_default()
-                                        })
-                                };
-                                // The price is the link, as on the Discogs
-                                // side: to the one format's page, or to the
-                                // album when there are several, which a chip
-                                // after the price then lists. Source, price,
-                                // tool: the two money lines keep one shape.
-                                let Some(page) = page else {
-                                    if bandcamp_pending {
-                                        crate::ui::ghost_line(ui, 56.0, egui::TextStyle::Body);
-                                    } else {
-                                        ui.label(egui::RichText::new(shown).weak());
-                                    }
-                                    return;
-                                };
-                                let url = match rows {
-                                    [one] => one.2.as_str(),
-                                    _ => page,
-                                };
-                                if crate::ui::button::name_link(
+                                if crate::ui::button::compact(
                                     ui,
-                                    &shown,
-                                    crate::ui::tokens::font::body(),
-                                    price_ink,
+                                    &format!("Other pressing from {alt_price}"),
+                                    false,
                                 )
-                                .on_hover_note("Open on Bandcamp")
+                                .on_hover_note(what)
                                 .clicked()
                                 {
-                                    open_url(url);
-                                }
-                                if rows.len() > 1 {
-                                    let btn = crate::ui::button::compact_menu(ui, "Formats")
-                                        .on_hover_note("Formats on Bandcamp");
-                                    crate::ui::menu::dropdown(&btn, 360.0, |m| {
-                                        for (name, detail, url) in rows {
-                                            if m.item_detail(name, detail) {
-                                                open_url(url);
-                                                m.close();
-                                            }
-                                        }
-                                        m.separator();
-                                        if m.item("Open album page") {
-                                            open_url(page);
-                                            m.close();
-                                        }
-                                    });
+                                    act = Some(Act::OpenAlternative);
                                 }
                             }
                         });
@@ -2136,13 +2036,20 @@ impl App {
                         // sheet was opened from a seller card: that shop's
                         // price and grading, with the buy link one click away.
                         if let Some((offer_line, offer_uri)) = &offer {
-                            ui.horizontal_wrapped(|ui| {
-                                ui.spacing_mut().item_spacing.x = 6.0;
-                                ui.label(
-                                    egui::RichText::new(offer_line)
-                                        .small()
-                                        .color(crate::ui::tokens::color::POSITIVE),
+                            crate::ui::text_line(ui, |ui| {
+                                ui.spacing_mut().item_spacing.x = 0.0;
+                                source(ui, "This copy");
+                                let buy_w = text_w(ui, "Buy ↗") + 18.0;
+                                let galley = crate::ui::text::truncated(
+                                    ui,
+                                    offer_line.clone(),
+                                    body.clone(),
+                                    price_ink,
+                                    ui.available_width() - buy_w,
+                                    true,
                                 );
+                                let w = ui.label(galley).rect.width();
+                                ui.add_space((slot_w - w).max(6.0));
                                 if crate::ui::button::compact(ui, "Buy ↗", false)
                                     .on_hover_note("Open this listing on discogs.com")
                                     .clicked()
@@ -2154,38 +2061,86 @@ impl App {
                                 }
                             });
                         }
-                        // This pressing is a dead end, but another isn't. Say
-                        // which one and offer it, rather than leaving "no copies
-                        // for sale" to imply the record can't be bought.
-                        if let Some((alt_fmt, alt_catno, alt_price)) = &alt {
-                            ui.horizontal_wrapped(|ui| {
-                                ui.spacing_mut().item_spacing.x = 4.0;
-                                ui.label(egui::RichText::new("Another pressing:").small().weak());
-                                let mut what = alt_fmt.clone();
-                                if !alt_catno.trim().is_empty() {
-                                    what = format!("{what} · {alt_catno}");
+                        // The record new from the artist or label: a ghost
+                        // until the lookup answers, then the price, or that
+                        // there is none.
+                        let (line, rows, page) = match &bandcamp {
+                            Some((line, rows, page)) => (line.as_str(), rows.as_slice(), Some(page.as_str())),
+                            None => ("Not on Bandcamp", &[][..], None),
+                        };
+                        crate::ui::text_line(ui, |ui| {
+                            ui.spacing_mut().item_spacing.x = 0.0;
+                            source(ui, "Bandcamp");
+                            let menu_w = if rows.len() > 1 {
+                                text_w(ui, "Formats ▾") + 18.0
+                            } else {
+                                0.0
+                            };
+                            let room = ui.available_width() - menu_w;
+                            // The whole line when it fits; else the longest
+                            // run of whole parts that does, cut at a " · "
+                            // with no ellipsis (the Formats chip says there is
+                            // more); mid-word only when not even the first
+                            // part fits.
+                            let fits = |s: &str| text_w(ui, s) <= room;
+                            let shown = if fits(line) {
+                                line.to_owned()
+                            } else {
+                                line.rmatch_indices(" · ")
+                                    .map(|(i, _)| &line[..i])
+                                    .find(|s| fits(s))
+                                    .map(str::to_owned)
+                                    .unwrap_or_else(|| {
+                                        crate::ui::text::truncated(
+                                            ui,
+                                            line,
+                                            body.clone(),
+                                            price_ink,
+                                            room,
+                                            true,
+                                        )
+                                        .rows
+                                        .first()
+                                        .map(|r| r.text())
+                                        .unwrap_or_default()
+                                    })
+                            };
+                            let Some(page) = page else {
+                                if bandcamp_pending {
+                                    crate::ui::ghost_line(ui, 56.0, egui::TextStyle::Body);
+                                } else {
+                                    ui.label(egui::RichText::new(shown).weak());
                                 }
-                                ui.label(egui::RichText::new(what).small());
-                                ui.label(
-                                    egui::RichText::new(format!("from {alt_price}"))
-                                        .small()
-                                        .color(crate::ui::tokens::color::POSITIVE),
-                                );
-                                if crate::ui::button::compact(ui, "View", false)
-                                    .on_hover_note("Show that pressing in this window")
-                                    .clicked()
-                                {
-                                    act = Some(Act::OpenAlternative);
-                                }
-                            });
-                        }
-                        // The line those two share is there whether or not
-                        // either has anything to say, so a pressing that
-                        // turns out dead once the price lands doesn't push
-                        // the buttons and the tracklist down.
-                        if offer.is_none() && alt.is_none() {
-                            ui.add_space(ui.spacing().interact_size.y);
-                        }
+                                return;
+                            };
+                            let url = match rows {
+                                [one] => one.2.as_str(),
+                                _ => page,
+                            };
+                            let link = crate::ui::button::name_link(ui, &shown, body.clone(), price_ink)
+                                .on_hover_note("Open on Bandcamp");
+                            if link.clicked() {
+                                open_url(url);
+                            }
+                            if rows.len() > 1 {
+                                ui.add_space((slot_w - link.rect.width()).max(6.0));
+                                let btn = crate::ui::button::compact_menu(ui, "Formats")
+                                    .on_hover_note("Formats on Bandcamp");
+                                crate::ui::menu::dropdown(&btn, 360.0, |m| {
+                                    for (name, detail, url) in rows {
+                                        if m.item_detail(name, detail) {
+                                            open_url(url);
+                                            m.close();
+                                        }
+                                    }
+                                    m.separator();
+                                    if m.item("Open album page") {
+                                        open_url(page);
+                                        m.close();
+                                    }
+                                });
+                            }
+                        });
                         ui.add_space(10.0);
                         ui.horizontal(|ui| {
                             // One control, two states, drawn rather than
