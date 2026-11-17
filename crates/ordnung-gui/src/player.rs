@@ -1397,9 +1397,9 @@ impl App {
                 );
             }
 
-            // Beatgrid overlay: vertical lines at each beat in the visible window,
-            // downbeats (bar "1") drawn brighter and thicker like rekordbox's red
-            // bar markers. Drawn over the waveform, under the playhead.
+            // Beatgrid overlay: a faint line per beat, a brighter numbered one per
+            // bar, an orange one every 16-bar phrase. Drawn over the waveform,
+            // under the playhead.
             if let Some(g) = grid {
                 if g.bpm > 0.0 && dur > 0.0 {
                     draw_beatgrid(painter, draw_rect, g, dur, (w0, w1));
@@ -1639,20 +1639,38 @@ fn draw_beatgrid(
     dur: f32,
     window: (f32, f32),
 ) {
-    let beat_col = egui::Color32::from_rgba_unmultiplied(255, 255, 255, 55);
-    let downbeat_col = egui::Color32::from_rgba_unmultiplied(255, 120, 40, 210);
-    for (x, is_downbeat) in beat_lines(grid, dur, window, rect.left(), rect.width()) {
-        let (col, w) = if is_downbeat {
-            (downbeat_col, 1.6)
-        } else {
-            (beat_col, 1.0)
+    use crate::ui::tokens::{color, font};
+    let lines = beat_lines(grid, dur, window, rect.left(), rect.width());
+    // Number every bar while there's room for it, then every fourth, then
+    // only the phrases.
+    let bar_px = (60.0 / grid.bpm.max(1.0)) * 4.0 / ((window.1 - window.0).max(f32::EPSILON) * dur) * rect.width();
+    let label_every = if bar_px >= 30.0 { 1 } else if bar_px >= 7.0 { 4 } else { PHRASE_BARS };
+    for (x, bar) in lines {
+        let (col, w) = match bar {
+            Some(n) if (n - 1).rem_euclid(PHRASE_BARS) == 0 => (PHRASE_COL, 2.0),
+            Some(_) => (egui::Color32::from_white_alpha(95), 1.2),
+            None => (egui::Color32::from_white_alpha(30), 1.0),
         };
         painter.line_segment(
             [egui::pos2(x, rect.top()), egui::pos2(x, rect.bottom())],
             egui::Stroke::new(w, col),
         );
+        if let Some(n) = bar.filter(|n| *n >= 1 && (n - 1) % label_every == 0) {
+            painter.text(
+                egui::pos2(x + 3.0, rect.bottom() - 1.0),
+                egui::Align2::LEFT_BOTTOM,
+                n.to_string(),
+                font::caption(),
+                color::LABEL_3,
+            );
+        }
     }
 }
+
+/// Bars to a phrase: every sixteenth bar line is drawn as a phrase mark.
+const PHRASE_BARS: i64 = 16;
+/// The phrase mark's colour, the old downbeat orange.
+const PHRASE_COL: egui::Color32 = egui::Color32::from_rgba_premultiplied(210, 99, 33, 210);
 
 /// The lane's beatgrid for a cached analysis: bpm + first-beat position + downbeat
 /// phase (from the anchor beat's bar number). `get_analysis` returns the grid as
@@ -1795,9 +1813,11 @@ fn scale_grid_tempo(g: PlayerGrid, factor: f32) -> PlayerGrid {
 const MIN_GRID_BPM: f32 = 40.0;
 const MAX_GRID_BPM: f32 = 300.0;
 
-/// Pure geometry for [`draw_beatgrid`]: the `(x, is_downbeat)` of every grid line
+/// Pure geometry for [`draw_beatgrid`]: the `(x, bar)` of every grid line
 /// inside the visible window `(w0, w1)` (track-fraction), mapped onto `[left,
-/// left+width]`. Plain beats drop out once they'd crowd below ~6 px apart; below
+/// left+width]`. `bar` is the bar number on a downbeat, `None` on a plain
+/// beat; bar 1 is the first downbeat at or after the top of the song, so a
+/// pickup before it counts 0 and down. Plain beats drop out once they'd crowd below ~6 px apart; below
 /// ~2 px even bars are omitted (too dense to read). Beat `i` is at
 /// `first_beat_ms/1000 + i·60/bpm` seconds and is a downbeat when
 /// `(i - downbeat_phase).rem_euclid(4) == 0`.
@@ -1807,7 +1827,7 @@ fn beat_lines(
     window: (f32, f32),
     left: f32,
     width: f32,
-) -> Vec<(f32, bool)> {
+) -> Vec<(f32, Option<i64>)> {
     let (w0, w1) = window;
     let (t0, t1) = (w0 * dur, w1 * dur);
     let span = (t1 - t0).max(f32::EPSILON);
@@ -1824,10 +1844,13 @@ fn beat_lines(
     let first = grid.first_beat_ms as f32 / 1000.0;
     let i0 = ((t0 - first) / period).floor() as i64;
     let i1 = ((t1 - first) / period).ceil() as i64;
+    let phase = grid.downbeat_phase as i64;
+    let at_top = (-first / period).ceil() as i64;
+    let bar_one = at_top + (phase - at_top).rem_euclid(4);
 
     let mut out = Vec::new();
     for i in i0..=i1 {
-        let is_downbeat = (i - grid.downbeat_phase as i64).rem_euclid(4) == 0;
+        let is_downbeat = (i - phase).rem_euclid(4) == 0;
         if !is_downbeat && !beats_visible {
             continue;
         }
@@ -1835,7 +1858,8 @@ fn beat_lines(
         if t < t0 || t > t1 {
             continue;
         }
-        out.push((left + (t - t0) / span * width, is_downbeat));
+        let bar = is_downbeat.then(|| (i - bar_one).div_euclid(4) + 1);
+        out.push((left + (t - t0) / span * width, bar));
     }
     out
 }
@@ -2131,10 +2155,12 @@ mod grid_tests {
         let downs: Vec<usize> = lines
             .iter()
             .enumerate()
-            .filter(|(_, l)| l.1)
+            .filter(|(_, l)| l.1.is_some())
             .map(|(k, _)| k)
             .collect();
         assert_eq!(downs, vec![1, 5]);
+        // The first downbeat after the top is bar 1.
+        assert_eq!((lines[1].1, lines[5].1), (Some(1), Some(2)));
     }
 
     #[test]
@@ -2149,7 +2175,7 @@ mod grid_tests {
         // Zoomed to ~8 s window: beats ~10 px apart → beats show, incl. non-downbeats.
         let win = beat_lines(g, 600.0, (0.10, 0.10 + 8.0 / 600.0), 0.0, 400.0);
         assert!(
-            win.iter().any(|l| !l.1),
+            win.iter().any(|l| l.1.is_none()),
             "plain beats visible when zoomed in"
         );
     }
