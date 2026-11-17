@@ -65,24 +65,11 @@ fn health_tabs(
 /// strip sits on the row's centre line rather than a touch above and below it.
 /// Both shelves are the same grid of the same records, so stacking them
 /// buried the wantlist under a large collection; as tabs, either is one click
-/// away. Counts follow the active search, so you can see which shelf holds the
-/// hits without switching. Returns the tab the user clicked, if any; the caller
-/// owns the switch.
-/// `owned` and `wanted` are each (shown, total): the count on the tab is
-/// what the search and filters left, but the tab is sized for the whole
-/// shelf, so narrowing 161 records to 1 does not move the search field and
-/// everything right of it.
-fn vinyl_tabs(
-    ui: &mut egui::Ui,
-    current: VinylTab,
-    owned: (usize, usize),
-    wanted: (usize, usize),
-) -> Option<VinylTab> {
+/// away. Returns the tab the user clicked, if any; the caller owns the switch.
+fn vinyl_tabs(ui: &mut egui::Ui, current: VinylTab) -> Option<VinylTab> {
     use crate::ui::tokens::{color, font, radius, space};
 
-    let tab = |ui: &mut egui::Ui, label: String, widest: String, active: bool, tip: &str, mark: Option<VinylList>| -> bool {
-        // Size the tab from the widest text it will show, so the two sit
-        // shoulder to shoulder at whatever width their counts need.
+    let tab = |ui: &mut egui::Ui, label: &str, active: bool, tip: &str, mark: Option<VinylList>| -> bool {
         let text_font = if active {
             font::strong(font::headline().size)
         } else {
@@ -92,14 +79,14 @@ fn vinyl_tabs(
         // the galley is laid out in a placeholder ink.
         let galley = ui
             .painter()
-            .layout_no_wrap(label.clone(), text_font, color::LABEL);
+            .layout_no_wrap(label.to_string(), text_font, color::LABEL);
         // The rect is sized from the bold variant whether or not this tab is
         // active: bold runs a touch wider, and sizing each state from its own
         // galley made the strip (and the search field right of it) shift a few
         // pixels on every tab switch.
         let bold =
             ui.painter()
-                .layout_no_wrap(widest, font::strong(font::headline().size), color::LABEL);
+                .layout_no_wrap(label.to_string(), font::strong(font::headline().size), color::LABEL);
         // Room for the shelf mark before the words, on the two shelf tabs.
         let mark_w = if mark.is_some() {
             crate::ui::icon::SHELF_R * 2.0 + space::S2 + 2.0
@@ -212,8 +199,7 @@ fn vinyl_tabs(
     }
     if tab(
         ui,
-        format!("Collection ({})", owned.0),
-        format!("Collection ({})", owned.1.max(owned.0)),
+        "Collection",
         current == VinylTab::Shelf(VinylList::Collection),
         "Records you own",
         Some(VinylList::Collection),
@@ -222,8 +208,7 @@ fn vinyl_tabs(
     }
     if tab(
         ui,
-        format!("Wantlist ({})", wanted.0),
-        format!("Wantlist ({})", wanted.1.max(wanted.0)),
+        "Wantlist",
         current == VinylTab::Shelf(VinylList::Wantlist),
         "Records you want but don't own yet",
         Some(VinylList::Wantlist),
@@ -231,12 +216,10 @@ fn vinyl_tabs(
         clicked = Some(VinylTab::Shelf(VinylList::Wantlist));
     }
     // Other people's crates: saved Discogs sellers whose swept inventory
-    // can be dug through offline. No count: the shelves count records, and
-    // a count of sellers next to them would read as one.
+    // can be dug through offline.
     if tab(
         ui,
-        "Market".to_string(),
-        "Market".to_string(),
+        "Market",
         current == VinylTab::Sellers,
         "Dig through a Discogs shop's stock",
         None,
@@ -2023,12 +2006,7 @@ impl App {
             // Collection and wantlist are two shelves of the same kind, so they're
             // tabs: with a big collection the wantlist used to sit a full scroll
             // below, and neither shelf could be reached quickly from the other.
-            if let Some(tab) = vinyl_tabs(
-                ui,
-                self.vinyl_tab,
-                (owned_recs.len(), self.vinyl.len()),
-                (wanted_recs.len(), self.wantlist.len()),
-            ) {
+            if let Some(tab) = vinyl_tabs(ui, self.vinyl_tab) {
                 self.vinyl_tab = tab;
             }
             // Search sits right of the tabs: it's the fastest way through
