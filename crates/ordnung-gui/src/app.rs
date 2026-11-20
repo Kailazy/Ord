@@ -3538,19 +3538,7 @@ impl App {
                             // chord means "search for something else" as well
                             // as "search" — the same as every other Find box.
                             if std::mem::take(&mut self.focus_search) {
-                                resp.request_focus();
-                                let chars = self.search_query.chars().count();
-                                if let Some(mut state) =
-                                    egui::TextEdit::load_state(ui.ctx(), resp.id)
-                                {
-                                    state.cursor.set_char_range(Some(
-                                        egui::text::CCursorRange::two(
-                                            egui::text::CCursor::new(0),
-                                            egui::text::CCursor::new(chars),
-                                        ),
-                                    ));
-                                    state.store(ui.ctx(), resp.id);
-                                }
+                                crate::ui::field::focus_select_all(ui.ctx(), &resp, &self.search_query);
                                 // Bring back the popup the box last showed
                                 // over a query that's still there.
                                 if !self.search_query.trim().is_empty() {

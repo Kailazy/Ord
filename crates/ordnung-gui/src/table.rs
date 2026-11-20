@@ -775,17 +775,7 @@ impl App {
             // field with the text selected, so the filter can be refined or
             // replaced without a trip to the mouse.
             if std::mem::take(&mut self.focus_table_filter) {
-                field.request_focus();
-                let chars = self.filter.chars().count();
-                if let Some(mut state) = egui::TextEdit::load_state(ui.ctx(), field.id) {
-                    state
-                        .cursor
-                        .set_char_range(Some(egui::text::CCursorRange::two(
-                            egui::text::CCursor::new(0),
-                            egui::text::CCursor::new(chars),
-                        )));
-                    state.store(ui.ctx(), field.id);
-                }
+                crate::ui::field::focus_select_all(ui.ctx(), &field, &self.filter);
             }
             if field.changed() {
                 self.reload();

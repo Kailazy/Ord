@@ -109,6 +109,12 @@ impl<'t> Field<'t> {
         self
     }
 
+    /// Which side the text sits on; a number reads from the right.
+    pub fn align(mut self, align: egui::Align) -> Self {
+        self.edit = self.edit.horizontal_align(align);
+        self
+    }
+
     /// Show dots instead of the text.
     pub fn password(mut self, password: bool) -> Self {
         self.edit = self.edit.password(password);
@@ -253,6 +259,18 @@ impl<'t> Field<'t> {
         trailing.reverse();
         FieldResponse { field, trailing }
     }
+}
+
+/// Put the caret in `field` with all `text` selected, so typing replaces
+/// what is there.
+pub fn focus_select_all(ctx: &egui::Context, field: &egui::Response, text: &str) {
+    field.request_focus();
+    let mut state = egui::TextEdit::load_state(ctx, field.id).unwrap_or_default();
+    state.cursor.set_char_range(Some(egui::text::CCursorRange::two(
+        egui::text::CCursor::new(0),
+        egui::text::CCursor::new(text.chars().count()),
+    )));
+    state.store(ctx, field.id);
 }
 
 /// The pass in which a [`Field`] last surrendered focus.
