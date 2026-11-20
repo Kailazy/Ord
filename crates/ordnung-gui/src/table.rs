@@ -1078,7 +1078,6 @@ impl App {
         // numbers themselves are only drawn in playlist views (`draw_index`); the
         // library keeps the gutter blank so it reads as plain whitespace there.
         // Drag-to-reorder still only engages on a real playlist in stored order.
-        let show_index = true;
         let draw_index = playlist_pid.is_some();
         let reorderable = playlist_pid.is_some() && self.sort.is_none() && menu_unfiltered;
         // Fixed gutter width, independent of the row count so it never changes
@@ -1548,14 +1547,12 @@ impl App {
                             let mut dbl = false;
                             let mut drag = false;
 
-                            // Playlist order gutter: a tiny right-aligned 1-based row
-                            // number. Drawn first so it sits at the far left, and its
-                            // cell rect is recorded as this row's vertical band for the
-                            // reorder hit-test after the table.
+                            // Playlist order gutter: a tiny 1-based row number, drawn
+                            // first so it sits at the far left.
                             // Always emit the leading gutter cell to reserve its width;
                             // the 1-based row number is only drawn in playlist views,
                             // so the library gutter stays blank.
-                            let (rect, _) = row.col(|ui| {
+                            row.col(|ui| {
                                 if draw_index {
                                     let r = ui.max_rect();
                                     ui.painter().text(
@@ -1567,10 +1564,6 @@ impl App {
                                     );
                                 }
                             });
-                            if show_index && reorderable {
-                                row_spans.push((idx, rect.top(), rect.bottom()));
-                            }
-
                             // Draw each visible column in the user's chosen order. Each
                             // `row.col` closure is created and consumed within its own
                             // loop iteration, so they share the row's click/drag state
@@ -2455,7 +2448,16 @@ impl App {
                             }
                             // Record the whole row's screen rect (union of its cells)
                             // for the dropped-cover hit-test after the table.
-                            row_rects.push((r.id, row.response().rect));
+                            let row_rect = row.response().rect;
+                            row_rects.push((r.id, row_rect));
+                            // The same rect is this row's vertical band for the
+                            // reorder hit-test. (A cell's own rect won't do: `col`
+                            // returns the used rect, which for the painted-only
+                            // gutter is a point at the row's middle, so the
+                            // insertion line cut through the row.)
+                            if reorderable {
+                                row_spans.push((idx, row_rect.top(), row_rect.bottom()));
+                            }
 
                             // A plain click resolves to a (modifier-aware) selection after
                             // the table. A drag takes priority and is handled via the DnD
