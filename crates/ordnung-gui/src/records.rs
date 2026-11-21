@@ -552,7 +552,16 @@ impl App {
                     ctx,
                 );
             }
-            Pick::Run(run) => self.open_run_page(run.thread, run.id, run.name),
+            Pick::Run(run) => {
+                // An open sheet would keep the run parked behind it (a run
+                // only draws as a window with no sheet up), so step off the
+                // sheet the way a view switch does: a rolling video follows
+                // as the record bar, an idle sheet goes.
+                if let Some(s) = self.vinyl_sheet.as_mut() {
+                    s.hidden = true;
+                }
+                self.open_run_page(run.thread, run.id, run.name)
+            }
         }
     }
 
