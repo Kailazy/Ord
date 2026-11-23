@@ -2066,7 +2066,7 @@ impl App {
                         // there is none.
                         let (line, rows, page) = match &bandcamp {
                             Some((line, rows, page)) => (line.as_str(), rows.as_slice(), Some(page.as_str())),
-                            None => ("Not on Bandcamp", &[][..], None),
+                            None => ("—", &[][..], None),
                         };
                         crate::ui::text_line(ui, |ui| {
                             ui.spacing_mut().item_spacing.x = 0.0;
