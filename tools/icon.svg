@@ -2,14 +2,12 @@
 <!-- Ordnung app icon source. Rendered to a 1024×1024 PNG by `build-app.sh`,
      then resized into a macOS iconset and packed into Ordnung.icns.
      Design: an off-gray squircle background with a bold off-gray-blue "O"
-     (soft, fuzzed edges) surrounding a sharp "ordering" bar — DJ catalog
-     ordered/organized. -->
+     (soft, fuzzed edges). -->
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
   <defs>
     <!-- Soft-edge fuzz for the "O" only. stdDeviation is in the (unscaled) user
          space of the group below, so the ~60px blur reads as a heavy ~48px halo
-         after the 0.8047 scale — the ring melts into a soft cloud. The bar is
-         drawn outside this filter and stays crisp. The padded filter region
+         after the 0.8047 scale — the ring melts into a soft cloud. The padded filter region
          keeps the wide halo from clipping. -->
     <filter id="o-fuzz" x="-120%" y="-120%" width="340%" height="340%"
             color-interpolation-filters="sRGB">
@@ -58,10 +56,6 @@
         Z"
       fill="#93a6bf" fill-rule="evenodd" filter="url(#o-fuzz)"/>
 
-    <!-- Single ordering bar inside the O, centered. Thickened from 22 -> 44px;
-         y/rx track the height so it stays centered on 512 with rounded caps.
-         Same off gray-blue as the O, but NOT filtered — stays sharp. -->
-    <rect x="402" y="490" width="220" height="44" rx="22" fill="#93a6bf"/>
 
     <!-- Inner-edge bevel. Stroke-width 16 → ~8px visible inside the clip, ~6.4px
          after the 0.8047 scale. Sits on top so the rim reads as glass over the
