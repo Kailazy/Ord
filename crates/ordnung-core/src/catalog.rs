@@ -413,7 +413,7 @@ const RECENTLY_ADDED_WINDOW_SECS: i64 = 24 * 60 * 60;
 /// Schema 28 re-keys `liked_songs` and `crate_songs`: `song_key` reads the
 /// act off a `Various Artists` file's `Artist - Title` title (see
 /// [`crate::discogs::credited_song`]), so every stored key is recomputed.
-const SCHEMA_VERSION: i64 = 28;
+const SCHEMA_VERSION: i64 = 29;
 
 /// The columns of the two vinyl list tables (`vinyl_collection`,
 /// `vinyl_wantlist`), shared so both are created alike and so an older
@@ -448,6 +448,14 @@ const VINYL_LIST_DDL: &str = "instance_id    INTEGER PRIMARY KEY,
 /// New pressings appear rarely, and the list only feeds "other pressings" and
 /// the sheet's search for a buyable copy — prices themselves are never cached.
 pub const MASTER_VERSIONS_MAX_AGE_SECS: i64 = 7 * 24 * 60 * 60;
+
+/// The Discogs path segment a run's cached pages are keyed under.
+fn run_key(thread: crate::discogs::BrowseThread) -> &'static str {
+    match thread {
+        crate::discogs::BrowseThread::Artist => "artists",
+        crate::discogs::BrowseThread::Label => "labels",
+    }
+}
 
 impl Catalog {
     /// Open (creating if needed) a catalog at `path` and ensure the schema exists.
@@ -1169,6 +1177,20 @@ impl Catalog {
         // instead, where the actual Add to Cart lives.
         self.conn
             .execute("DROP TABLE IF EXISTS cart_listings", [])?;
+
+        // Artist and label pages and their runs (schema v29), one row per
+        // Discogs page under its own key (see `page_cached_or`), so a run
+        // read once opens without a request and the idle worker can read
+        // them ahead. Served for `MASTER_VERSIONS_MAX_AGE_SECS`, like the
+        // pressings below.
+        self.conn.execute(
+            "CREATE TABLE IF NOT EXISTS discogs_page_cache (
+                key        TEXT PRIMARY KEY,
+                json       TEXT NOT NULL,
+                fetched_at INTEGER NOT NULL DEFAULT (unixepoch())
+            )",
+            [],
+        )?;
 
         // Every pressing of a master (schema v15), so "other pressings" and
         // the sheet's buyable-copy search don't re-list a record's siblings on
@@ -1912,6 +1934,96 @@ impl Catalog {
         let versions = fetch()?;
         let _ = self.cache_master_versions(master_id, &versions);
         Ok(versions)
+    }
+
+    /// A Discogs page from `discogs_page_cache`, or from `fetch` on a miss
+    /// (or a row older than [`MASTER_VERSIONS_MAX_AGE_SECS`]), caching what
+    /// comes back. Same contract as [`Catalog::release_cached_or`].
+    fn page_cached_or<T: serde::Serialize + serde::de::DeserializeOwned>(
+        &self,
+        key: &str,
+        fetch: impl FnOnce() -> Result<T>,
+    ) -> Result<T> {
+        let json: Option<String> = self
+            .conn
+            .query_row(
+                "SELECT json FROM discogs_page_cache
+                 WHERE key=?1 AND fetched_at >= unixepoch() - ?2",
+                params![key, MASTER_VERSIONS_MAX_AGE_SECS],
+                |r| r.get(0),
+            )
+            .optional()?;
+        if let Some(hit) = json.and_then(|j| serde_json::from_str(&j).ok()) {
+            return Ok(hit);
+        }
+        let fresh = fetch()?;
+        if let Ok(json) = serde_json::to_string(&fresh) {
+            let _ = self.conn.execute(
+                "INSERT INTO discogs_page_cache (key, json, fetched_at)
+                 VALUES (?1, ?2, unixepoch())
+                 ON CONFLICT(key) DO UPDATE SET json=excluded.json, fetched_at=unixepoch()",
+                params![key, json],
+            );
+        }
+        Ok(fresh)
+    }
+
+    /// One 500-row page of an artist's or label's run
+    /// ([`crate::discogs::Client::browse_run`]), cache first.
+    pub fn run_page_cached_or(
+        &self,
+        thread: crate::discogs::BrowseThread,
+        id: u64,
+        page: u32,
+        fetch: impl FnOnce() -> Result<crate::discogs::BrowsePage>,
+    ) -> Result<crate::discogs::BrowsePage> {
+        self.page_cached_or(&format!("{}/{id}/releases/{page}", run_key(thread)), fetch)
+    }
+
+    /// An artist's page ([`crate::discogs::Client::fetch_artist`]), cache first.
+    pub fn artist_cached_or(
+        &self,
+        id: u64,
+        fetch: impl FnOnce() -> Result<crate::discogs::ArtistDetail>,
+    ) -> Result<crate::discogs::ArtistDetail> {
+        self.page_cached_or(&format!("artists/{id}"), fetch)
+    }
+
+    /// A label's page ([`crate::discogs::Client::fetch_label`]), cache first.
+    pub fn label_cached_or(
+        &self,
+        id: u64,
+        fetch: impl FnOnce() -> Result<crate::discogs::LabelDetail>,
+    ) -> Result<crate::discogs::LabelDetail> {
+        self.page_cached_or(&format!("labels/{id}"), fetch)
+    }
+
+    /// The artist and label runs behind the collection and the wantlist
+    /// that have no fresh first page cached: what the idle worker reads
+    /// ahead. Ids come from the records' cached details, so a record whose
+    /// detail was never fetched names none.
+    pub fn runs_to_cache(&self) -> Result<Vec<(crate::discogs::BrowseThread, u64)>> {
+        use crate::discogs::BrowseThread;
+        let mut out = Vec::new();
+        for (thread, field) in [(BrowseThread::Label, "label_ids"), (BrowseThread::Artist, "artist_ids")] {
+            let mut stmt = self.conn.prepare(&format!(
+                "SELECT DISTINCT j.value
+                 FROM (SELECT release_id FROM vinyl_collection
+                       UNION SELECT release_id FROM vinyl_wantlist) v
+                 JOIN release_cache r ON r.release_id = CAST(v.release_id AS TEXT)
+                 JOIN json_each(r.detail_json, '$.{field}') j
+                 WHERE NOT EXISTS (
+                     SELECT 1 FROM discogs_page_cache c
+                     WHERE c.key = '{}/' || j.value || '/releases/1'
+                       AND c.fetched_at >= unixepoch() - ?1)",
+                run_key(thread)
+            ))?;
+            let ids = stmt
+                .query_map(params![MASTER_VERSIONS_MAX_AGE_SECS], |r| r.get::<_, i64>(0))?
+                .collect::<rusqlite::Result<Vec<_>>>()?;
+            out.extend(ids.into_iter().map(|id| (thread, id as u64)));
+        }
+        Ok(out)
     }
 
     /// Resolve a release's detail from the cache, falling back to `fetch` (the
@@ -7833,6 +7945,28 @@ mod tests {
             have: 0,
             want: 0,
         }
+    }
+
+    #[test]
+    fn runs_to_cache_lists_shelf_runs_until_their_first_page_is_cached() {
+        use crate::discogs::{BrowsePage, BrowseThread};
+        let cat = Catalog::open(":memory:").unwrap();
+        let rec = vinyl(1, "Plastikman", "Sheet One");
+        cat.upsert_vinyl(VinylList::Collection, &rec).unwrap();
+        cat.cache_release(&release_detail(&rec.release_id.to_string(), "Sheet One"))
+            .unwrap();
+        assert_eq!(
+            cat.runs_to_cache().unwrap(),
+            vec![(BrowseThread::Label, 99), (BrowseThread::Artist, 42)]
+        );
+        let page = || Ok(BrowsePage { pages: 3, ..Default::default() });
+        cat.run_page_cached_or(BrowseThread::Label, 99, 1, page).unwrap();
+        assert_eq!(cat.runs_to_cache().unwrap(), vec![(BrowseThread::Artist, 42)]);
+        // The cached page answers without a fetch.
+        let hit = cat
+            .run_page_cached_or(BrowseThread::Label, 99, 1, || panic!("fetched a cached page"))
+            .unwrap();
+        assert_eq!(hit.pages, 3);
     }
 
     #[test]

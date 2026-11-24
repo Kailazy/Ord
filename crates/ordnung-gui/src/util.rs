@@ -785,6 +785,19 @@ pub(crate) fn startup_done() -> bool {
     STARTUP_DONE.load(Ordering::Relaxed)
 }
 
+static LAST_INPUT: std::sync::Mutex<Option<Instant>> = std::sync::Mutex::new(None);
+
+/// The user did something this frame (see [`idle_for`]).
+pub(crate) fn note_input() {
+    *LAST_INPUT.lock().unwrap() = Some(Instant::now());
+}
+
+/// How long since the last input event; from launch until the first one,
+/// no time at all, so idle work waits for a quiet moment after startup too.
+pub(crate) fn idle_for() -> Duration {
+    LAST_INPUT.lock().unwrap().get_or_insert_with(Instant::now).elapsed()
+}
+
 /// [`mark`] for a stage that is only interesting during launch, such as the
 /// steps of a reload: later reloads log one summary line instead.
 pub(crate) fn mark_early(stage: &str) {

@@ -67,6 +67,7 @@ impl App {
                 }
             });
         }
+        crate::browse_page::spawn_run_cache(db_path.clone());
         let (browse_tx, browse_rx) = mpsc::channel();
         // Clone the context before it's moved into the audio engine below, so we
         // can hand it to the startup background refresh once the app is built.
@@ -2444,6 +2445,9 @@ impl eframe::App for App {
 
     fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
         let first = !self.menu_installed;
+        if ctx.input(|i| !i.events.is_empty()) {
+            util::note_input();
+        }
         self.update_inner(ctx, frame);
         if first {
             util::mark("first frame built");

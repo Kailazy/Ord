@@ -524,6 +524,12 @@ impl App {
                 auto_dirty = true;
             }
         });
+        auto_dirty |= ui
+            .checkbox(
+                &mut self.config.auto_cache_runs,
+                "Cache artist and label pages while idle",
+            )
+            .changed();
         if auto_dirty {
             self.save_config();
         }

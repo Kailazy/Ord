@@ -37,6 +37,11 @@ pub struct Config {
     /// nothing until a Discogs token is configured. The right-click menu's
     /// "Find Discogs release" picker remains the manual override and re-pick.
     pub discogs_auto_fetch: bool,
+    /// Read the artist and label pages behind the collection and the
+    /// wantlist into the cache while the app sits idle
+    /// (`browse_page::spawn_run_cache`), so they open without a request.
+    /// Named `auto_*` like every setting that works unasked.
+    pub auto_cache_runs: bool,
     /// Which candidate the automatic match commits to, as a stable
     /// [`ReleaseAutoMatch`] key. Defaults to `"most_collected"` — the release
     /// the most Discogs users own, the strongest signal for "the normal one".
@@ -730,6 +735,7 @@ impl Default for Config {
         Self {
             discogs_token: String::new(),
             discogs_auto_fetch: true,
+            auto_cache_runs: true,
             discogs_auto_match: ReleaseAutoMatch::MostCollected,
             discogs_skip_fields: Vec::new(),
             discogs_username: String::new(),
@@ -1171,6 +1177,7 @@ mod tests {
                 .map(String::from)
                 .to_vec(),
             discogs_auto_fetch: false,
+            auto_cache_runs: false,
             discogs_auto_match: ReleaseAutoMatch::Oldest,
             discogs_skip_fields: ["cover", "country", "release_date"].map(String::from).to_vec(),
             discogs_username: "kai".into(),

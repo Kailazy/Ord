@@ -26,7 +26,8 @@
 //! out of the run here too. Master rows with no format of their own are kept
 //! rather than mislabeled. A run with nothing on the shown formats at all (a
 //! digital-only label for a records-only digger) shows every format instead
-//! of an empty page. One paced request per page, at most [`RUN_MAX_PAGES`]
+//! of an empty page. One paced request per page not yet in the catalog's
+//! page cache (`spawn_run_cache` fills it while idle), at most [`RUN_MAX_PAGES`]
 //! of them: a major label runs to thousands, so a run cut there says what
 //! it holds under its pager.
 
@@ -47,6 +48,9 @@ const RUN_PAGE: usize = 100;
 /// page but a label 100, and a major label runs to thousands of pages, so
 /// the read stops here and the pager says what it got.
 const RUN_MAX_PAGES: u32 = 10;
+
+/// How long the app sits untouched before [`spawn_run_cache`] takes a request.
+const RUN_CACHE_IDLE: Duration = Duration::from_secs(3);
 
 /// The open browse page: whose run (a label's or an artist's), which page of
 /// it, and the rows.
@@ -340,12 +344,14 @@ pub(crate) fn thread_icon(thread: BrowseThread) -> &'static str {
 /// Read a label's detail, background-paced so a click goes first, and hand
 /// it to the open run.
 fn send_label_about(
+    cat: &Catalog,
     client: &discogs::Client,
     id: u64,
     tx: &std::sync::mpsc::Sender<BrowseFetched>,
     ctx: &egui::Context,
 ) {
-    let Ok(about) = client.clone().background().fetch_label(id) else {
+    let client = client.clone().background();
+    let Ok(about) = cat.label_cached_or(id, || client.fetch_label(id)) else {
         return;
     };
     let _ = tx.send(BrowseFetched {
@@ -366,8 +372,11 @@ fn send_label_about(
 /// handed back as it lands so the rows fill in. One thread, so the pages
 /// take the pace in order and a click elsewhere goes first. `name` rides
 /// the first reply when the caller resolved it (a label page opened from a
-/// record).
+/// record). Every part comes through the catalog's page cache
+/// ([`run_page`]), so a run read before, here or by [`spawn_run_cache`],
+/// costs no request.
 fn read_run(
+    db: &Path,
     client: discogs::Client,
     thread: BrowseThread,
     id: u64,
@@ -382,7 +391,11 @@ fn read_run(
         let _ = tx.send(BrowseFetched { thread, id, name, page, result, kin, about: None });
         ctx.request_repaint();
     };
-    let first = client.browse_run(thread, id, 1);
+    let cat = match Catalog::open(db) {
+        Ok(cat) => cat,
+        Err(e) => return reply(1, Err(e.to_string()), name, None),
+    };
+    let first = run_page(&cat, &client, thread, id, 1);
     let pages = first.as_ref().map_or(0, |p| p.pages);
     reply(1, first.map_err(|e| e.to_string()), name, None);
     if pages == 0 {
@@ -390,16 +403,71 @@ fn read_run(
     }
     match thread {
         BrowseThread::Artist => {
-            if let Ok(kin) = client.fetch_artist(id) {
+            if let Ok(kin) = cat.artist_cached_or(id, || client.fetch_artist(id)) {
                 reply(0, Ok(BrowsePage::default()), None, Some(kin));
             }
         }
-        BrowseThread::Label => send_label_about(&client, id, tx, ctx),
+        BrowseThread::Label => send_label_about(&cat, &client, id, tx, ctx),
     }
     let client = client.background();
     for page in 2..=pages.min(RUN_MAX_PAGES) {
-        reply(page, client.browse_run(thread, id, page).map_err(|e| e.to_string()), None, None);
+        reply(page, run_page(&cat, &client, thread, id, page).map_err(|e| e.to_string()), None, None);
     }
+}
+
+/// One 500-row page of a run, from the catalog's cache or Discogs.
+fn run_page(
+    cat: &Catalog,
+    client: &discogs::Client,
+    thread: BrowseThread,
+    id: u64,
+    page: u32,
+) -> ordnung_core::Result<BrowsePage> {
+    cat.run_page_cached_or(thread, id, page, || client.browse_run(thread, id, page))
+}
+
+/// Read the artist and label runs behind the collection and the wantlist
+/// into the page cache while nobody is using the app
+/// ([`config::Config::auto_cache_runs`]), so their pages open without a
+/// request. Background-paced and only after [`RUN_CACHE_IDLE`] without
+/// input, checked before every request, so a click never queues behind it.
+pub(crate) fn spawn_run_cache(db: PathBuf) {
+    let wait = || {
+        while util::idle_for() < RUN_CACHE_IDLE {
+            thread::sleep(Duration::from_millis(500));
+        }
+    };
+    thread::spawn(move || loop {
+        wait();
+        let todo = Catalog::open(&db).and_then(|cat| cat.runs_to_cache()).unwrap_or_default();
+        for (thread, id) in todo {
+            wait();
+            // Read per run, so the switch and a new token take hold at once.
+            let cfg = config::Config::load();
+            let token = cfg.discogs_token.trim();
+            if !cfg.auto_cache_runs || token.is_empty() {
+                break;
+            }
+            let client = discogs::Client::new(token).background();
+            let Ok(cat) = Catalog::open(&db) else { break };
+            let Ok(first) = run_page(&cat, &client, thread, id, 1) else {
+                // Offline, or a run Discogs no longer serves: no hurry.
+                thread::sleep(Duration::from_secs(60));
+                continue;
+            };
+            wait();
+            match thread {
+                BrowseThread::Artist => drop(cat.artist_cached_or(id, || client.fetch_artist(id))),
+                BrowseThread::Label => drop(cat.label_cached_or(id, || client.fetch_label(id))),
+            }
+            for page in 2..=first.pages.min(RUN_MAX_PAGES) {
+                wait();
+                let _ = run_page(&cat, &client, thread, id, page);
+            }
+        }
+        // The shelves change a few records at a time; look again later.
+        thread::sleep(Duration::from_secs(600));
+    });
 }
 
 /// What the label page says about the label, read like a header under the
@@ -592,7 +660,7 @@ impl App {
                 ctx.request_repaint();
                 return;
             };
-            read_run(client, BrowseThread::Label, label_id, label_name, &tx, &ctx);
+            read_run(&db, client, BrowseThread::Label, label_id, label_name, &tx, &ctx);
         });
     }
 
@@ -638,7 +706,8 @@ impl App {
             let token = self.discogs_token();
             let tx = self.browse_tx.clone();
             let ctx = self.egui_ctx.clone();
-            thread::spawn(move || read_run(discogs::Client::new(token), thread, id, None, &tx, &ctx));
+            let db = self.db_path.clone();
+            thread::spawn(move || read_run(&db, discogs::Client::new(token), thread, id, None, &tx, &ctx));
         } else {
             panel.page = page;
             self.adopt_run();

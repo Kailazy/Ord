@@ -267,7 +267,7 @@ pub enum BrowseThread {
 
 /// One page of browse results, with the shape of the whole result set so the
 /// caller can page around it. See [`Client::browse_by_id`].
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct BrowsePage {
     /// Total pages available for this query, at least 1.
     pub pages: u32,
@@ -278,7 +278,7 @@ pub struct BrowsePage {
 
 /// One release from an artist or label browse. Leaner than
 /// [`ReleaseCandidate`]: these endpoints return a listing, not a search hit.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BrowseRelease {
     /// A concrete release id — masters are resolved to their `main_release`.
     pub release_id: u64,
@@ -1373,7 +1373,9 @@ impl PaceState {
 /// parent) every step, each a paced request. Failures aren't remembered.
 // ponytail: session-only, and a map past 256 entries is cleared whole; the
 // ids one session reaches number in the hundreds. An LRU if a long dig
-// re-fetches after the clear, a catalog table to survive restarts.
+// re-fetches after the clear. Runs and artist and label pages also survive
+// restarts where the caller reads through `Catalog::run_page_cached_or` and
+// its siblings (the run window does, the dig does not yet).
 fn session_memo<K: std::hash::Hash + Eq, T: Clone>(
     seen: &OnceLock<Mutex<HashMap<K, T>>>,
     id: K,
